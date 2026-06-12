@@ -12,7 +12,7 @@ Built with Tauri v2 + Next.js + libsodium.
 Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/still.git
+git clone https://github.com/dan-build/still.git
 cd still
 npm install
 npm run dev
