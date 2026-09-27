@@ -45,7 +45,10 @@ jobs:
             "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv${CARGO_AUDIT_VERSION}/${name}.tgz"
           echo "${CARGO_AUDIT_SHA256}  cargo-audit.tgz" | sha256sum -c -
           tar -xzf cargo-audit.tgz
-          install -m 0755 "${name}/cargo-audit" "$HOME/.local/bin/cargo-audit"
+          bin="$RUNNER_TEMP/cargo-audit-bin"
+          mkdir -p "$bin"
+          install -m 0755 "${name}/cargo-audit" "$bin/cargo-audit"
+          echo "$bin" >> "$GITHUB_PATH"
           rm -rf cargo-audit.tgz "${name}"
 
       # Fails on any vulnerability in Cargo.lock. Unmaintained or unsound
