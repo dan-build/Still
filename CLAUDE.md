@@ -17,7 +17,20 @@ npm run tauri:dev      # Desktop app; runs `npm run dev` itself, loads localhost
 npm run tauri:build    # Desktop bundle; runs `npm run build` itself, packages ./out
 ```
 
-There is no test suite. For a type check, run `npx tsc --noEmit`.
+```bash
+npm test                     # Vitest, about 1 minute (real Argon2id runs use 1 GiB each)
+npx vitest run app/page.persistence.test.tsx     # one file
+npx vitest run -t "golden fixture vault-v1-real" # tests whose name matches
+npm run check                # what CI will run: check:web (vitest, tsc) + check:rust (fmt, clippy -D warnings, cargo test)
+```
+
+Tests sit next to the code (`app/**/*.test.ts(x)`):
+- `crypto.golden.test.ts`: opens the committed v1 vaults in `fixtures/vault-v1*` (one generated, one exported from a release build).
+- `crypto.vectors.test.ts`: fixed-input byte vectors that any implementation, including the Rust port, must reproduce.
+- `crypto.test.ts`: characterisation tests of the current crypto behaviour.
+- `page.persistence.test.tsx`: drives the UI in happy-dom with fake crypto and checks localStorage.
+
+Tests marked `it.fails` are known bugs from the audit. When you fix one, flip it to `it` in the same commit. Never regenerate or edit the fixtures to make a test pass.
 
 ## Architecture
 
