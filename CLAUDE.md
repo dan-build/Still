@@ -49,6 +49,10 @@ All ciphers are XChaCha20-Poly1305 IETF. Ciphertexts are base64 (ORIGINAL varian
 - `still-encrypted-master-key`, `still-salt`, `still-has-pin`: vault setup. When the first two are missing, the app shows `CreatePasswordScreen`.
 - `still-lenses`, `still-recycle-bin`: JSON arrays of lenses. Each lens has its wrapped key in `encryptedMasterKey`, and its items stay encrypted.
 
+localStorage belongs to one origin and one WebKit data folder, so dev and release builds never see each other's vault. On macOS (checked 2026-09-27):
+- **Release or bundled build:** origin `tauri://localhost`, data in `~/Library/WebKit/com.still.app/`. The folder comes from `identifier`, so never change `identifier`.
+- **`npm run tauri:dev`:** origin `http://localhost:3000`. The binary isn't bundled, so its data lives in `~/Library/WebKit/still/`, named after the executable. Keep the dev port at 3000.
+
 The `useEffect` hooks in `page.tsx` decrypt lens keys into memory after unlock and re-wrap them on every state change. The save effects return early when the array is empty, so removing the last lens or emptying the bin is not written back to storage. Recycle-bin entries older than 7 days are purged when the vault loads.
 
 **PIN is incomplete.** `CreatePasswordScreen` collects an optional PIN, but only the `still-has-pin` flag is saved. Unlocking always uses the master password.
