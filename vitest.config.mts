@@ -7,5 +7,6 @@ export default defineConfig({
     // Argon2id with libsodium's SENSITIVE limits allocates 1 GiB and takes
     // several seconds per derivation.
     testTimeout: 120_000,
+    hookTimeout: 120_000,
   },
 })
