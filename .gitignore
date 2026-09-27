@@ -1,0 +1,13 @@
+# dependencies and builds
+node_modules/
+.next/
+out/
+src-tauri/target/
+*.tsbuildinfo
+
+# secrets and local files
+.env*
+.DS_Store
+CLAUDE.local.md
+AUDIT.md
+.mcp.json

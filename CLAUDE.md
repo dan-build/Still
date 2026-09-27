@@ -1,0 +1,79 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project
+
+Still is a local-first encrypted secret manager: a Next.js 15 (App Router, React 18, Tailwind 3) frontend wrapped in a Tauri v2 desktop shell. There are no accounts, no servers, and no telemetry. All crypto runs client-side via libsodium. The product promise is that nothing leaves the device, so don't add network calls, analytics, or remote dependencies at runtime.
+
+## Commands
+
+```bash
+npm install
+npm run dev            # Next.js dev server on :3000 (browser only)
+npm run build          # Static export to ./out
+npm run lint           # next lint (no ESLint config is committed yet)
+npm run tauri:dev      # Desktop app; runs `npm run dev` itself, loads localhost:3000
+npm run tauri:build    # Desktop bundle; runs `npm run build` itself, packages ./out
+```
+
+There is no test suite. For a type check, run `npx tsc --noEmit`.
+
+## Architecture
+
+**Static export + Tauri.** [next.config.mjs](next.config.mjs) sets `output: 'export'`, so the app has to stay fully static: no API routes, server actions, or server-only features. Tauri serves `../out` ([src-tauri/tauri.conf.json](src-tauri/tauri.conf.json)). The Rust side ([src-tauri/src/main.rs](src-tauri/src/main.rs)) is a bare window shell with no custom commands. Everything, including persistence, lives in the webview. `console.*` calls are stripped in production builds.
+
+**State lives in one component.** [app/page.tsx](app/page.tsx) (`'use client'`) owns all app state: the unlock status, the app master key, lenses, and the recycle bin. It passes data and callbacks down to the modal and screen components in `app/components/`. Nothing uses a store or context.
+
+**Key hierarchy** (all in [app/lib/crypto.ts](app/lib/crypto.ts), using `libsodium-wrappers-sumo`, which is loaded lazily):
+1. Master password → Argon2id (`crypto_pwhash`, SENSITIVE limits, 16-byte salt) → a derived key that wraps a random 32-byte **app master key** (`encryptMasterKey` / `decryptMasterKey`).
+2. Each Lens has its own random 32-byte **lens key**, wrapped by the app master key (`encryptLensMasterKey`).
+3. Each item value is encrypted with a per-item subkey derived from the lens key: `crypto_kdf_derive_from_key` with context `StillSec` and a random uint32 subkey id (`encrypt` / `decrypt`, called from [LensDetail.tsx](app/components/LensDetail.tsx)).
+
+All ciphers are XChaCha20-Poly1305 IETF. Ciphertexts are base64 (ORIGINAL variant) with a leading version byte, currently `1`. Item ciphertexts also store the subkey id as a 4-byte little-endian value after the version byte. Changing any of these formats breaks existing vaults, so bump the version byte and keep the decrypt path for older versions.
+
+**Persistence is `localStorage`.** It uses these keys:
+- `still-encrypted-master-key`, `still-salt`, `still-has-pin`: vault setup. When the first two are missing, the app shows `CreatePasswordScreen`.
+- `still-lenses`, `still-recycle-bin`: JSON arrays of lenses. Each lens has its wrapped key in `encryptedMasterKey`, and its items stay encrypted.
+
+The `useEffect` hooks in `page.tsx` decrypt lens keys into memory after unlock and re-wrap them on every state change. The save effects return early when the array is empty, so removing the last lens or emptying the bin is not written back to storage. Recycle-bin entries older than 7 days are purged when the vault loads.
+
+**PIN is incomplete.** `CreatePasswordScreen` collects an optional PIN, but only the `still-has-pin` flag is saved. Unlocking always uses the master password.
+
+## Conventions
+
+- Components are client components (`'use client'`) styled with inline Tailwind classes and hard-coded hex colors (such as `#151515` and `#F8F9FA`) in a minimal, calm look.
+- The `@/*` path alias maps to the repo root.
+- Domain terms: a **Lens** is an encrypted collection. An **Item** is a `password`, `key`, or `note` stored in a Lens. The UI calls the recycle bin "Archive", and deleting a Lens is called "forget".
+
+## Owner's goals
+
+### Direction
+Restructure Still into a polished, professional Tauri desktop app. Still
+stays a local-first secret manager.
+- Replace Next.js static export with Vite + React + TypeScript. Next.js adds
+  nothing for a desktop app that must stay fully static.
+- Move encryption, key handling and storage into Rust, exposed to the UI
+  through Tauri commands. TypeScript and React handle the UI only. Secrets
+  should never live in the webview longer than needed.
+- Store the vault in an app data file via Rust instead of localStorage.
+- Add tests: Rust unit tests for crypto and storage, Vitest for the UI.
+- Professional repo hygiene: SECURITY.md (important for a vault),
+  CHANGELOG.md, CONTRIBUTING.md, and GitHub Actions that build releases.
+- Keep the webview UI; a native Rust GUI is low priority and not needed.
+
+### Priorities, in order
+1. Security and correctness. This is a vault; a bug can lose or leak secrets.
+2. Architecture: the moves above.
+3. Design and UX polish.
+
+### Hard rules
+- Existing vaults must keep working. Any change to storage or the encrypted
+  format needs a migration path and a test using a real old vault. Never
+  change the format without my explicit approval. The version byte and the
+  old decrypt path must stay.
+- Use well-known, audited crates for cryptography. Never write custom crypto.
+- No network calls, analytics or remote dependencies at runtime.
+- Secrets must never be logged, printed or kept in memory longer than needed.
+- Plan before any multi-file change, and wait for approval.
+- Add tests before refactoring the code they cover. Commit in small steps.
