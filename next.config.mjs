@@ -7,16 +7,9 @@ const nextConfig = {
   },
   poweredByHeader: false,
 
-  experimental: {
-    turbo: false,
-  },
-
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
   },
-
-  swcMinify: false,
-  transpilePackages: ['libsodium-wrappers'],
 }
 
 export default nextConfig

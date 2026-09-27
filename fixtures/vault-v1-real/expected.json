@@ -1,0 +1,21 @@
+{
+  "password": "throwaway-vault-202",
+  "lenses": {
+    "muk8tmfq": {
+      "name": "Export Test",
+      "items": {
+        "muk8u0z2": "dummy-Pässwörd-🔐-42",
+        "muk8ubyb": "sk-dummy-0123456789",
+        "muk8uoqr": "first line\nsecond line — ünïcødé ✓"
+      }
+    }
+  },
+  "recycleBin": {
+    "muk8uzta": {
+      "name": "To Forget",
+      "items": {
+        "muk8vabo": "0000-dummy"
+      }
+    }
+  }
+}

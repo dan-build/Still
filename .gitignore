@@ -1,0 +1,29 @@
+# dependencies and builds
+node_modules/
+.next/
+out/
+dist/
+/target/
+src-tauri/gen/
+coverage/
+*.tsbuildinfo
+*.log
+
+# secrets and signing material
+.env*
+*.p8
+*.p12
+*.pfx
+*.pem
+*.key
+*.cer
+
+# vault exports that may hold real secrets (committed fixtures live in fixtures/vault-*)
+fixtures/local/
+
+# local files (both spellings: Linux is case-sensitive)
+.DS_Store
+CLAUDE.local.md
+Claude.local.md
+AUDIT.md
+.mcp.json
