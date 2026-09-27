@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lib]
+name = "still_lib"
+crate-type = ["rlib"]
+
 [dependencies]
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
