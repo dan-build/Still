@@ -1,0 +1,55 @@
+name: Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Mondays 06:00 UTC, so new advisories surface without a push.
+    # GitHub runs scheduled workflows on the default branch only.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_AUDIT_VERSION: "0.22.2"
+  # SHA-256 of cargo-audit-x86_64-unknown-linux-musl-v0.22.2.tgz from the RustSec release.
+  CARGO_AUDIT_SHA256: "7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428"
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      # Reads package-lock.json only; fails on high or critical advisories
+      # anywhere in the tree, dev tools included.
+      - name: npm audit
+        run: npm audit --audit-level=high
+
+      - name: Install cargo-audit (pinned release, checksum verified)
+        run: |
+          name="cargo-audit-x86_64-unknown-linux-musl-v${CARGO_AUDIT_VERSION}"
+          curl -sSfL -o cargo-audit.tgz \
+            "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv${CARGO_AUDIT_VERSION}/${name}.tgz"
+          echo "${CARGO_AUDIT_SHA256}  cargo-audit.tgz" | sha256sum -c -
+          tar -xzf cargo-audit.tgz
+          install -m 0755 "${name}/cargo-audit" "$HOME/.local/bin/cargo-audit"
+          rm -rf cargo-audit.tgz "${name}"
+
+      # Fails on any vulnerability in Cargo.lock. Unmaintained or unsound
+      # warnings are reported but do not fail; ignoring a vulnerability needs
+      # an entry with a reason in .cargo/audit.toml.
+      - name: cargo audit
+        run: cargo-audit audit
