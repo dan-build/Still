@@ -16,7 +16,6 @@ const nextConfig = {
   },
 
   swcMinify: false,
-  transpilePackages: ['libsodium-wrappers'],
 }
 
 export default nextConfig
