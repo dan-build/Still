@@ -77,3 +77,11 @@ stays a local-first secret manager.
 - Secrets must never be logged, printed or kept in memory longer than needed.
 - Plan before any multi-file change, and wait for approval.
 - Add tests before refactoring the code they cover. Commit in small steps.
+
+### Decisions
+
+**Rust crypto uses `libsodium-sys-stable`** (decided 2026-09-27). Being byte-for-byte compatible with existing vaults matters more than being pure Rust. Linking the same audited libsodium that the JS app uses today reproduces `crypto_pwhash`, XChaCha20-Poly1305 IETF and `crypto_kdf_derive_from_key` exactly. We rejected the RustCrypto `argon2` and `blake2` crates, because they are partly unaudited and would need to be proven equivalent. Requirements:
+- **Reproducible CI builds.** Pin the crate version in `Cargo.lock`, and never enable a feature that fetches "latest" libsodium. On every OS, build from the libsodium source the crate ships with, not from a system library found via pkg-config. The exception is an explicitly pinned `SODIUM_LIB_DIR` that CI sets up the same way on each run. Before stage 3a merges, confirm that `cargo build --offline` works after `cargo fetch`, and check how the crate gets libsodium on Windows MSVC.
+- **No network at runtime.** Link libsodium statically into the app binary. The app must not download or load anything at runtime.
+- **Only one module uses `unsafe`.** FFI calls live in a single module that exposes safe wrappers. The rest of the crate stays safe code. Wipe keys with `sodium_memzero` or `zeroize`.
+- **Tests gate the port.** The golden v1 vault fixture and the JS-generated test vectors must pass before any UI calls into the Rust crypto.
