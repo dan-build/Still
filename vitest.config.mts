@@ -1,6 +1,9 @@
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // tsconfig keeps "jsx": "preserve" for Next.js, so tell Vite's transformer
+  // to compile JSX itself in tests.
+  oxc: { jsx: { runtime: 'automatic' } },
   test: {
     environment: 'node',
     include: ['app/**/*.test.ts', 'app/**/*.test.tsx'],
