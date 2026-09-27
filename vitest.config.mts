@@ -10,6 +10,10 @@ export default defineConfig({
     // Argon2id with libsodium's SENSITIVE limits allocates 1 GiB and takes
     // several seconds per derivation.
     testTimeout: 120_000,
+    // Each crypto test file allocates 1 GiB for Argon2id. Running files one at
+    // a time keeps peak memory near 1 GiB (CI's macOS runner has 7 GB) and is
+    // no slower, since Argon2id is memory-bound.
+    fileParallelism: false,
     hookTimeout: 120_000,
   },
 })
