@@ -1,0 +1,7 @@
+{
+  "still-encrypted-master-key": "ARhqK0QlCuYrs/y7NfdKb+E6Fs2rV9s7T1rQ0LAQBW5mOHGrydE36088eR1KIMwaPrY1fDsdPpTMP47gxhqmMbncQSfqHdB9/A==",
+  "still-salt": "XwQ6FvWNqtHdesRpcBus5w==",
+  "still-has-pin": "false",
+  "still-lenses": "[{\"id\":\"muk8tmfq\",\"name\":\"Export Test\",\"createdAt\":\"2026-09-27T20:00:22.742Z\",\"itemCount\":3,\"encryptedMasterKey\":\"AcIveHtuK/gylUEO642EaCYle7LHOq6UybkVVm5LGaAa4JIdkujTYRJ+cQuhCYiqSPwfy5dx6bxnDlZx9tJjpzX2OU/tj0PiMw==\",\"items\":[{\"id\":\"muk8u0z2\",\"label\":\"Email\",\"type\":\"password\",\"encryptedValue\":\"AZt6A+KPdOV3xlKfARVnBbBlH0Rv1JgOGxT9k2zq/9OKI/T3qj24/cmcJb+SbG5O5GBFdL/kmEr0B9XZp0puh4nGMrQb\"},{\"id\":\"muk8ubyb\",\"label\":\"API token\",\"type\":\"key\",\"encryptedValue\":\"AcaL3I816G7j1cxzvOJ9GV7qUdIP2jAyNHwjJFFs7BvRI+D22CE+mEm42kX+CuwNg4V6XA0lsOR/fSG0SadvWw==\"},{\"id\":\"muk8uoqr\",\"label\":\"Recovery note\",\"type\":\"note\",\"encryptedValue\":\"AUl9Zf/3e6rTKxj3MrjiAq6Fa/DiHHt+roBgULjVTu8wgNUuuwLFOivu6Zv3VAttLvyhY979Z29bhbgctQ7Eh+k+glYLlyOTb+4l0mJ+BhRjo+l85TvI\"}]}]",
+  "still-recycle-bin": "[{\"id\":\"muk8uzta\",\"name\":\"To Forget\",\"createdAt\":\"2026-09-27T20:01:26.734Z\",\"itemCount\":1,\"encryptedMasterKey\":\"AVwmUkEA/A/04l1bLDuV0Nw5eMRwhynUGbpsZ6hVOt18msoO2l246pFg+U9Kg/M87sYI7/AcqPK5qUN5FYvQMjQiiTSa1Mui2A==\",\"items\":[{\"id\":\"muk8vabo\",\"label\":\"Old PIN\",\"type\":\"password\",\"encryptedValue\":\"AUyKroK7jnWHR4P2iKp5ERkbDPZ/5LklnhSl8T/LYkm1vtmmUuqsVoU5Lb3lwS0NaJoAyBMKEQ==\"}],\"deletedAt\":\"2026-09-27T20:01:46.304Z\"}]"
+}
