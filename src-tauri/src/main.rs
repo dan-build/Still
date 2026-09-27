@@ -8,7 +8,6 @@ fn main() {
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.center();
-
             }
             Ok(())
         })
