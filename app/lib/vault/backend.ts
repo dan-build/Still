@@ -146,8 +146,8 @@ export function createLocalStorageBackend(
   function write(next: VaultLists, which: ListName[]) {
     for (const name of which) {
       const list = next[name]
-      // v0.1.0: an empty list is never written (fixed in commits 5-7).
-      if (list.length === 0) continue
+      // v0.1.0: an empty bin is never written (fixed in commit 6).
+      if (list.length === 0 && name === 'bin') continue
       storage.setItem(name === 'lenses' ? STORAGE_KEYS.lenses : STORAGE_KEYS.bin, serializeLensList(list))
     }
     lists = next

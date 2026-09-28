@@ -133,6 +133,18 @@ describe('the recycle bin', () => {
     expect(storedList(storage, STORAGE_KEYS.bin).map((l) => l.name)).toEqual(['Keep'])
   })
 
+  it('saves an empty Lens list when the last Lens is forgotten', async () => {
+    const { storage, backend } = await freshVault()
+    const only = await backend.createLens('Only')
+    await backend.forgetLens(only)
+    expect(storage.getItem(STORAGE_KEYS.lenses)).toBe('[]')
+
+    const reopened = createLocalStorageBackend(storage, fakeCrypto, clock)
+    await reopened.unlock('pw-123456')
+    expect(reopened.view().lenses).toEqual([])
+    expect(reopened.view().bin.map((l) => l.name)).toEqual(['Only'])
+  })
+
   it('purges bin entries older than 7 days on unlock and saves that', async () => {
     const { storage, backend } = await freshVault()
     await backend.createLens('Keep')

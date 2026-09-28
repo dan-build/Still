@@ -233,7 +233,7 @@ describe('forgetting a Lens (B1)', () => {
     expect(storedNames('still-lenses')).toEqual(['Keep'])
   })
 
-  it.fails('persists an empty Lens list when the only Lens is forgotten', async () => {
+  it('persists an empty Lens list when the only Lens is forgotten', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Solo' }] })
     await unlock()
     await openLens('Solo')
