@@ -273,6 +273,24 @@ describe('secrets', () => {
     await screen.findByText('value-of-l1')
   })
 
+  it('shows a revealed secret with its spaces and line breaks intact', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    await addSecret('Spaced', '  two-spaces-in-front\nsecond line')
+    await waitFor(() => expect(storedItems('Alpha').map((i) => i.label)).toContain('Spaced'))
+    const reveal = (await screen.findAllByRole('button', { name: 'Reveal' }))[1] as HTMLButtonElement
+    await waitFor(() => expect(reveal.disabled).toBe(false))
+    fireEvent.click(reveal)
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId('secret-value').map((el) => el.textContent)).toContain('  two-spaces-in-front\nsecond line'),
+    )
+    const shown = screen.getAllByTestId('secret-value').find((el) => el.textContent?.startsWith('  two'))!
+    // Without pre-wrap, the browser would collapse the leading spaces and the line break.
+    expect(shown.className).toContain('whitespace-pre-wrap')
+  })
+
   it('deletes a secret and saves the change', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     await unlock()

@@ -212,7 +212,7 @@ export default function LensDetail({
                     </div>
                     <div>
                       <div className="font-medium text-[17px]">{item.label}</div>
-                      <div className="font-mono text-xs text-[#151515]/50 tracking-[2px] mt-px break-all">
+                      <div data-testid="secret-value" className="font-mono text-xs text-[#151515]/50 tracking-[2px] mt-px break-all whitespace-pre-wrap">
                         {displayValue}
                       </div>
                     </div>
