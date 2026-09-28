@@ -1,31 +1,16 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { encrypt, decrypt } from '../lib/crypto'
-
-interface Item {
-  id: string
-  label: string
-  type: 'password' | 'key' | 'note'
-  encryptedValue: string
-}
-
-interface Lens {
-  id: string
-  name: string
-  createdAt: string
-  itemCount: number
-  masterKey: Uint8Array
-  items: Item[]
-}
+import type { ItemView, LensView, NewItem } from '../lib/vault/backend'
 
 interface LensDetailProps {
-  lens: Lens
-  items?: Item[]
+  lens: LensView
   onClose: () => void
-  onUpdateItems: (items: Item[]) => void
+  onAddItem: (item: NewItem) => Promise<void>
+  onRevealItem: (itemId: string) => Promise<string>
+  onDeleteItem: (itemId: string) => Promise<void>
   onShowToast: (msg: string) => void
-  onDeleteLens: (lens: Lens) => void
+  onForget: () => void
 }
 
 // Calm, premium stroke icons
@@ -48,15 +33,16 @@ const NoteIcon = () => (
 )
 
 export default function LensDetail({ 
-  lens, 
-  items = [], 
-  onClose, 
-  onUpdateItems, 
+  lens,
+  onClose,
+  onAddItem,
+  onRevealItem,
+  onDeleteItem,
   onShowToast,
-  onDeleteLens 
+  onForget,
 }: LensDetailProps) {
 
-  const safeItems = items || []
+  const safeItems = lens.items
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [newLabel, setNewLabel] = useState('')
@@ -81,19 +67,7 @@ export default function LensDetail({
     startProcessing()
 
     try {
-      const encryptedValue = await encrypt(newValue.trim(), lens.masterKey)
-      
-      const newItem: Item = {
-        id: Date.now().toString(36),
-        label: newLabel.trim(),
-        type: newType,
-        encryptedValue,
-      }
-
-      const currentItems = items || []
-      const updatedItems = [...currentItems, newItem]
-
-      onUpdateItems(updatedItems)
+      await onAddItem({ label: newLabel.trim(), type: newType, value: newValue.trim() })
 
       setNewLabel('')
       setNewValue('')
@@ -108,14 +82,14 @@ export default function LensDetail({
     }
   }
 
-  const toggleReveal = async (item: Item) => {
+  const toggleReveal = async (item: ItemView) => {
     if (revealed[item.id]) {
       const { [item.id]: _, ...rest } = revealed
       setRevealed(rest)
     } else {
       startProcessing()
       try {
-        const plaintext = await decrypt(item.encryptedValue, lens.masterKey)
+        const plaintext = await onRevealItem(item.id)
         setRevealed(prev => ({ ...prev, [item.id]: plaintext }))
       } catch {
         onShowToast('Decryption failed')
@@ -125,11 +99,11 @@ export default function LensDetail({
     }
   }
 
-  const copyToClipboard = async (item: Item) => {
+  const copyToClipboard = async (item: ItemView) => {
     startProcessing()
     try {
       let text = revealed[item.id]
-      if (!text) text = await decrypt(item.encryptedValue, lens.masterKey)
+      if (!text) text = await onRevealItem(item.id)
       await navigator.clipboard.writeText(text)
       onShowToast('Copied')
     } catch {
@@ -139,9 +113,8 @@ export default function LensDetail({
     }
   }
 
-  const deleteItem = (id: string) => {
-    const updatedItems = safeItems.filter(i => i.id !== id)
-    onUpdateItems(updatedItems)
+  const deleteItem = async (id: string) => {
+    await onDeleteItem(id)
     const { [id]: _, ...rest } = revealed
     setRevealed(rest)
     onShowToast('Deleted')
@@ -167,11 +140,7 @@ export default function LensDetail({
   }
 
   const confirmForget = () => {
-    const lensWithCurrentItems = {
-      ...lens,
-      items: safeItems
-    }
-    onDeleteLens(lensWithCurrentItems)
+    onForget()
     setShowForgetConfirm(false)
   }
 

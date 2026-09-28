@@ -1,300 +1,94 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import CreateLensModal from './components/CreateLensModal'
 import LensDetail from './components/LensDetail'
 import RecycleBinModal from './components/RecycleBinModal'
-import {
-  generateMasterKey,
-  uint8ArrayToBase64,
-  base64ToUint8Array,
-  encryptMasterKey,
-  decryptMasterKey,
-  encryptLensMasterKey,
-  decryptLensMasterKey,
-} from './lib/crypto'
+import * as cryptoModule from './lib/crypto'
+import { createLocalStorageBackend, type LensView, type VaultBackend, type VaultView } from './lib/vault/backend'
 import Image from 'next/image'
 import UnlockScreen from './components/UnlockScreen'
 import CreatePasswordScreen from './components/CreatePasswordScreen'
 
-interface Item {
-  id: string
-  label: string
-  type: 'password' | 'key' | 'note'
-  encryptedValue: string
-}
-
-interface Lens {
-  id: string
-  name: string
-  createdAt: string
-  itemCount: number
-  masterKey: Uint8Array
-  items: Item[]
-}
-
-interface RecycledLens extends Lens {
-  deletedAt: string
-}
-
-
-interface PersistedLens {
-  id: string
-  name: string
-  createdAt: string
-  itemCount: number
-  encryptedMasterKey: string 
-  items: Item[]
-}
-
-interface PersistedRecycledLens extends PersistedLens {
-  deletedAt: string
-}
-
 export default function StillHome() {
-  const [lenses, setLenses] = useState<Lens[]>([])
-  const [recycleBin, setRecycleBin] = useState<RecycledLens[]>([])
+  const backendRef = useRef<VaultBackend | null>(null)
+  const [view, setView] = useState<VaultView>({ lenses: [], bin: [] })
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [selectedLens, setSelectedLens] = useState<Lens | null>(null)
+  const [selectedLensId, setSelectedLensId] = useState<string | null>(null)
   const [isRecycleOpen, setIsRecycleOpen] = useState(false)
   const [toast, setToast] = useState('')
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
   const [hasPin, setHasPin] = useState(false)
-  const [masterKey, setMasterKey] = useState<Uint8Array | null>(null)
 
-  
-  useEffect(() => {
-    const loadData = async () => {
-      const savedLenses = localStorage.getItem('still-lenses')
-      const savedBin = localStorage.getItem('still-recycle-bin')
-
-      
-      if (!masterKey) return
-
-      if (savedLenses) {
-        try {
-          const parsed: PersistedLens[] = JSON.parse(savedLenses)
-          const restoredLenses: Lens[] = []
-
-          for (const p of parsed) {
-            try {
-              const lensMasterKey = await decryptLensMasterKey(p.encryptedMasterKey, masterKey)
-              restoredLenses.push({
-                id: p.id,
-                name: p.name,
-                createdAt: p.createdAt,
-                itemCount: p.itemCount,
-                masterKey: lensMasterKey,
-                items: p.items || [],
-              })
-            } catch (e) {
-              console.error('Failed to decrypt lens key for', p.name, e)
-            }
-          }
-          setLenses(restoredLenses)
-        } catch (e) {
-          console.error('Failed to load lenses', e)
-        }
-      }
-
-      if (savedBin) {
-        try {
-          const parsed: PersistedRecycledLens[] = JSON.parse(savedBin)
-          const restoredBin: RecycledLens[] = []
-
-          for (const p of parsed) {
-            try {
-              const lensMasterKey = await decryptLensMasterKey(p.encryptedMasterKey, masterKey)
-              restoredBin.push({
-                id: p.id,
-                name: p.name,
-                createdAt: p.createdAt,
-                itemCount: p.itemCount,
-                masterKey: lensMasterKey,
-                items: p.items || [],
-                deletedAt: p.deletedAt,
-              })
-            } catch (e) {
-              console.error('Failed to decrypt recycled lens key', e)
-            }
-          }
-          setRecycleBin(restoredBin)
-        } catch (e) {
-          console.error('Failed to load recycle bin', e)
-        }
-      }
-
-      cleanOldRecycleItems()
-    }
-
-    if (isUnlocked && masterKey) {
-      loadData()
-    }
-  }, [isUnlocked, masterKey])
-
-  
-  useEffect(() => {
-    const saveLenses = async () => {
-      if (!masterKey || lenses.length === 0) return
-
-      const persisted: PersistedLens[] = []
-      for (const lens of lenses) {
-        const encryptedMasterKey = await encryptLensMasterKey(lens.masterKey, masterKey)
-        persisted.push({
-          id: lens.id,
-          name: lens.name,
-          createdAt: lens.createdAt,
-          itemCount: lens.itemCount,
-          encryptedMasterKey,
-          items: lens.items,
-        })
-      }
-      localStorage.setItem('still-lenses', JSON.stringify(persisted))
-    }
-
-    saveLenses()
-  }, [lenses, masterKey])
-
-  
-  useEffect(() => {
-    const saveRecycleBin = async () => {
-      if (!masterKey || recycleBin.length === 0) return
-
-      const persisted: PersistedRecycledLens[] = []
-      for (const lens of recycleBin) {
-        const encryptedMasterKey = await encryptLensMasterKey(lens.masterKey, masterKey)
-        persisted.push({
-          id: lens.id,
-          name: lens.name,
-          createdAt: lens.createdAt,
-          itemCount: lens.itemCount,
-          encryptedMasterKey,
-          items: lens.items,
-          deletedAt: lens.deletedAt,
-        })
-      }
-      localStorage.setItem('still-recycle-bin', JSON.stringify(persisted))
-    }
-
-    saveRecycleBin()
-  }, [recycleBin, masterKey])
-
-  
-  useEffect(() => {
-    const encryptedMasterKey = localStorage.getItem('still-encrypted-master-key')
-    const salt = localStorage.getItem('still-salt')
-    const pinExists = localStorage.getItem('still-has-pin') === 'true'
-
-    if (encryptedMasterKey && salt) {
-      setHasPin(pinExists)
-      setIsFirstLaunch(false)
-    } else {
-      setIsFirstLaunch(true)
-    }
-  }, [])
-
-  const cleanOldRecycleItems = () => {
-    const now = new Date()
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-    setRecycleBin(prev => prev.filter(item => new Date(item.deletedAt) > sevenDaysAgo))
+  // Created on first use: the static export renders without a window.
+  const backend = () => {
+    if (!backendRef.current) backendRef.current = createLocalStorageBackend(window.localStorage, cryptoModule)
+    return backendRef.current
   }
+
+  const refresh = () => setView(backend().view())
+
+  const lenses = view.lenses
+  const recycleBin = view.bin
+  const selectedLens = lenses.find(l => l.id === selectedLensId) ?? null
+
+  useEffect(() => {
+    const status = backend().status()
+    setHasPin(backend().hasPinFlag())
+    setIsFirstLaunch(status === 'empty')
+  }, [])
 
   const showToast = (message: string) => {
     setToast(message)
     setTimeout(() => setToast(''), 2200)
   }
 
-  
   const createLens = async (name: string) => {
-    if (!masterKey) {
-      showToast('Please unlock first')
-      return
-    }
-
-    const newLensMasterKey = await generateMasterKey()
-    const newLens: Lens = {
-      id: Date.now().toString(36),
-      name: name.trim(),
-      createdAt: new Date().toISOString(),
-      itemCount: 0,
-      masterKey: newLensMasterKey,
-      items: [],
-    }
-
-    setLenses(prev => [newLens, ...prev])
+    const id = await backend().createLens(name)
+    refresh()
     setIsCreateOpen(false)
-    setTimeout(() => setSelectedLens(newLens), 150)
+    setTimeout(() => setSelectedLensId(id), 150)
   }
 
-  const updateLensItems = (lensId: string, newItems: Item[]) => {
-    setLenses(prev => prev.map(lens =>
-      lens.id === lensId
-        ? { ...lens, items: newItems, itemCount: newItems.length }
-        : lens
-    ))
-
-    if (selectedLens && selectedLens.id === lensId) {
-      setSelectedLens(prev => prev
-        ? { ...prev, items: newItems, itemCount: newItems.length }
-        : null
-      )
-    }
-  }
-
-  const moveToRecycleBin = (lens: Lens) => {
-    const latestLens = lenses.find(l => l.id === lens.id) || lens
-    const recycled: RecycledLens = {
-      ...latestLens,
-      deletedAt: new Date().toISOString()
-    }
-
-    setRecycleBin(prev => [recycled, ...prev])
-    setLenses(prev => prev.filter(l => l.id !== lens.id))
-    setSelectedLens(null)
+  const moveToRecycleBin = async (lens: LensView) => {
+    await backend().forgetLens(lens.id)
+    refresh()
+    setSelectedLensId(null)
     showToast('Moved to Recycle Bin')
   }
 
-  const restoreFromRecycleBin = (recycledLens: RecycledLens) => {
-    const { deletedAt, ...restoredLens } = recycledLens
-    setLenses(prev => [restoredLens, ...prev])
-    setRecycleBin(prev => prev.filter(l => l.id !== recycledLens.id))
+  const restoreFromRecycleBin = async (recycledLens: LensView) => {
+    await backend().restoreLens(recycledLens.id)
+    refresh()
     showToast('Restored')
   }
 
-  const permanentDelete = (id: string) => {
-    setRecycleBin(prev => prev.filter(l => l.id !== id))
+  const permanentDelete = async (id: string) => {
+    await backend().deleteLensForever(id)
+    refresh()
     showToast('Permanently deleted')
   }
 
   const handleCreatePassword = async (password: string, pin?: string) => {
-    const newMasterKey = await generateMasterKey()
-    const { encryptedMasterKey, salt } = await encryptMasterKey(newMasterKey, password)
-
-    localStorage.setItem('still-encrypted-master-key', encryptedMasterKey)
-    localStorage.setItem('still-salt', salt)
-    localStorage.setItem('still-has-pin', pin ? 'true' : 'false')
-
-    setMasterKey(newMasterKey)
+    await backend().create(password, pin)
+    refresh()
     setIsUnlocked(true)
     setIsFirstLaunch(false)
     showToast('Secure vault created')
   }
 
   const handleUnlock = async (password: string): Promise<boolean> => {
-    try {
-      const encryptedMasterKey = localStorage.getItem('still-encrypted-master-key')
-      const salt = localStorage.getItem('still-salt')
+    const result = await backend().unlock(password)
+    if (!result.ok) return false
+    refresh()
+    setIsUnlocked(true)
+    return true
+  }
 
-      if (!encryptedMasterKey || !salt) return false
-
-      const decryptedKey = await decryptMasterKey(encryptedMasterKey, password, salt)
-      setMasterKey(decryptedKey)
-      setIsUnlocked(true)
-      return true
-    } catch {
-      return false
-    }
+  const lock = () => {
+    backend().lock()
+    setIsUnlocked(false)
   }
 
   return (
@@ -367,7 +161,7 @@ export default function StillHome() {
                       </div>
 
                       <div
-                        onClick={() => setSelectedLens(lenses[0])}
+                        onClick={() => setSelectedLensId(lenses[0].id)}
                         className="bg-[#ECEFF1] rounded-[28px] p-10 min-h-[420px] flex flex-col justify-between cursor-pointer hover:bg-[#DDE2E7] transition-all duration-500"
                       >
                         <div>
@@ -393,7 +187,7 @@ export default function StillHome() {
                     {lenses.map((lens, i) => (
                       <div
                         key={lens.id}
-                        onClick={() => setSelectedLens(lens)}
+                        onClick={() => setSelectedLensId(lens.id)}
                         className="group cursor-pointer px-5 py-4 rounded-[16px] bg-white/60 hover:bg-white transition flex justify-between items-center"
                       >
                         <div className="text-[15px] tracking-[-0.02em] group-hover:translate-x-1 transition">
@@ -413,7 +207,7 @@ export default function StillHome() {
               <div>Private.</div>
 
               <button
-                onClick={() => setIsUnlocked(false)}
+                onClick={lock}
                 className="flex items-center gap-2 px-4 py-2 text-sm text-[#151515]/60 hover:text-[#151515] transition"
                 title="Lock app"
               >
@@ -442,11 +236,12 @@ export default function StillHome() {
           {selectedLens && (
             <LensDetail
               lens={selectedLens}
-              items={selectedLens.items}
-              onClose={() => setSelectedLens(null)}
-              onUpdateItems={(newItems) => updateLensItems(selectedLens.id, newItems)}
+              onClose={() => setSelectedLensId(null)}
+              onAddItem={async (item) => { await backend().addItem(selectedLens.id, item); refresh() }}
+              onRevealItem={(itemId) => backend().revealItem(selectedLens.id, itemId)}
+              onDeleteItem={async (itemId) => { await backend().deleteItem(selectedLens.id, itemId); refresh() }}
               onShowToast={showToast}
-              onDeleteLens={moveToRecycleBin}
+              onForget={() => moveToRecycleBin(selectedLens)}
             />
           )}
 
