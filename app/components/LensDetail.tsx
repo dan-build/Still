@@ -67,7 +67,8 @@ export default function LensDetail({
     startProcessing()
 
     try {
-      await onAddItem({ label: newLabel.trim(), type: newType, value: newValue.trim() })
+      // The value is stored exactly as typed; only the label is trimmed.
+      await onAddItem({ label: newLabel.trim(), type: newType, value: newValue })
 
       setNewLabel('')
       setNewValue('')
@@ -290,6 +291,21 @@ export default function LensDetail({
                   rows={4}
                   className="w-full bg-[#F8F9FA] px-5 py-3.5 rounded-[12px] text-sm resize-y focus:outline-none border border-black/10"
                 />
+                {newValue !== '' && newValue.trim() === '' && (
+                  <p className="mt-2 text-xs text-red-700">A secret can't be only spaces or line breaks.</p>
+                )}
+                {newValue.trim() !== '' && newValue !== newValue.trim() && (
+                  <div className="mt-2 flex items-start justify-between gap-3 text-xs text-[#151515]/70">
+                    <p>This secret starts or ends with a space or line break. It will be kept exactly as typed.</p>
+                    <button
+                      type="button"
+                      onClick={() => setNewValue(newValue.trim())}
+                      className="flex-shrink-0 font-medium text-[#151515] underline underline-offset-2"
+                    >
+                      Remove them
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 

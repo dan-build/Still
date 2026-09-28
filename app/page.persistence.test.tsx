@@ -210,7 +210,7 @@ describe('secrets', () => {
     expect(fakePlaintext(item.encryptedValue)).toBe('ghp-123')
   })
 
-  it.fails('stores a secret exactly as typed, including edge spaces and line breaks (B3)', async () => {
+  it('stores a secret exactly as typed, including edge spaces and line breaks (B3)', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     await unlock()
     await openLens('Alpha')
@@ -219,6 +219,37 @@ describe('secrets', () => {
     await waitFor(() => expect(storedItems('Alpha').map((item) => item.label)).toContain('Spaced'))
     const item = storedItems('Alpha').find((i) => i.label === 'Spaced')!
     expect(fakePlaintext(item.encryptedValue)).toBe('  spaced out \n')
+  })
+
+  it('points out edge spaces and removes them on request', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Add Secret' }))
+    fireEvent.change(await screen.findByPlaceholderText('What is this for?'), { target: { value: 'Token' } })
+    const value = screen.getByPlaceholderText('Paste or type the secret here…') as HTMLTextAreaElement
+    fireEvent.change(value, { target: { value: 'tok-123\n' } })
+
+    await screen.findByText('This secret starts or ends with a space or line break. It will be kept exactly as typed.')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove them' }))
+    expect(value.value).toBe('tok-123')
+    expect(screen.queryByRole('button', { name: 'Remove them' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add to Lens' }))
+    await waitFor(() => expect(storedItems('Alpha').map((i) => i.label)).toContain('Token'))
+    expect(fakePlaintext(storedItems('Alpha').find((i) => i.label === 'Token')!.encryptedValue)).toBe('tok-123')
+  })
+
+  it('refuses a secret that is only spaces or line breaks, and says why', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Add Secret' }))
+    fireEvent.change(await screen.findByPlaceholderText('What is this for?'), { target: { value: 'Blank' } })
+    fireEvent.change(screen.getByPlaceholderText('Paste or type the secret here…'), { target: { value: '  \n ' } })
+
+    await screen.findByText("A secret can't be only spaces or line breaks.")
+    expect((screen.getByRole('button', { name: 'Add to Lens' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('reveals a saved secret', async () => {
