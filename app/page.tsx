@@ -17,7 +17,8 @@ export default function StillHome() {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [selectedLensId, setSelectedLensId] = useState<string | null>(null)
   const [isRecycleOpen, setIsRecycleOpen] = useState(false)
-  const [toast, setToast] = useState('')
+  const [toast, setToast] = useState<{ message: string; error: boolean } | null>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
   const [hasPin, setHasPin] = useState(false)
@@ -42,33 +43,58 @@ export default function StillHome() {
     setIsOrphaned(status === 'orphaned')
   }, [])
 
-  const showToast = (message: string) => {
-    setToast(message)
-    setTimeout(() => setToast(''), 2200)
+  // Errors stay up longer and replace any earlier toast instead of racing its timer.
+  const showToast = (message: string, error = false) => {
+    clearTimeout(toastTimer.current)
+    setToast({ message, error })
+    toastTimer.current = setTimeout(() => setToast(null), error ? 6000 : 2200)
   }
 
+  const SAVE_FAILED = "Couldn't save that change. Nothing was changed. Please try again."
+
   const createLens = async (name: string) => {
-    const id = await backend().createLens(name)
+    let id: string
+    try {
+      id = await backend().createLens(name)
+    } catch {
+      showToast(SAVE_FAILED, true)
+      return
+    }
     refresh()
     setIsCreateOpen(false)
     setTimeout(() => setSelectedLensId(id), 150)
   }
 
   const moveToRecycleBin = async (lens: LensView) => {
-    await backend().forgetLens(lens.id)
+    try {
+      await backend().forgetLens(lens.id)
+    } catch {
+      showToast(SAVE_FAILED, true)
+      return
+    }
     refresh()
     setSelectedLensId(null)
     showToast('Moved to Recycle Bin')
   }
 
   const restoreFromRecycleBin = async (recycledLens: LensView) => {
-    await backend().restoreLens(recycledLens.id)
+    try {
+      await backend().restoreLens(recycledLens.id)
+    } catch {
+      showToast(SAVE_FAILED, true)
+      return
+    }
     refresh()
     showToast('Restored')
   }
 
   const permanentDelete = async (id: string) => {
-    await backend().deleteLensForever(id)
+    try {
+      await backend().deleteLensForever(id)
+    } catch {
+      showToast(SAVE_FAILED, true)
+      return
+    }
     refresh()
     showToast('Permanently deleted')
   }
@@ -272,8 +298,11 @@ export default function StillHome() {
           />
 
           {toast && (
-            <div className="fixed bottom-8 right-8 bg-white/70 backdrop-blur-xl text-[#151515]/80 text-sm px-6 py-2.5 rounded-[9px] border border-black/[0.04] flex items-center gap-2 z-[100]">
-              <span>✓</span> {toast}
+            <div
+              role={toast.error ? 'alert' : 'status'}
+              className={`fixed bottom-8 right-8 bg-white/70 backdrop-blur-xl text-sm px-6 py-2.5 rounded-[9px] border border-black/[0.04] flex items-center gap-2 z-[100] ${toast.error ? 'text-red-700' : 'text-[#151515]/80'}`}
+            >
+              {!toast.error && <span>✓</span>} {toast.message}
             </div>
           )}
         </div>

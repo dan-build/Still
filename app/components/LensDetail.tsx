@@ -9,7 +9,7 @@ interface LensDetailProps {
   onAddItem: (item: NewItem) => Promise<void>
   onRevealItem: (itemId: string) => Promise<string>
   onDeleteItem: (itemId: string) => Promise<void>
-  onShowToast: (msg: string) => void
+  onShowToast: (msg: string, error?: boolean) => void
   onForget: () => void
 }
 
@@ -76,7 +76,7 @@ export default function LensDetail({
       onShowToast('Secret added successfully')
     } catch (error) {
       console.error('Encryption error:', error)
-      onShowToast('Encryption failed. Please try again.')
+      onShowToast("Couldn't save the secret. Nothing was changed.", true)
     } finally {
       finishProcessing()
     }
@@ -92,7 +92,7 @@ export default function LensDetail({
         const plaintext = await onRevealItem(item.id)
         setRevealed(prev => ({ ...prev, [item.id]: plaintext }))
       } catch {
-        onShowToast('Decryption failed')
+        onShowToast('Decryption failed', true)
       } finally {
         finishProcessing()
       }
@@ -107,14 +107,19 @@ export default function LensDetail({
       await navigator.clipboard.writeText(text)
       onShowToast('Copied')
     } catch {
-      onShowToast('Copy failed')
+      onShowToast('Copy failed', true)
     } finally {
       finishProcessing()
     }
   }
 
   const deleteItem = async (id: string) => {
-    await onDeleteItem(id)
+    try {
+      await onDeleteItem(id)
+    } catch {
+      onShowToast("Couldn't delete the secret. Nothing was changed.", true)
+      return
+    }
     const { [id]: _, ...rest } = revealed
     setRevealed(rest)
     onShowToast('Deleted')

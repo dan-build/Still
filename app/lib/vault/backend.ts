@@ -23,6 +23,9 @@ import {
 } from './model'
 import { STORAGE_KEYS, type ItemType, type PersistedLens, type VaultLists } from './types'
 
+/** A change could not be saved. Nothing in memory or on screen changed. */
+export class VaultWriteError extends Error {}
+
 export type CryptoApi = Pick<
   typeof CryptoModule,
   | 'generateMasterKey'
@@ -163,10 +166,33 @@ export function createLocalStorageBackend(
     if (purged.bin.length !== lists.bin.length) write(purged, ['bin'])
   }
 
+  /**
+   * Saves the given lists, then makes them current. Lists that gain entries are
+   * written first, so a Lens moving between lists is never missing from both if
+   * a write fails midway. On failure, lists already written are put back where
+   * possible, nothing in memory changes, and a VaultWriteError is thrown.
+   */
   function write(next: VaultLists, which: ListName[]) {
-    for (const name of which) {
-      const list = next[name]
-      storage.setItem(name === 'lenses' ? STORAGE_KEYS.lenses : STORAGE_KEYS.bin, serializeLensList(list))
+    const keyOf = (name: ListName) => (name === 'lenses' ? STORAGE_KEYS.lenses : STORAGE_KEYS.bin)
+    const ordered = [...which].sort((a, b) => (next[b].length - lists[b].length) - (next[a].length - lists[a].length))
+    const written: [string, string | null][] = []
+    try {
+      for (const name of ordered) {
+        const key = keyOf(name)
+        const previous = storage.getItem(key)
+        storage.setItem(key, serializeLensList(next[name]))
+        written.push([key, previous])
+      }
+    } catch (error) {
+      for (const [key, previous] of written.reverse()) {
+        try {
+          if (previous === null) storage.removeItem(key)
+          else storage.setItem(key, previous)
+        } catch {
+          // Best effort: the gaining list was written first, so nothing is lost.
+        }
+      }
+      throw new VaultWriteError('Could not save the change', { cause: error })
     }
     lists = next
   }

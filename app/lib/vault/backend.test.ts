@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import * as realCrypto from '../crypto'
 import * as fakeCrypto from '../../test/fakeCrypto'
 import { MemoryStorage } from '../../test/memoryStorage'
-import { createLocalStorageBackend } from './backend'
+import { createLocalStorageBackend, VaultWriteError } from './backend'
 import { STORAGE_KEYS, type PersistedLens } from './types'
 
 const NOW = new Date('2026-09-28T12:00:00.000Z')
@@ -188,6 +188,51 @@ describe('the recycle bin', () => {
     await reopened.unlock('pw-123456')
     expect(reopened.view().bin.map((l) => l.name)).toEqual(['Recent'])
     expect(storedList(storage, STORAGE_KEYS.bin).map((l) => l.name)).toEqual(['Recent'])
+  })
+})
+
+describe('failed writes (B5)', () => {
+  it('reject with VaultWriteError and change nothing in memory or storage', async () => {
+    const { storage, backend } = await freshVault()
+    const lensId = await backend.createLens('A')
+    const view = backend.view()
+    const before = new Map(storage.data)
+    storage.failWrites = true
+
+    await expect(backend.addItem(lensId, { label: 'L', type: 'password', value: 'v' })).rejects.toThrow(VaultWriteError)
+    await expect(backend.createLens('B')).rejects.toThrow(VaultWriteError)
+    await expect(backend.forgetLens(lensId)).rejects.toThrow(VaultWriteError)
+    expect(backend.view()).toEqual(view)
+    expect(storage.data).toEqual(before)
+
+    storage.failWrites = false
+    await backend.addItem(lensId, { label: 'L', type: 'password', value: 'v' })
+    expect(backend.view().lenses[0].itemCount).toBe(1)
+  })
+
+  it('write the list that gains a Lens first, so a Lens is never missing from both', async () => {
+    const { storage, backend } = await freshVault()
+    const a = await backend.createLens('A')
+    await backend.createLens('B')
+
+    storage.writes = []
+    await backend.forgetLens(a)
+    expect(storage.writes).toEqual([STORAGE_KEYS.bin, STORAGE_KEYS.lenses])
+
+    storage.writes = []
+    await backend.restoreLens(a)
+    expect(storage.writes).toEqual([STORAGE_KEYS.lenses, STORAGE_KEYS.bin])
+  })
+
+  it('put back a list already written when the second write fails', async () => {
+    const { storage, backend } = await freshVault()
+    const a = await backend.createLens('A')
+    const before = new Map(storage.data)
+    storage.failKeys.add(STORAGE_KEYS.lenses)
+
+    await expect(backend.forgetLens(a)).rejects.toThrow(VaultWriteError)
+    expect(storage.data).toEqual(before)
+    expect(backend.view().lenses.map((l) => l.id)).toEqual([a])
   })
 })
 

@@ -6,6 +6,8 @@ export class MemoryStorage implements KeyValueStorage {
   readonly data = new Map<string, string>()
   /** Set to make every setItem throw, like a full localStorage. */
   failWrites = false
+  /** Keys whose setItem throws. */
+  failKeys = new Set<string>()
   writes: string[] = []
 
   constructor(initial: Record<string, string | null> = {}) {
@@ -17,7 +19,7 @@ export class MemoryStorage implements KeyValueStorage {
   }
 
   setItem(key: string, value: string) {
-    if (this.failWrites) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+    if (this.failWrites || this.failKeys.has(key)) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
     this.writes.push(key)
     this.data.set(key, value)
   }

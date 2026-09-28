@@ -110,9 +110,19 @@ async function addSecret(label: string, value: string) {
   fireEvent.click(screen.getByRole('button', { name: 'Add to Lens' }))
 }
 
+// vi.restoreAllMocks() does not undo a spy on happy-dom's localStorage, but
+// the spy's own mockRestore() does, so storage spies are tracked here.
+const storageSpies: { mockRestore(): void }[] = []
+function spyOnStorage() {
+  const spy = vi.spyOn(localStorage, 'setItem')
+  storageSpies.push(spy)
+  return spy
+}
+
 beforeEach(() => localStorage.clear())
 afterEach(() => {
   cleanup()
+  for (const spy of storageSpies.splice(0)) spy.mockRestore()
   vi.restoreAllMocks()
 })
 
@@ -121,7 +131,10 @@ afterEach(() => {
 describe('unlock', () => {
   it('loads every Lens and never writes fewer Lenses than storage holds', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }, { id: 'l2', name: 'Beta' }] })
-    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    const before = localStorage.getItem('still-lenses')
+    // Spy on the localStorage object itself: in happy-dom a spy on
+    // Storage.prototype.setItem never sees a call.
+    const setItem = spyOnStorage()
 
     await unlock()
     await screen.findAllByText('Alpha')
@@ -129,7 +142,13 @@ describe('unlock', () => {
 
     const lensWrites = setItem.mock.calls.filter(([key]) => key === 'still-lenses')
     for (const [, value] of lensWrites) expect(JSON.parse(value)).toHaveLength(2)
-    expect(storedNames('still-lenses').sort()).toEqual(['Alpha', 'Beta'])
+    expect(localStorage.getItem('still-lenses')).toBe(before)
+
+    // The spy is live: a real change afterwards is seen.
+    await createLens('Gamma')
+    await waitFor(() =>
+      expect(setItem.mock.calls.some(([key, value]) => key === 'still-lenses' && JSON.parse(value).length === 3)).toBe(true),
+    )
   })
 
   it('shows an error and stays locked on a wrong password', async () => {
@@ -219,6 +238,46 @@ describe('secrets', () => {
 
     await waitFor(() => expect(storedItems('Alpha')).toEqual([]))
     expect(storedNames('still-lenses')).toEqual(['Alpha'])
+  })
+})
+
+describe('failed saves (B5)', () => {
+  function failWritesTo(failing: string) {
+    const original = localStorage.setItem.bind(localStorage)
+    return spyOnStorage().mockImplementation((key: string, value: string) => {
+      if (key === failing) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+      original(key, value)
+    })
+  }
+
+  it('shows an error when a secret can\'t be saved, and changes nothing', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    const before = localStorage.getItem('still-lenses')
+    const spy = failWritesTo('still-lenses')
+    await addSecret('Unsaved', 'v')
+
+    expect((await screen.findByRole('alert')).textContent).toContain("Couldn't save the secret. Nothing was changed.")
+    expect(localStorage.getItem('still-lenses')).toBe(before)
+    expect(screen.queryByText('Unsaved')).toBeNull()
+
+    spy.mockRestore()
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to Lens' }))
+    await waitFor(() => expect(storedItems('Alpha').map((i) => i.label)).toContain('Unsaved'))
+  })
+
+  it('keeps a Lens where it was when forgetting it can\'t be saved', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Keep' }, { id: 'l2', name: 'Drop' }] })
+    await unlock()
+    const before = { lenses: localStorage.getItem('still-lenses'), bin: localStorage.getItem('still-recycle-bin') }
+    await openLens('Drop')
+    failWritesTo('still-lenses')
+    await forgetOpenLens()
+
+    expect((await screen.findByRole('alert')).textContent).toContain("Couldn't save that change. Nothing was changed.")
+    expect({ lenses: localStorage.getItem('still-lenses'), bin: localStorage.getItem('still-recycle-bin') }).toEqual(before)
+    expect(screen.getAllByText('Drop').length).toBeGreaterThan(0)
   })
 })
 
