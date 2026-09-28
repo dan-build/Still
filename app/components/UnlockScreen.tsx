@@ -2,28 +2,35 @@
 
 import { useState } from 'react'
 
+export type UnlockOutcome = 'ok' | 'wrong-password' | 'unreadable-data' | 'failed'
+
 interface UnlockScreenProps {
-  onUnlock: (password: string) => Promise<boolean>
-  hasPin: boolean
+  onUnlock: (password: string) => Promise<UnlockOutcome>
 }
 
-export default function UnlockScreen({ onUnlock, hasPin }: UnlockScreenProps) {
+const MESSAGES: Record<Exclude<UnlockOutcome, 'ok'>, string> = {
+  'wrong-password': 'Incorrect password',
+  'unreadable-data': "Still couldn't read this vault's data. Nothing was changed.",
+  failed: 'Unlocking failed. Nothing was changed. Close other apps to free memory, then try again.',
+}
+
+export default function UnlockScreen({ onUnlock }: UnlockScreenProps) {
   const [input, setInput] = useState('')
-  const [usePin, setUsePin] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
   const handleUnlock = async () => {
-    if (!input.trim()) return
+    // Only empty input is blocked: a password may be made of spaces.
+    if (input.length === 0) return
 
     setIsLoading(true)
     setError('')
 
     try {
-      const success = await onUnlock(input)
-      if (!success) {
-        setError('Incorrect password or PIN')
-        setInput('')
+      const outcome = await onUnlock(input)
+      if (outcome !== 'ok') {
+        setError(MESSAGES[outcome])
+        if (outcome === 'wrong-password') setInput('')
       }
     } catch (err) {
       setError('Something went wrong. Please try again.')
@@ -69,14 +76,16 @@ export default function UnlockScreen({ onUnlock, hasPin }: UnlockScreenProps) {
         <div className="space-y-4">
           <div>
             <div className="text-xs uppercase tracking-[1.5px] text-[#151515]/50 mb-2 font-medium">
-              {usePin ? 'PIN' : 'MASTER PASSWORD'}
+              MASTER PASSWORD
             </div>
             <input
-              type={usePin ? 'text' : 'password'}
+              type="password"
+              autoComplete="current-password"
+              spellCheck={false}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={usePin ? 'Enter your PIN' : 'Enter your password'}
+              placeholder="Enter your password"
               className="w-full bg-white border border-black/10 focus:border-black/30 rounded-[14px] px-5 py-4 text-[17px] placeholder:text-[#151515]/40 focus:outline-none transition-all"
               autoFocus
             />
@@ -88,26 +97,11 @@ export default function UnlockScreen({ onUnlock, hasPin }: UnlockScreenProps) {
 
           <button
             onClick={handleUnlock}
-            disabled={!input.trim() || isLoading}
+            disabled={input.length === 0 || isLoading}
             className="w-full py-4 bg-[#151515] text-white text-sm font-medium rounded-[14px] disabled:opacity-50 transition-all active:scale-[0.985]"
           >
             {isLoading ? 'Unlocking...' : 'Unlock'}
           </button>
-
-          {hasPin && (
-            <div className="text-center">
-              <button
-                onClick={() => {
-                  setUsePin(!usePin)
-                  setInput('')
-                  setError('')
-                }}
-                className="text-xs text-[#151515]/60 hover:text-[#151515] underline"
-              >
-                {usePin ? 'Use password instead' : 'Use PIN instead'}
-              </button>
-            </div>
-          )}
         </div>
 
         <div className="mt-8 text-center text-[11px] text-[#151515]/40">

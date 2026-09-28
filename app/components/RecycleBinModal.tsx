@@ -1,27 +1,12 @@
 'use client'
 
-interface Item {
-  id: string
-  label: string
-  type: 'password' | 'key' | 'note'
-  encryptedValue: string
-}
-
-interface RecycledLens {
-  id: string
-  name: string
-  createdAt: string
-  itemCount: number
-  masterKey: Uint8Array
-  items: Item[]
-  deletedAt: string
-}
+import type { LensView } from '../lib/vault/backend'
 
 interface RecycleBinModalProps {
   isOpen: boolean
   onClose: () => void
-  recycleBin: RecycledLens[]
-  onRestore: (lens: RecycledLens) => void
+  recycleBin: LensView[]
+  onRestore: (lens: LensView) => void
   onPermanentDelete: (id: string) => void
 }
 
@@ -86,7 +71,7 @@ export default function RecycleBinModal({
                   <div className="flex items-center gap-2 mt-1 text-xs text-[#151515]/50">
                     <span>{item.itemCount ?? 0} secrets</span>
         
-                    <span className="text-[11px]">deleted {new Date(item.deletedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                    <span className="text-[11px]">deleted {new Date(item.deletedAt ?? '').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                   </div>
                   </div>
                 </div>

@@ -3,14 +3,12 @@
 import { useState } from 'react'
 
 interface CreatePasswordScreenProps {
-  onCreate: (password: string, pin?: string) => Promise<void>
+  onCreate: (password: string) => Promise<void>
 }
 
 export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenProps) {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [pin, setPin] = useState('')
-  const [usePin, setUsePin] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
@@ -22,20 +20,21 @@ export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenP
       return
     }
 
+    if (password.trim() === '') {
+      setError("Password can't be only spaces")
+      return
+    }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match')
       return
     }
 
-    if (usePin && pin.length < 4) {
-      setError('PIN must be at least 4 digits')
-      return
-    }
 
     setIsLoading(true)
 
     try {
-      await onCreate(password, usePin ? pin : undefined)
+      await onCreate(password)
     } catch (err) {
       setError('Failed to create password. Please try again.')
     } finally {
@@ -77,6 +76,8 @@ export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenP
             <div className="text-xs uppercase tracking-[1.5px] text-[#151515]/50 mb-2 font-medium">MASTER PASSWORD</div>
             <input
               type="password"
+              autoComplete="new-password"
+              spellCheck={false}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Create a strong password"
@@ -88,35 +89,13 @@ export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenP
             <div className="text-xs uppercase tracking-[1.5px] text-[#151515]/50 mb-2 font-medium">CONFIRM PASSWORD</div>
             <input
               type="password"
+              autoComplete="new-password"
+              spellCheck={false}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Confirm your password"
               className="w-full bg-white border border-black/10 focus:border-black/30 rounded-[14px] px-5 py-4 text-[17px] placeholder:text-[#151515]/40 focus:outline-none"
             />
-          </div>
-
-          {/* Optional PIN */}
-          <div className="pt-2">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs uppercase tracking-[1.5px] text-[#151515]/50 font-medium">OPTIONAL PIN</div>
-              <button
-                onClick={() => setUsePin(!usePin)}
-                className="text-xs text-[#151515]/60 hover:text-[#151515]"
-              >
-                {usePin ? 'Remove PIN' : 'Add PIN'}
-              </button>
-            </div>
-
-            {usePin && (
-              <input
-                type="text"
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                maxLength={8}
-                placeholder="6-digit PIN (optional)"
-                className="w-full bg-white border border-black/10 focus:border-black/30 rounded-[14px] px-5 py-4 text-[17px] placeholder:text-[#151515]/40 focus:outline-none"
-              />
-            )}
           </div>
 
           {error && (
@@ -134,8 +113,7 @@ export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenP
           </div>
 
           <div className="text-center text-[11px] text-[#151515]/50 pt-2">
-            We recommend using a strong password.<br />
-            PIN is optional and less secure.
+            We recommend using a strong password.
           </div>
         </div>
       </div>

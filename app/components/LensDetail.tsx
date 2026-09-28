@@ -1,31 +1,16 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { encrypt, decrypt } from '../lib/crypto'
-
-interface Item {
-  id: string
-  label: string
-  type: 'password' | 'key' | 'note'
-  encryptedValue: string
-}
-
-interface Lens {
-  id: string
-  name: string
-  createdAt: string
-  itemCount: number
-  masterKey: Uint8Array
-  items: Item[]
-}
+import type { ItemView, LensView, NewItem } from '../lib/vault/backend'
 
 interface LensDetailProps {
-  lens: Lens
-  items?: Item[]
+  lens: LensView
   onClose: () => void
-  onUpdateItems: (items: Item[]) => void
-  onShowToast: (msg: string) => void
-  onDeleteLens: (lens: Lens) => void
+  onAddItem: (item: NewItem) => Promise<void>
+  onRevealItem: (itemId: string) => Promise<string>
+  onDeleteItem: (itemId: string) => Promise<void>
+  onShowToast: (msg: string, error?: boolean) => void
+  onForget: () => void
 }
 
 // Calm, premium stroke icons
@@ -48,15 +33,16 @@ const NoteIcon = () => (
 )
 
 export default function LensDetail({ 
-  lens, 
-  items = [], 
-  onClose, 
-  onUpdateItems, 
+  lens,
+  onClose,
+  onAddItem,
+  onRevealItem,
+  onDeleteItem,
   onShowToast,
-  onDeleteLens 
+  onForget,
 }: LensDetailProps) {
 
-  const safeItems = items || []
+  const safeItems = lens.items
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [newLabel, setNewLabel] = useState('')
@@ -81,19 +67,8 @@ export default function LensDetail({
     startProcessing()
 
     try {
-      const encryptedValue = await encrypt(newValue.trim(), lens.masterKey)
-      
-      const newItem: Item = {
-        id: Date.now().toString(36),
-        label: newLabel.trim(),
-        type: newType,
-        encryptedValue,
-      }
-
-      const currentItems = items || []
-      const updatedItems = [...currentItems, newItem]
-
-      onUpdateItems(updatedItems)
+      // The value is stored exactly as typed; only the label is trimmed.
+      await onAddItem({ label: newLabel.trim(), type: newType, value: newValue })
 
       setNewLabel('')
       setNewValue('')
@@ -102,46 +77,50 @@ export default function LensDetail({
       onShowToast('Secret added successfully')
     } catch (error) {
       console.error('Encryption error:', error)
-      onShowToast('Encryption failed. Please try again.')
+      onShowToast("Couldn't save the secret. Nothing was changed.", true)
     } finally {
       finishProcessing()
     }
   }
 
-  const toggleReveal = async (item: Item) => {
+  const toggleReveal = async (item: ItemView) => {
     if (revealed[item.id]) {
       const { [item.id]: _, ...rest } = revealed
       setRevealed(rest)
     } else {
       startProcessing()
       try {
-        const plaintext = await decrypt(item.encryptedValue, lens.masterKey)
+        const plaintext = await onRevealItem(item.id)
         setRevealed(prev => ({ ...prev, [item.id]: plaintext }))
       } catch {
-        onShowToast('Decryption failed')
+        onShowToast('Decryption failed', true)
       } finally {
         finishProcessing()
       }
     }
   }
 
-  const copyToClipboard = async (item: Item) => {
+  const copyToClipboard = async (item: ItemView) => {
     startProcessing()
     try {
       let text = revealed[item.id]
-      if (!text) text = await decrypt(item.encryptedValue, lens.masterKey)
+      if (!text) text = await onRevealItem(item.id)
       await navigator.clipboard.writeText(text)
       onShowToast('Copied')
     } catch {
-      onShowToast('Copy failed')
+      onShowToast('Copy failed', true)
     } finally {
       finishProcessing()
     }
   }
 
-  const deleteItem = (id: string) => {
-    const updatedItems = safeItems.filter(i => i.id !== id)
-    onUpdateItems(updatedItems)
+  const deleteItem = async (id: string) => {
+    try {
+      await onDeleteItem(id)
+    } catch {
+      onShowToast("Couldn't delete the secret. Nothing was changed.", true)
+      return
+    }
     const { [id]: _, ...rest } = revealed
     setRevealed(rest)
     onShowToast('Deleted')
@@ -167,11 +146,7 @@ export default function LensDetail({
   }
 
   const confirmForget = () => {
-    const lensWithCurrentItems = {
-      ...lens,
-      items: safeItems
-    }
-    onDeleteLens(lensWithCurrentItems)
+    onForget()
     setShowForgetConfirm(false)
   }
 
@@ -237,7 +212,7 @@ export default function LensDetail({
                     </div>
                     <div>
                       <div className="font-medium text-[17px]">{item.label}</div>
-                      <div className="font-mono text-xs text-[#151515]/50 tracking-[2px] mt-px break-all">
+                      <div data-testid="secret-value" className="font-mono text-xs text-[#151515]/50 tracking-[2px] mt-px break-all whitespace-pre-wrap">
                         {displayValue}
                       </div>
                     </div>
@@ -310,12 +285,31 @@ export default function LensDetail({
               <div>
                 <div className="text-xs text-[#151515]/50 mb-1.5 tracking-wider">VALUE</div>
                 <textarea
+                  spellCheck={false}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
                   value={newValue}
                   onChange={(e) => setNewValue(e.target.value)}
                   placeholder="Paste or type the secret here…"
                   rows={4}
                   className="w-full bg-[#F8F9FA] px-5 py-3.5 rounded-[12px] text-sm resize-y focus:outline-none border border-black/10"
                 />
+                {newValue !== '' && newValue.trim() === '' && (
+                  <p className="mt-2 text-xs text-red-700">A secret can't be only spaces or line breaks.</p>
+                )}
+                {newValue.trim() !== '' && newValue !== newValue.trim() && (
+                  <div className="mt-2 flex items-start justify-between gap-3 text-xs text-[#151515]/70">
+                    <p>This secret starts or ends with a space or line break. It will be kept exactly as typed.</p>
+                    <button
+                      type="button"
+                      onClick={() => setNewValue(newValue.trim())}
+                      className="flex-shrink-0 font-medium text-[#151515] underline underline-offset-2"
+                    >
+                      Remove them
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 

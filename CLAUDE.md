@@ -29,37 +29,50 @@ Tests sit next to the code (`app/**/*.test.ts(x)`):
 - `crypto.vectors.test.ts`: fixed-input byte vectors that any implementation, including the Rust port, must reproduce.
 - `crypto.test.ts`: characterisation tests of the current crypto behaviour.
 - `page.persistence.test.tsx`: drives the UI in happy-dom with fake crypto and checks localStorage.
+- `lib/vault/*.test.ts`: the vault model, format checks and backend. The backend tests also open both golden vaults with the real crypto.
 
-Tests marked `it.fails` are known bugs from the audit. When you fix one, flip it to `it` in the same commit. Never regenerate or edit the fixtures to make a test pass.
+A known bug gets an `it.fails` test first, with a passing sibling that runs the same steps. When you fix it, flip it to `it` in the same commit. Stage 1 left none. Never regenerate or edit the fixtures to make a test pass.
 
 ## Architecture
 
 **Static export + Tauri.** [next.config.mjs](next.config.mjs) sets `output: 'export'`, so the app has to stay fully static: no API routes, server actions, or server-only features. Tauri serves `../out` ([src-tauri/tauri.conf.json](src-tauri/tauri.conf.json)). The Rust side ([src-tauri/src/main.rs](src-tauri/src/main.rs)) is a bare window shell with no custom commands. Everything, including persistence, lives in the webview. `console.*` calls are stripped in production builds.
 
-**State lives in one component.** [app/page.tsx](app/page.tsx) (`'use client'`) owns all app state: the unlock status, the app master key, lenses, and the recycle bin. It passes data and callbacks down to the modal and screen components in `app/components/`. Nothing uses a store or context.
+**The UI talks only to the vault backend.** [app/lib/vault/backend.ts](app/lib/vault/backend.ts) defines `VaultBackend`, and `createLocalStorageBackend` implements it on localStorage and `crypto.ts`.
+- The backend is the only code that touches stored vault data or keys. The UI gets a key-free `view()` of ids and metadata, and calls the backend for every change and reveal.
+- Stage 3b will put a Rust implementation behind the same interface.
+- [app/page.tsx](app/page.tsx) holds UI state only: the view, the selected Lens id, modals and toasts.
+- [app/lib/vault/model.ts](app/lib/vault/model.ts) holds pure list operations.
+- [app/lib/vault/format.ts](app/lib/vault/format.ts) holds v1 shape checks.
+
+Backend rules; the tests depend on them:
+- **Every change is written before it becomes visible,** and changes run one at a time.
+- **A failed write changes nothing** and throws `VaultWriteError`. Lists that gain a Lens are written first, so a Lens is never missing from both lists.
+- **Lenses are kept exactly as stored,** wrapped key included. Unlocking writes nothing, and a Lens whose key can't be unwrapped is kept unchanged but hidden (`view().unreadable`).
+- **A stored list that isn't valid JSON blocks unlocking** (`unreadable-data`), because any save would overwrite it.
+- **Vault data without its key is `'orphaned'`.** `create()` refuses to run, and the UI shows the recovery screen (`setAside()` copies everything to `still-set-aside-<time>-` keys first).
+- **`lock()` zeroes keys and clears the lists,** and every change or write refuses while locked, since writing the cleared lists would wipe the vault.
 
 **Key hierarchy** (all in [app/lib/crypto.ts](app/lib/crypto.ts), using `libsodium-wrappers-sumo`, which is loaded lazily):
 1. Master password → Argon2id (`crypto_pwhash`, SENSITIVE limits, 16-byte salt) → a derived key that wraps a random 32-byte **app master key** (`encryptMasterKey` / `decryptMasterKey`).
 2. Each Lens has its own random 32-byte **lens key**, wrapped by the app master key (`encryptLensMasterKey`).
-3. Each item value is encrypted with a per-item subkey derived from the lens key: `crypto_kdf_derive_from_key` with context `StillSec` and a random uint32 subkey id (`encrypt` / `decrypt`, called from [LensDetail.tsx](app/components/LensDetail.tsx)).
+3. Each item value is encrypted with a per-item subkey derived from the lens key: `crypto_kdf_derive_from_key` with context `StillSec` and a random uint32 subkey id (`encrypt` / `decrypt`, called only from the backend).
 
 All ciphers are XChaCha20-Poly1305 IETF. Ciphertexts are base64 (ORIGINAL variant) with a leading version byte, currently `1`. Item ciphertexts also store the subkey id as a 4-byte little-endian value after the version byte. Changing any of these formats breaks existing vaults, so bump the version byte and keep the decrypt path for older versions.
 
 **Persistence is `localStorage`.** It uses these keys:
-- `still-encrypted-master-key`, `still-salt`, `still-has-pin`: vault setup. When the first two are missing, the app shows `CreatePasswordScreen`.
+- `still-encrypted-master-key`, `still-salt`, `still-has-pin`: vault setup. When the first two are missing, the app shows `CreatePasswordScreen`, or the recovery screen if any Lens data is left. `still-has-pin` is always written as `"false"`: the PIN never worked and was removed.
 - `still-lenses`, `still-recycle-bin`: JSON arrays of lenses. Each lens has its wrapped key in `encryptedMasterKey`, and its items stay encrypted.
 
 localStorage belongs to one origin and one WebKit data folder, so dev and release builds never see each other's vault. On macOS (checked 2026-09-27):
 - **Release or bundled build:** origin `tauri://localhost`, data in `~/Library/WebKit/com.still.app/`. The folder comes from `identifier`, so never change `identifier`.
 - **`npm run tauri:dev`:** origin `http://localhost:3000`. The binary isn't bundled, so its data lives in `~/Library/WebKit/still/`, named after the executable. Keep the dev port at 3000.
 
-The `useEffect` hooks in `page.tsx` decrypt lens keys into memory after unlock and re-wrap them on every state change. The save effects return early when the array is empty, so removing the last lens or emptying the bin is not written back to storage. Recycle-bin entries older than 7 days are purged when the vault loads.
-
-**PIN is incomplete.** `CreatePasswordScreen` collects an optional PIN, but only the `still-has-pin` flag is saved. Unlocking always uses the master password.
+Recycle-bin entries older than 7 days are purged when the vault is unlocked. New ids are 128 random bits in hex. v0.1.0's ids were `Date.now().toString(36)`; they're kept as they are.
 
 ## Conventions
 
 - Components are client components (`'use client'`) styled with inline Tailwind classes and hard-coded hex colors (such as `#151515` and `#F8F9FA`) in a minimal, calm look.
+- UI tests replace crypto with [app/test/fakeCrypto.ts](app/test/fakeCrypto.ts), which makes real v1 blob shapes and throws libsodium's real error messages. In happy-dom, spy on `localStorage` itself, not `Storage.prototype` (that spy sees nothing), and restore it with `mockRestore()`, because `vi.restoreAllMocks()` doesn't.
 - The `@/*` path alias maps to the repo root.
 - Domain terms: a **Lens** is an encrypted collection. An **Item** is a `password`, `key`, or `note` stored in a Lens. The UI calls the recycle bin "Archive", and deleting a Lens is called "forget".
 
