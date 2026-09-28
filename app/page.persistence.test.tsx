@@ -160,7 +160,7 @@ describe('unlock', () => {
     expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull()
   })
 
-  it.fails('unlocks a vault whose password is only spaces (B7)', async () => {
+  it('unlocks a vault whose password is only spaces (B7)', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }], password: '        ' })
     await unlock('        ')
   })
@@ -442,6 +442,16 @@ describe('creating a vault (B4)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create Secure Vault' }))
     await screen.findByRole('button', { name: 'Archive' })
   }
+
+  it('refuses a new master password made only of spaces', async () => {
+    render(createElement(StillHome))
+    fireEvent.change(await screen.findByPlaceholderText('Create a strong password'), { target: { value: '          ' } })
+    fireEvent.change(screen.getByPlaceholderText('Confirm your password'), { target: { value: '          ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create Secure Vault' }))
+
+    await screen.findByText("Password can't be only spaces")
+    expect(localStorage.getItem('still-encrypted-master-key')).toBeNull()
+  })
 
   it('creates a vault and saves its first Lens on a clean install', async () => {
     await createVault('new-password-1')

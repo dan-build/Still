@@ -14,7 +14,8 @@ export default function UnlockScreen({ onUnlock, hasPin }: UnlockScreenProps) {
   const [isLoading, setIsLoading] = useState(false)
 
   const handleUnlock = async () => {
-    if (!input.trim()) return
+    // Only empty input is blocked: a password may be made of spaces.
+    if (input.length === 0) return
 
     setIsLoading(true)
     setError('')
@@ -88,7 +89,7 @@ export default function UnlockScreen({ onUnlock, hasPin }: UnlockScreenProps) {
 
           <button
             onClick={handleUnlock}
-            disabled={!input.trim() || isLoading}
+            disabled={input.length === 0 || isLoading}
             className="w-full py-4 bg-[#151515] text-white text-sm font-medium rounded-[14px] disabled:opacity-50 transition-all active:scale-[0.985]"
           >
             {isLoading ? 'Unlocking...' : 'Unlock'}

@@ -22,6 +22,11 @@ export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenP
       return
     }
 
+    if (password.trim() === '') {
+      setError("Password can't be only spaces")
+      return
+    }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match')
       return
