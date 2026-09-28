@@ -21,7 +21,6 @@ export default function StillHome() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
-  const [hasPin, setHasPin] = useState(false)
   const [isOrphaned, setIsOrphaned] = useState(false)
 
   // Created on first use: the static export renders without a window.
@@ -38,7 +37,6 @@ export default function StillHome() {
 
   useEffect(() => {
     const status = backend().status()
-    setHasPin(backend().hasPinFlag())
     setIsFirstLaunch(status === 'empty')
     setIsOrphaned(status === 'orphaned')
   }, [])
@@ -99,8 +97,8 @@ export default function StillHome() {
     showToast('Permanently deleted')
   }
 
-  const handleCreatePassword = async (password: string, pin?: string) => {
-    await backend().create(password, pin)
+  const handleCreatePassword = async (password: string) => {
+    await backend().create(password)
     refresh()
     setIsUnlocked(true)
     setIsFirstLaunch(false)
@@ -134,7 +132,7 @@ export default function StillHome() {
         ) : isFirstLaunch ? (
           <CreatePasswordScreen onCreate={handleCreatePassword} />
         ) : (
-          <UnlockScreen onUnlock={handleUnlock} hasPin={hasPin} />
+          <UnlockScreen onUnlock={handleUnlock} />
         )
       ) : (
         <div className="min-h-screen bg-[#F8F9FA] text-[#151515] flex justify-center">

@@ -4,12 +4,10 @@ import { useState } from 'react'
 
 interface UnlockScreenProps {
   onUnlock: (password: string) => Promise<boolean>
-  hasPin: boolean
 }
 
-export default function UnlockScreen({ onUnlock, hasPin }: UnlockScreenProps) {
+export default function UnlockScreen({ onUnlock }: UnlockScreenProps) {
   const [input, setInput] = useState('')
-  const [usePin, setUsePin] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
@@ -23,7 +21,7 @@ export default function UnlockScreen({ onUnlock, hasPin }: UnlockScreenProps) {
     try {
       const success = await onUnlock(input)
       if (!success) {
-        setError('Incorrect password or PIN')
+        setError('Incorrect password')
         setInput('')
       }
     } catch (err) {
@@ -70,14 +68,14 @@ export default function UnlockScreen({ onUnlock, hasPin }: UnlockScreenProps) {
         <div className="space-y-4">
           <div>
             <div className="text-xs uppercase tracking-[1.5px] text-[#151515]/50 mb-2 font-medium">
-              {usePin ? 'PIN' : 'MASTER PASSWORD'}
+              MASTER PASSWORD
             </div>
             <input
-              type={usePin ? 'text' : 'password'}
+              type="password"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={usePin ? 'Enter your PIN' : 'Enter your password'}
+              placeholder="Enter your password"
               className="w-full bg-white border border-black/10 focus:border-black/30 rounded-[14px] px-5 py-4 text-[17px] placeholder:text-[#151515]/40 focus:outline-none transition-all"
               autoFocus
             />
@@ -94,21 +92,6 @@ export default function UnlockScreen({ onUnlock, hasPin }: UnlockScreenProps) {
           >
             {isLoading ? 'Unlocking...' : 'Unlock'}
           </button>
-
-          {hasPin && (
-            <div className="text-center">
-              <button
-                onClick={() => {
-                  setUsePin(!usePin)
-                  setInput('')
-                  setError('')
-                }}
-                className="text-xs text-[#151515]/60 hover:text-[#151515] underline"
-              >
-                {usePin ? 'Use password instead' : 'Use PIN instead'}
-              </button>
-            </div>
-          )}
         </div>
 
         <div className="mt-8 text-center text-[11px] text-[#151515]/40">

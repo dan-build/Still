@@ -78,10 +78,8 @@ export interface NewItem {
 
 export interface VaultBackend {
   status(): VaultStatus
-  /** Whether the vault was created with the (never implemented) PIN option. */
-  hasPinFlag(): boolean
   /** Refuses (throws) while the status is 'orphaned', so existing data is never buried. */
-  create(password: string, pin?: string): Promise<void>
+  create(password: string): Promise<void>
   /**
    * Keeps a copy of every stored vault value under a new name, then clears the
    * originals, so a new vault can be created. Nothing is deleted. Returns the prefix.
@@ -222,18 +220,15 @@ export function createLocalStorageBackend(
       return hasOrphanedData() ? 'orphaned' : 'empty'
     },
 
-    hasPinFlag() {
-      return storage.getItem(STORAGE_KEYS.hasPin) === 'true'
-    },
-
-    create(password, pin) {
+    create(password) {
       return serial(async () => {
         if (hasStoredVault() || hasOrphanedData()) throw new VaultDataError('Vault data already exists')
         const key = await crypto.generateMasterKey()
         const { encryptedMasterKey, salt } = await crypto.encryptMasterKey(key, password)
         storage.setItem(STORAGE_KEYS.masterKey, encryptedMasterKey)
         storage.setItem(STORAGE_KEYS.salt, salt)
-        storage.setItem(STORAGE_KEYS.hasPin, pin ? 'true' : 'false')
+        // Kept for the v1 format; the PIN option never worked and has been removed.
+        storage.setItem(STORAGE_KEYS.hasPin, 'false')
         appKey = key
         unlocked = true
         lists = { lenses: [], bin: [] }

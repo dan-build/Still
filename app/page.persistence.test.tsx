@@ -156,7 +156,7 @@ describe('unlock', () => {
     render(createElement(StillHome))
     await enterPassword('not-the-password')
 
-    await screen.findByText('Incorrect password or PIN')
+    await screen.findByText('Incorrect password')
     expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull()
   })
 
@@ -529,14 +529,14 @@ describe('creating a vault (B4)', () => {
 })
 
 describe('PIN (B6)', () => {
-  it.fails('offers no PIN when creating a vault', async () => {
+  it('offers no PIN when creating a vault', async () => {
     render(createElement(StillHome))
     await screen.findByPlaceholderText('Create a strong password')
 
     expect(screen.queryByRole('button', { name: 'Add PIN' })).toBeNull()
   })
 
-  it.fails('offers no PIN on the unlock screen, even for vaults saved with the PIN flag', async () => {
+  it('offers no PIN on the unlock screen, even for vaults saved with the PIN flag', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }], hasPin: true })
     render(createElement(StillHome))
     await screen.findByPlaceholderText('Enter your password')
