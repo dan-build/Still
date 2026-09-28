@@ -76,6 +76,8 @@ export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenP
             <div className="text-xs uppercase tracking-[1.5px] text-[#151515]/50 mb-2 font-medium">MASTER PASSWORD</div>
             <input
               type="password"
+              autoComplete="new-password"
+              spellCheck={false}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Create a strong password"
@@ -87,6 +89,8 @@ export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenP
             <div className="text-xs uppercase tracking-[1.5px] text-[#151515]/50 mb-2 font-medium">CONFIRM PASSWORD</div>
             <input
               type="password"
+              autoComplete="new-password"
+              spellCheck={false}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Confirm your password"

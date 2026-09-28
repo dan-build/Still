@@ -80,6 +80,8 @@ export default function UnlockScreen({ onUnlock }: UnlockScreenProps) {
             </div>
             <input
               type="password"
+              autoComplete="current-password"
+              spellCheck={false}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}

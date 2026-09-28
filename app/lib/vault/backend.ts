@@ -27,6 +27,13 @@ import { STORAGE_KEYS, type ItemType, type PersistedLens, type VaultLists } from
 /** A change could not be saved. Nothing in memory or on screen changed. */
 export class VaultWriteError extends Error {}
 
+/** The vault is locked, so nothing can be read or changed. */
+export class VaultLockedError extends Error {
+  constructor() {
+    super('Vault is locked')
+  }
+}
+
 export type CryptoApi = Pick<
   typeof CryptoModule,
   | 'generateMasterKey'
@@ -183,6 +190,9 @@ export function createLocalStorageBackend(
    * possible, nothing in memory changes, and a VaultWriteError is thrown.
    */
   function write(next: VaultLists, which: ListName[]) {
+    // Lock can happen while a change is waiting on crypto. Its lists are then
+    // empty, and writing them would wipe the vault, so refuse.
+    if (!unlocked) throw new VaultLockedError()
     const keyOf = (name: ListName) => (name === 'lenses' ? STORAGE_KEYS.lenses : STORAGE_KEYS.bin)
     const ordered = [...which].sort((a, b) => (next[b].length - lists[b].length) - (next[a].length - lists[a].length))
     const written: [string, string | null][] = []
@@ -215,8 +225,16 @@ export function createLocalStorageBackend(
   }
 
   function requireAppKey(): Uint8Array {
-    if (!appKey) throw new Error('Vault is locked')
+    if (!unlocked || !appKey) throw new VaultLockedError()
     return appKey
+  }
+
+  /** Runs a change in order, but only while the vault is unlocked. */
+  function change<T>(task: () => Promise<T>): Promise<T> {
+    return serial(async () => {
+      requireAppKey()
+      return task()
+    })
   }
 
   function lensKey(lensId: string): Uint8Array {
@@ -291,8 +309,14 @@ export function createLocalStorageBackend(
     },
 
     lock() {
-      // v0.1.0: keys stay in memory after Lock (fixed in commit 15).
+      // Zero every key held here and forget the vault's contents. (libsodium may
+      // still hold copies in its own memory; stage 3b moves keys to Rust.)
       unlocked = false
+      appKey?.fill(0)
+      appKey = null
+      for (const key of lensKeys.values()) key.fill(0)
+      lensKeys.clear()
+      lists = { lenses: [], bin: [] }
     },
 
     view() {
@@ -305,7 +329,7 @@ export function createLocalStorageBackend(
     },
 
     createLens(name) {
-      return serial(async () => {
+      return change(async () => {
         const key = await crypto.generateMasterKey()
         const lens: PersistedLens = {
           id: newId(),
@@ -322,7 +346,7 @@ export function createLocalStorageBackend(
     },
 
     addItem(lensId, item) {
-      return serial(async () => {
+      return change(async () => {
         const lens = lists.lenses.find((l) => l.id === lensId)
         if (!lens) throw new Error('Unknown Lens')
         const encryptedValue = await crypto.encrypt(item.value, lensKey(lensId))
@@ -332,7 +356,7 @@ export function createLocalStorageBackend(
     },
 
     deleteItem(lensId, itemId) {
-      return serial(async () => {
+      return change(async () => {
         const lens = lists.lenses.find((l) => l.id === lensId)
         if (!lens) throw new Error('Unknown Lens')
         write(setItems(lists, lensId, lens.items.filter((i) => i.id !== itemId)), ['lenses'])
@@ -340,6 +364,7 @@ export function createLocalStorageBackend(
     },
 
     async revealItem(lensId, itemId) {
+      requireAppKey()
       const lens = [...lists.lenses, ...lists.bin].find((l) => l.id === lensId)
       const item = lens?.items.find((i) => i.id === itemId)
       if (!item) throw new Error('Unknown item')
@@ -347,15 +372,15 @@ export function createLocalStorageBackend(
     },
 
     forgetLens(lensId) {
-      return serial(async () => write(moveToBin(lists, lensId, now()), ['lenses', 'bin']))
+      return change(async () => write(moveToBin(lists, lensId, now()), ['lenses', 'bin']))
     },
 
     restoreLens(lensId) {
-      return serial(async () => write(restoreFromBin(lists, lensId), ['lenses', 'bin']))
+      return change(async () => write(restoreFromBin(lists, lensId), ['lenses', 'bin']))
     },
 
     deleteLensForever(lensId) {
-      return serial(async () => write(deleteFromBin(lists, lensId), ['bin']))
+      return change(async () => write(deleteFromBin(lists, lensId), ['bin']))
     },
   }
 }

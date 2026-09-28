@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import * as realCrypto from '../crypto'
 import * as fakeCrypto from '../../test/fakeCrypto'
 import { MemoryStorage } from '../../test/memoryStorage'
-import { createLocalStorageBackend, VaultWriteError } from './backend'
+import { createLocalStorageBackend, VaultLockedError, VaultWriteError } from './backend'
 import { STORAGE_KEYS, type PersistedLens } from './types'
 
 const NOW = new Date('2026-09-28T12:00:00.000Z')
@@ -207,6 +207,77 @@ describe('the recycle bin', () => {
     await reopened.unlock('pw-123456')
     expect(reopened.view().bin.map((l) => l.name)).toEqual(['Recent'])
     expect(storedList(storage, STORAGE_KEYS.bin).map((l) => l.name)).toEqual(['Recent'])
+  })
+})
+
+describe('lock (S1)', () => {
+  it('zeroes every key it held', async () => {
+    const seen: Uint8Array[] = []
+    const watching = {
+      ...fakeCrypto,
+      encryptLensMasterKey: async (lensKey: Uint8Array, appKey: Uint8Array) => {
+        seen.push(lensKey, appKey)
+        return fakeCrypto.encryptLensMasterKey(lensKey, appKey)
+      },
+    }
+    const backend = createLocalStorageBackend(new MemoryStorage(), watching, clock)
+    await backend.create('pw-123456')
+    await backend.createLens('A')
+    await backend.createLens('B')
+    expect(seen.every((key) => key.some((byte) => byte !== 0))).toBe(true)
+
+    backend.lock()
+    expect(seen.length).toBe(4)
+    expect(seen.every((key) => key.every((byte) => byte === 0))).toBe(true)
+    expect(backend.view()).toEqual({ lenses: [], bin: [], unreadable: 0 })
+  })
+
+  it('refuses every change and reveal after Lock, leaving storage untouched', async () => {
+    const { storage, backend } = await freshVault()
+    const a = await backend.createLens('A')
+    const b = await backend.createLens('B')
+    await backend.addItem(a, { label: 'L', type: 'password', value: 'v' })
+    const itemId = backend.view().lenses.find((l) => l.id === a)!.items[0].id
+    await backend.forgetLens(b)
+    const before = new Map(storage.data)
+
+    backend.lock()
+    await expect(backend.forgetLens(a)).rejects.toThrow(VaultLockedError)
+    await expect(backend.restoreLens(b)).rejects.toThrow(VaultLockedError)
+    await expect(backend.deleteLensForever(b)).rejects.toThrow(VaultLockedError)
+    await expect(backend.createLens('C')).rejects.toThrow(VaultLockedError)
+    await expect(backend.addItem(a, { label: 'M', type: 'note', value: 'w' })).rejects.toThrow(VaultLockedError)
+    await expect(backend.deleteItem(a, itemId)).rejects.toThrow(VaultLockedError)
+    await expect(backend.revealItem(a, itemId)).rejects.toThrow(VaultLockedError)
+    expect(storage.data).toEqual(before)
+
+    expect(await backend.unlock('pw-123456')).toEqual({ ok: true })
+    expect(await backend.revealItem(a, itemId)).toBe('v')
+  })
+
+  it('does not write a change that was waiting on crypto when Lock happened', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const slow = {
+      ...fakeCrypto,
+      encrypt: async (plaintext: string, key: Uint8Array) => {
+        await gate
+        return fakeCrypto.encrypt(plaintext, key)
+      },
+    }
+    const storage = new MemoryStorage()
+    const backend = createLocalStorageBackend(storage, slow, clock)
+    await backend.create('pw-123456')
+    const a = await backend.createLens('A')
+    const before = new Map(storage.data)
+
+    const pending = backend.addItem(a, { label: 'L', type: 'password', value: 'v' })
+    await Promise.resolve()
+    backend.lock()
+    release()
+
+    await expect(pending).rejects.toThrow()
+    expect(storage.data).toEqual(before)
   })
 })
 

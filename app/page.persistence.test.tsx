@@ -185,7 +185,7 @@ describe('lock', () => {
     expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull()
   })
 
-  it.fails('closes the open Lens, so it is not shown again after unlocking (S1)', async () => {
+  it('closes the open Lens, so it is not shown again after unlocking (S1)', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     await unlock()
     await openLens('Alpha')
@@ -250,6 +250,18 @@ describe('secrets', () => {
 
     await screen.findByText("A secret can't be only spaces or line breaks.")
     expect((screen.getByRole('button', { name: 'Add to Lens' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('turns off spellcheck and autocorrect for the secret value', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Add Secret' }))
+    const value = await screen.findByPlaceholderText('Paste or type the secret here…')
+
+    expect(value.getAttribute('spellcheck')).toBe('false')
+    expect(value.getAttribute('autocorrect')).toBe('off')
+    expect(value.getAttribute('autocomplete')).toBe('off')
   })
 
   it('reveals a saved secret', async () => {

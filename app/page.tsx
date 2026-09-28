@@ -124,9 +124,15 @@ export default function StillHome() {
     setIsFirstLaunch(true)
   }
 
+  // Lock forgets everything shown: keys are zeroed in the backend, and the
+  // open Lens, modals and any revealed values go with the unmounted UI.
   const lock = () => {
     backend().lock()
     setIsUnlocked(false)
+    setSelectedLensId(null)
+    setIsCreateOpen(false)
+    setIsRecycleOpen(false)
+    setView({ lenses: [], bin: [], unreadable: 0 })
   }
 
   return (

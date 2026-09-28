@@ -285,6 +285,10 @@ export default function LensDetail({
               <div>
                 <div className="text-xs text-[#151515]/50 mb-1.5 tracking-wider">VALUE</div>
                 <textarea
+                  spellCheck={false}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
                   value={newValue}
                   onChange={(e) => setNewValue(e.target.value)}
                   placeholder="Paste or type the secret here…"
