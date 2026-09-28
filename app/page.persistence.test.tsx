@@ -1,95 +1,84 @@
 // @vitest-environment happy-dom
 //
-// Persistence tests for app/page.tsx: they drive the real UI and check what
-// ends up in localStorage. Crypto is replaced by a fast, readable fake;
-// crypto.golden.test.ts and crypto.vectors.test.ts cover the real thing.
+// UI tests for app/page.tsx: they drive the real UI and check what ends up in
+// localStorage. Crypto is replaced by app/test/fakeCrypto.ts, which produces
+// real v1 blob shapes quickly; crypto.golden.test.ts and crypto.vectors.test.ts
+// cover the real thing.
 //
-// `it.fails` marks known bugs from AUDIT.md (B1, B2, B4). The test body says
-// what should happen; it fails today. When a fix lands, change `it.fails` to
-// `it` in the same commit. Each `it.fails` has a passing sibling that runs the
-// same steps, so a broken step can't make a known-bug test "pass" by accident.
+// `it.fails` marks known bugs from AUDIT.md. The test body says what should
+// happen; it fails today. When a fix lands, change `it.fails` to `it` in the
+// same commit. Each `it.fails` has a passing sibling that runs the same steps,
+// so a broken step can't make a known-bug test "pass" by accident.
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeItemBlob, fakeLensKeyBlob, fakeMasterKeyBlob, fakePlaintext } from './test/fakeCrypto'
 
 vi.mock('next/image', () => ({
   default: ({ src, alt }: { src: string; alt: string }) => createElement('img', { src, alt }),
 }))
 
-// Fake crypto. Blobs are readable strings that name their key, so a blob
-// wrapped with the wrong key fails to open, like the real AEAD.
-vi.mock('./lib/crypto', () => {
-  const hex = (data: Uint8Array) => Buffer.from(data).toString('hex')
-  const unhex = (value: string) => new Uint8Array(Buffer.from(value, 'hex'))
-  return {
-    generateMasterKey: async () => crypto.getRandomValues(new Uint8Array(32)),
-    encryptMasterKey: async (key: Uint8Array, password: string) => ({
-      encryptedMasterKey: `MK|${password}|${hex(key)}`,
-      salt: 'SALT',
-    }),
-    decryptMasterKey: async (blob: string, password: string) => {
-      const [tag, pw, key] = blob.split('|')
-      if (tag !== 'MK' || pw !== password) throw new Error('wrong password')
-      return unhex(key)
-    },
-    encryptLensMasterKey: async (lensKey: Uint8Array, appKey: Uint8Array) => `LK|${hex(appKey)}|${hex(lensKey)}`,
-    decryptLensMasterKey: async (blob: string, appKey: Uint8Array) => {
-      const [tag, wrappedWith, lensKey] = blob.split('|')
-      if (tag !== 'LK' || wrappedWith !== hex(appKey)) throw new Error('cannot unwrap lens key')
-      return unhex(lensKey)
-    },
-    encrypt: async (plaintext: string, key: Uint8Array) => `V|${hex(key)}|${plaintext}`,
-    decrypt: async (blob: string, key: Uint8Array) => {
-      const [tag, encryptedWith, ...rest] = blob.split('|')
-      if (tag !== 'V' || encryptedWith !== hex(key)) throw new Error('cannot decrypt')
-      return rest.join('|')
-    },
-  }
-})
+vi.mock('./lib/crypto', () => import('./test/fakeCrypto'))
 
 import StillHome from './page'
 
 // ---- fixtures ---------------------------------------------------------------
 
 const PASSWORD = 'test-password-1'
-const APP_KEY = 'a1'.repeat(32)
-const OTHER_APP_KEY = 'b2'.repeat(32)
+const SALT = new Uint8Array(16).fill(7)
+const APP_KEY = new Uint8Array(32).fill(0xa1)
+const OTHER_APP_KEY = new Uint8Array(32).fill(0xb2)
 const DAY = 24 * 60 * 60 * 1000
 
-type SeedLens = { id: string; name: string; deletedAt?: string; wrappedWith?: string }
+type SeedLens = { id: string; name: string; deletedAt?: string; wrappedWith?: Uint8Array }
+
+const lensKeyFor = (id: string) => new Uint8Array(Buffer.from(id.padEnd(32, '#').slice(0, 32)))
 
 function persisted({ id, name, deletedAt, wrappedWith = APP_KEY }: SeedLens) {
-  const lensKey = id.padEnd(64, '0').slice(0, 64).replace(/[^0-9a-f]/g, 'c')
+  const lensKey = lensKeyFor(id)
   return {
     id,
     name,
     createdAt: '2026-01-01T00:00:00.000Z',
     itemCount: 1,
-    encryptedMasterKey: `LK|${wrappedWith}|${lensKey}`,
-    items: [{ id: `${id}-item`, label: `${name} secret`, type: 'password', encryptedValue: `V|${lensKey}|value-of-${id}` }],
+    encryptedMasterKey: fakeLensKeyBlob(lensKey, wrappedWith),
+    items: [{ id: `${id}-item`, label: `${name} secret`, type: 'password', encryptedValue: fakeItemBlob(`value-of-${id}`, lensKey) }],
     ...(deletedAt ? { deletedAt } : {}),
   }
 }
 
-function seedVault({ lenses = [], bin = [] }: { lenses?: SeedLens[]; bin?: SeedLens[] }) {
-  localStorage.setItem('still-encrypted-master-key', `MK|${PASSWORD}|${APP_KEY}`)
-  localStorage.setItem('still-salt', 'SALT')
-  localStorage.setItem('still-has-pin', 'false')
+function seedVault({
+  lenses = [],
+  bin = [],
+  password = PASSWORD,
+  hasPin = false,
+  masterKeyBlob,
+}: { lenses?: SeedLens[]; bin?: SeedLens[]; password?: string; hasPin?: boolean; masterKeyBlob?: string }) {
+  localStorage.setItem('still-encrypted-master-key', masterKeyBlob ?? fakeMasterKeyBlob(APP_KEY, password, SALT))
+  localStorage.setItem('still-salt', Buffer.from(SALT).toString('base64'))
+  localStorage.setItem('still-has-pin', hasPin ? 'true' : 'false')
   localStorage.setItem('still-lenses', JSON.stringify(lenses.map(persisted)))
   localStorage.setItem('still-recycle-bin', JSON.stringify(bin.map(persisted)))
 }
 
-const stored = (key: 'still-lenses' | 'still-recycle-bin'): { id: string; name: string }[] =>
+type StoredLens = { id: string; name: string; items: { id: string; label: string; type: string; encryptedValue: string }[] }
+
+const stored = (key: 'still-lenses' | 'still-recycle-bin'): StoredLens[] =>
   JSON.parse(localStorage.getItem(key) ?? 'null')
 const storedNames = (key: 'still-lenses' | 'still-recycle-bin') => (stored(key) ?? []).map((lens) => lens.name)
+const storedItems = (lensName: string) => (stored('still-lenses') ?? []).find((lens) => lens.name === lensName)?.items ?? []
 
 // ---- UI steps ---------------------------------------------------------------
 
-async function unlock() {
-  render(createElement(StillHome))
-  fireEvent.change(await screen.findByPlaceholderText('Enter your password'), { target: { value: PASSWORD } })
+async function enterPassword(password = PASSWORD) {
+  fireEvent.change(await screen.findByPlaceholderText('Enter your password'), { target: { value: password } })
   fireEvent.click(screen.getByRole('button', { name: 'Unlock' }))
+}
+
+async function unlock(password = PASSWORD) {
+  render(createElement(StillHome))
+  await enterPassword(password)
   await screen.findByRole('button', { name: 'Archive' })
 }
 
@@ -114,6 +103,13 @@ async function createLens(name: string) {
   fireEvent.click(screen.getByRole('button', { name: 'Create Lens' }))
 }
 
+async function addSecret(label: string, value: string) {
+  fireEvent.click(screen.getByRole('button', { name: 'Add Secret' }))
+  fireEvent.change(await screen.findByPlaceholderText('What is this for?'), { target: { value: label } })
+  fireEvent.change(screen.getByPlaceholderText('Paste or type the secret here…'), { target: { value } })
+  fireEvent.click(screen.getByRole('button', { name: 'Add to Lens' }))
+}
+
 beforeEach(() => localStorage.clear())
 afterEach(() => {
   cleanup()
@@ -134,6 +130,95 @@ describe('unlock', () => {
     const lensWrites = setItem.mock.calls.filter(([key]) => key === 'still-lenses')
     for (const [, value] of lensWrites) expect(JSON.parse(value)).toHaveLength(2)
     expect(storedNames('still-lenses').sort()).toEqual(['Alpha', 'Beta'])
+  })
+
+  it('shows an error and stays locked on a wrong password', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    render(createElement(StillHome))
+    await enterPassword('not-the-password')
+
+    await screen.findByText('Incorrect password or PIN')
+    expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull()
+  })
+
+  it.fails('unlocks a vault whose password is only spaces (B7)', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }], password: '        ' })
+    await unlock('        ')
+  })
+
+  it.fails('reports unreadable vault data differently from a wrong password (S4)', async () => {
+    const truncated = Buffer.from(new Uint8Array(40).fill(1)).toString('base64')
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }], masterKeyBlob: truncated })
+    render(createElement(StillHome))
+    await enterPassword()
+
+    await screen.findByText(/couldn.t read this vault/i)
+  })
+})
+
+describe('lock', () => {
+  it('returns to the unlock screen', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    fireEvent.click(screen.getByRole('button', { name: 'Lock' }))
+
+    await screen.findByPlaceholderText('Enter your password')
+    expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull()
+  })
+
+  it.fails('closes the open Lens, so it is not shown again after unlocking (S1)', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Lock' }))
+    await enterPassword()
+    await screen.findByRole('button', { name: 'Archive' })
+
+    expect(screen.queryByRole('button', { name: 'Forget Lens' })).toBeNull()
+  })
+})
+
+describe('secrets', () => {
+  it('adds a secret and saves it encrypted', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    await addSecret('GitHub', 'ghp-123')
+
+    await waitFor(() => expect(storedItems('Alpha').map((item) => item.label)).toContain('GitHub'))
+    const item = storedItems('Alpha').find((i) => i.label === 'GitHub')!
+    expect(item.encryptedValue).not.toContain('ghp-123')
+    expect(fakePlaintext(item.encryptedValue)).toBe('ghp-123')
+  })
+
+  it.fails('stores a secret exactly as typed, including edge spaces and line breaks (B3)', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    await addSecret('Spaced', '  spaced out \n')
+
+    await waitFor(() => expect(storedItems('Alpha').map((item) => item.label)).toContain('Spaced'))
+    const item = storedItems('Alpha').find((i) => i.label === 'Spaced')!
+    expect(fakePlaintext(item.encryptedValue)).toBe('  spaced out \n')
+  })
+
+  it('reveals a saved secret', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal' }))
+
+    await screen.findByText('value-of-l1')
+  })
+
+  it('deletes a secret and saves the change', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(storedItems('Alpha')).toEqual([]))
+    expect(storedNames('still-lenses')).toEqual(['Alpha'])
   })
 })
 
@@ -262,7 +347,7 @@ describe('creating a vault (B4)', () => {
     await createLens('Fresh')
 
     await waitFor(() => expect(storedNames('still-lenses')).toEqual(['Fresh']))
-    expect(localStorage.getItem('still-encrypted-master-key')).toMatch(/^MK\|new-password-1\|/)
+    expect(localStorage.getItem('still-encrypted-master-key')).toMatch(/^[A-Za-z0-9+/]+={0,2}$/)
   })
 
   it.fails('does not destroy existing Lenses when the master key is missing', async () => {
@@ -272,5 +357,22 @@ describe('creating a vault (B4)', () => {
 
     await waitFor(() => expect(storedNames('still-lenses')).toContain('Fresh'))
     expect(storedNames('still-lenses')).toContain('Orphan')
+  })
+})
+
+describe('PIN (B6)', () => {
+  it.fails('offers no PIN when creating a vault', async () => {
+    render(createElement(StillHome))
+    await screen.findByPlaceholderText('Create a strong password')
+
+    expect(screen.queryByRole('button', { name: 'Add PIN' })).toBeNull()
+  })
+
+  it.fails('offers no PIN on the unlock screen, even for vaults saved with the PIN flag', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }], hasPin: true })
+    render(createElement(StillHome))
+    await screen.findByPlaceholderText('Enter your password')
+
+    expect(screen.queryByRole('button', { name: 'Use PIN instead' })).toBeNull()
   })
 })
