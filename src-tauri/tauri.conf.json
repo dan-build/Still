@@ -51,7 +51,7 @@
       "exceptionDomain": "",
       "frameworks": [],
       "providerShortName": null,
-      "signingIdentity": null
+      "signingIdentity": "-"
     },
     "windows": {
       "certificateThumbprint": null,
