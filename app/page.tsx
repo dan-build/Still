@@ -12,7 +12,7 @@ import CreatePasswordScreen from './components/CreatePasswordScreen'
 
 export default function StillHome() {
   const backendRef = useRef<VaultBackend | null>(null)
-  const [view, setView] = useState<VaultView>({ lenses: [], bin: [] })
+  const [view, setView] = useState<VaultView>({ lenses: [], bin: [], unreadable: 0 })
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [selectedLensId, setSelectedLensId] = useState<string | null>(null)
   const [isRecycleOpen, setIsRecycleOpen] = useState(false)
@@ -131,6 +131,13 @@ export default function StillHome() {
             </header>
 
             <main className="space-y-14">
+              {view.unreadable > 0 && (
+                <div role="status" className="rounded-[12px] border border-black/10 bg-white px-5 py-4 text-sm text-[#151515]/80">
+                  {view.unreadable === 1
+                    ? "1 Lens couldn't be opened. It's kept safe and unchanged."
+                    : `${view.unreadable} Lenses couldn't be opened. They're kept safe and unchanged.`}
+                </div>
+              )}
               {lenses.length === 0 ? (
                 <div className="min-h-[60vh] flex flex-col justify-center">
                   <div className="relative">

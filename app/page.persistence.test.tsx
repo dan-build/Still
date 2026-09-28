@@ -322,7 +322,7 @@ describe('Lenses that cannot be decrypted (B2)', () => {
     await waitFor(() => expect(storedNames('still-lenses').sort()).toEqual(['Good', 'New']))
   })
 
-  it.fails('keeps an unreadable Lens in storage after an unrelated edit', async () => {
+  it('keeps an unreadable Lens in storage after an unrelated edit', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Good' }, { id: 'l2', name: 'Broken', wrappedWith: OTHER_APP_KEY }] })
     await unlock()
     await screen.findAllByText('Good')
@@ -330,6 +330,17 @@ describe('Lenses that cannot be decrypted (B2)', () => {
 
     await waitFor(() => expect(storedNames('still-lenses')).toContain('New'))
     expect(storedNames('still-lenses')).toContain('Broken')
+  })
+  it('tells the user a Lens could not be opened and keeps it unchanged', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Good' }, { id: 'l2', name: 'Broken', wrappedWith: OTHER_APP_KEY }] })
+    const before = stored('still-lenses').find((l) => l.name === 'Broken')
+    await unlock()
+
+    await screen.findByText("1 Lens couldn't be opened. It's kept safe and unchanged.")
+    expect(screen.queryByText('Broken')).toBeNull()
+    await createLens('New')
+    await waitFor(() => expect(storedNames('still-lenses')).toContain('New'))
+    expect(stored('still-lenses').find((l) => l.name === 'Broken')).toEqual(before)
   })
 })
 
@@ -350,7 +361,7 @@ describe('creating a vault (B4)', () => {
     expect(localStorage.getItem('still-encrypted-master-key')).toMatch(/^[A-Za-z0-9+/]+={0,2}$/)
   })
 
-  it.fails('does not destroy existing Lenses when the master key is missing', async () => {
+  it('does not destroy existing Lenses when the master key is missing', async () => {
     localStorage.setItem('still-lenses', JSON.stringify([persisted({ id: 'o1', name: 'Orphan' })]))
     await createVault('new-password-1')
     await createLens('Fresh')

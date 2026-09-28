@@ -11,6 +11,7 @@
 
 import type * as CryptoModule from '../crypto'
 import {
+  VaultDataError,
   addLens,
   deleteLensForever as deleteFromBin,
   forgetLens as moveToBin,
@@ -41,7 +42,7 @@ export interface KeyValueStorage {
 
 export type VaultStatus = 'empty' | 'locked' | 'unlocked'
 
-export type UnlockResult = { ok: true } | { ok: false; reason: 'wrong-password' | 'no-vault' }
+export type UnlockResult = { ok: true } | { ok: false; reason: 'wrong-password' | 'unreadable-data' | 'no-vault' }
 
 export interface ItemView {
   id: string
@@ -61,6 +62,8 @@ export interface LensView {
 export interface VaultView {
   lenses: LensView[]
   bin: LensView[]
+  /** Lenses whose key could not be unwrapped. They are kept, unchanged, but not shown. */
+  unreadable: number
 }
 
 export interface NewItem {
@@ -116,25 +119,25 @@ export function createLocalStorageBackend(
     return storage.getItem(STORAGE_KEYS.masterKey) !== null && storage.getItem(STORAGE_KEYS.salt) !== null
   }
 
-  function readList(key: string): PersistedLens[] {
-    try {
-      return parseLensList(storage.getItem(key))
-    } catch {
-      // v0.1.0: an unparseable list loads as empty (fixed in commit 8).
-      return []
-    }
+  /** Reads both stored lists; throws VaultDataError if either is not a JSON list. */
+  function readLists(): VaultLists {
+    return { lenses: parseLensList(storage.getItem(STORAGE_KEYS.lenses)), bin: parseLensList(storage.getItem(STORAGE_KEYS.bin)) }
   }
 
-  async function openLists(key: Uint8Array) {
+  /**
+   * Unwraps each Lens key. A Lens whose key can't be unwrapped stays in the
+   * lists exactly as stored, so saving writes it back unchanged; it just isn't shown.
+   */
+  async function openLists(stored: VaultLists, key: Uint8Array) {
     const opened: VaultLists = { lenses: [], bin: [] }
     lensKeys.clear()
     for (const name of ['lenses', 'bin'] as const) {
-      for (const lens of readList(name === 'lenses' ? STORAGE_KEYS.lenses : STORAGE_KEYS.bin)) {
+      for (const lens of stored[name]) {
         try {
           lensKeys.set(lens.id, await crypto.decryptLensMasterKey(lens.encryptedMasterKey, key))
           opened[name].push({ ...lens, items: lens.items ?? [] })
         } catch {
-          // v0.1.0: an unreadable Lens is dropped, and erased by the next save (fixed in commit 8).
+          opened[name].push(lens)
         }
       }
     }
@@ -188,9 +191,15 @@ export function createLocalStorageBackend(
         storage.setItem(STORAGE_KEYS.hasPin, pin ? 'true' : 'false')
         appKey = key
         unlocked = true
-        // v0.1.0: Lenses left without a master key are opened with the new key,
-        // fail, and are erased by the next save (fixed in commit 9).
-        await openLists(key)
+        // v0.1.0: Lenses left without a master key are opened with the new key
+        // and fail; they are kept but can never be opened (fixed in commit 9).
+        let stored: VaultLists = { lenses: [], bin: [] }
+        try {
+          stored = readLists()
+        } catch {
+          // An unreadable list is left as it is; commit 9 handles leftover data.
+        }
+        await openLists(stored, key)
       })
     },
 
@@ -206,9 +215,17 @@ export function createLocalStorageBackend(
           // v0.1.0: every failure counts as a wrong password (fixed in commit 14).
           return { ok: false, reason: 'wrong-password' }
         }
+        let stored: VaultLists
+        try {
+          stored = readLists()
+        } catch (error) {
+          // Saving any change would overwrite the unreadable list, so don't open.
+          if (error instanceof VaultDataError) return { ok: false, reason: 'unreadable-data' }
+          throw error
+        }
         appKey = key
         unlocked = true
-        await openLists(key)
+        await openLists(stored, key)
         return { ok: true }
       })
     },
@@ -219,7 +236,12 @@ export function createLocalStorageBackend(
     },
 
     view() {
-      return { lenses: lists.lenses.map(toView), bin: lists.bin.map(toView) }
+      const readable = (lens: PersistedLens) => lensKeys.has(lens.id)
+      return {
+        lenses: lists.lenses.filter(readable).map(toView),
+        bin: lists.bin.filter(readable).map(toView),
+        unreadable: [...lists.lenses, ...lists.bin].filter((lens) => !readable(lens)).length,
+      }
     },
 
     createLens(name) {

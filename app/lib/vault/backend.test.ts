@@ -191,6 +191,43 @@ describe('the recycle bin', () => {
   })
 })
 
+describe('data that cannot be read', () => {
+  it('keeps a Lens whose key cannot be unwrapped, byte for byte, through other changes', async () => {
+    const { storage, backend } = await freshVault()
+    await backend.createLens('Good')
+    const broken: PersistedLens = {
+      id: 'broken', name: 'Broken', createdAt: '2026-01-01T00:00:00.000Z', itemCount: 1,
+      encryptedMasterKey: fakeCrypto.fakeLensKeyBlob(new Uint8Array(32).fill(9), new Uint8Array(32).fill(8)),
+      items: [{ id: 'i', label: 'x', type: 'password', encryptedValue: 'opaque' }],
+    }
+    storage.setItem(STORAGE_KEYS.lenses, JSON.stringify([...storedList(storage, STORAGE_KEYS.lenses), broken]))
+
+    const reopened = createLocalStorageBackend(storage, fakeCrypto, clock)
+    await reopened.unlock('pw-123456')
+    expect(reopened.view().unreadable).toBe(1)
+    expect(reopened.view().lenses.map((l) => l.name)).toEqual(['Good'])
+
+    await reopened.createLens('New')
+    await reopened.forgetLens(reopened.view().lenses.find((l) => l.name === 'Good')!.id)
+    expect(storedList(storage, STORAGE_KEYS.lenses).find((l) => l.id === 'broken')).toEqual(broken)
+  })
+
+  for (const [what, value] of [['invalid JSON', '{oops'], ['not a list', '{"id":"x"}']]) {
+    it(`refuses to open a vault whose Lens list is ${what}, and writes nothing`, async () => {
+      const { storage } = await freshVault()
+      storage.setItem(STORAGE_KEYS.bin, value)
+      const before = new Map(storage.data)
+      storage.writes = []
+
+      const reopened = createLocalStorageBackend(storage, fakeCrypto, clock)
+      expect(await reopened.unlock('pw-123456')).toEqual({ ok: false, reason: 'unreadable-data' })
+      expect(reopened.status()).toBe('locked')
+      expect(storage.writes).toEqual([])
+      expect(storage.data).toEqual(before)
+    })
+  }
+})
+
 describe('golden fixtures with the real crypto', () => {
   for (const fixture of ['vault-v1', 'vault-v1-real']) {
     it(`opens ${fixture} and reveals every secret exactly`, async () => {
