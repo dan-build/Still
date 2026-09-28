@@ -7,7 +7,7 @@ import RecycleBinModal from './components/RecycleBinModal'
 import * as cryptoModule from './lib/crypto'
 import { createLocalStorageBackend, type LensView, type VaultBackend, type VaultView } from './lib/vault/backend'
 import Image from 'next/image'
-import UnlockScreen from './components/UnlockScreen'
+import UnlockScreen, { type UnlockOutcome } from './components/UnlockScreen'
 import CreatePasswordScreen from './components/CreatePasswordScreen'
 import RecoveryScreen from './components/RecoveryScreen'
 
@@ -105,12 +105,17 @@ export default function StillHome() {
     showToast('Secure vault created')
   }
 
-  const handleUnlock = async (password: string): Promise<boolean> => {
-    const result = await backend().unlock(password)
-    if (!result.ok) return false
+  const handleUnlock = async (password: string): Promise<UnlockOutcome> => {
+    let result
+    try {
+      result = await backend().unlock(password)
+    } catch {
+      return 'failed'
+    }
+    if (!result.ok) return result.reason === 'no-vault' ? 'failed' : result.reason
     refresh()
     setIsUnlocked(true)
-    return true
+    return 'ok'
   }
 
   const handleSetAside = async () => {

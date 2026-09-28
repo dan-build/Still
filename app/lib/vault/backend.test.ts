@@ -41,6 +41,25 @@ describe('create, unlock and status', () => {
     expect(backend.status()).toBe('unlocked')
   })
 
+  it('reports damaged vault data as unreadable, before trying the password', async () => {
+    const { storage } = await freshVault()
+    const blob = Buffer.from(storage.getItem(STORAGE_KEYS.masterKey)!, 'base64')
+    blob[0] = 2
+    storage.setItem(STORAGE_KEYS.masterKey, blob.toString('base64'))
+    const reopened = createLocalStorageBackend(storage, fakeCrypto, clock)
+    expect(await reopened.unlock('pw-123456')).toEqual({ ok: false, reason: 'unreadable-data' })
+
+    storage.setItem(STORAGE_KEYS.masterKey, blob.subarray(0, 40).toString('base64'))
+    expect(await reopened.unlock('pw-123456')).toEqual({ ok: false, reason: 'unreadable-data' })
+  })
+
+  it('reports other failures (such as running out of memory) as failed, not a wrong password', async () => {
+    const { storage } = await freshVault()
+    const outOfMemory = { ...fakeCrypto, decryptMasterKey: async () => { throw new RangeError('Cannot enlarge memory') } }
+    const reopened = createLocalStorageBackend(storage, outOfMemory, clock)
+    expect(await reopened.unlock('pw-123456')).toEqual({ ok: false, reason: 'failed' })
+  })
+
   it('reports a missing vault on unlock', async () => {
     const backend = createLocalStorageBackend(new MemoryStorage(), fakeCrypto, clock)
     expect(await backend.unlock('x')).toEqual({ ok: false, reason: 'no-vault' })
@@ -319,6 +338,12 @@ describe('vault data without its key (B4)', () => {
 })
 
 describe('golden fixtures with the real crypto', () => {
+  it('classifies a wrong password as wrong-password with the real libsodium', async () => {
+    const vault = JSON.parse(readFileSync(new URL('../../../fixtures/vault-v1-real/vault.json', import.meta.url), 'utf8'))
+    const backend = createLocalStorageBackend(new MemoryStorage(vault), realCrypto, clock)
+    expect(await backend.unlock('throwaway-vault-20')).toEqual({ ok: false, reason: 'wrong-password' })
+  })
+
   for (const fixture of ['vault-v1', 'vault-v1-real']) {
     it(`opens ${fixture} and reveals every secret exactly`, async () => {
       const read = (name: string) =>

@@ -21,6 +21,7 @@ import {
   serializeLensList,
   setItems,
 } from './model'
+import { AUTH_FAILURE_MESSAGE, isV1MasterKey } from './format'
 import { STORAGE_KEYS, type ItemType, type PersistedLens, type VaultLists } from './types'
 
 /** A change could not be saved. Nothing in memory or on screen changed. */
@@ -46,7 +47,12 @@ export interface KeyValueStorage {
 /** 'orphaned': vault data exists but the master key or salt is missing, so it can't be opened. */
 export type VaultStatus = 'empty' | 'locked' | 'unlocked' | 'orphaned'
 
-export type UnlockResult = { ok: true } | { ok: false; reason: 'wrong-password' | 'unreadable-data' | 'no-vault' }
+/**
+ * wrong-password: the password didn't open the vault.
+ * unreadable-data: stored vault data is damaged; nothing was opened or changed.
+ * failed: something else went wrong, e.g. not enough memory for Argon2id.
+ */
+export type UnlockResult = { ok: true } | { ok: false; reason: 'wrong-password' | 'unreadable-data' | 'failed' | 'no-vault' }
 
 export interface ItemView {
   id: string
@@ -161,7 +167,13 @@ export function createLocalStorageBackend(
     }
     lists = opened
     const purged = purgeExpired(lists, now())
-    if (purged.bin.length !== lists.bin.length) write(purged, ['bin'])
+    if (purged.bin.length !== lists.bin.length) {
+      try {
+        write(purged, ['bin'])
+      } catch {
+        // Unlocking still succeeds; the purge runs again next time.
+      }
+    }
   }
 
   /**
@@ -255,12 +267,13 @@ export function createLocalStorageBackend(
         const blob = storage.getItem(STORAGE_KEYS.masterKey)
         const salt = storage.getItem(STORAGE_KEYS.salt)
         if (blob === null || salt === null) return { ok: false, reason: 'no-vault' }
+        if (!isV1MasterKey(blob, salt)) return { ok: false, reason: 'unreadable-data' }
         let key: Uint8Array
         try {
           key = await crypto.decryptMasterKey(blob, password, salt)
-        } catch {
-          // v0.1.0: every failure counts as a wrong password (fixed in commit 14).
-          return { ok: false, reason: 'wrong-password' }
+        } catch (error) {
+          const wrongPassword = error instanceof Error && error.message === AUTH_FAILURE_MESSAGE
+          return { ok: false, reason: wrongPassword ? 'wrong-password' : 'failed' }
         }
         let stored: VaultLists
         try {

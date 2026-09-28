@@ -165,7 +165,7 @@ describe('unlock', () => {
     await unlock('        ')
   })
 
-  it.fails('reports unreadable vault data differently from a wrong password (S4)', async () => {
+  it('reports unreadable vault data differently from a wrong password (S4)', async () => {
     const truncated = Buffer.from(new Uint8Array(40).fill(1)).toString('base64')
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }], masterKeyBlob: truncated })
     render(createElement(StillHome))

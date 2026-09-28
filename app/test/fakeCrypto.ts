@@ -29,7 +29,9 @@ function tag(...parts: Uint8Array[]): Uint8Array {
 
 const equal = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((byte, i) => byte === b[i])
 const concat = (...parts: Uint8Array[]) => new Uint8Array(Buffer.concat(parts))
-const authFailure = () => new Error('wrong secret key for the given ciphertext')
+// The same errors libsodium-wrappers throws.
+const authFailure = () => new Error('ciphertext cannot be decrypted using that key')
+const tooShort = () => new TypeError('ciphertext is too short')
 
 // ---- blob builders (also used by tests to seed storage) ----------------------
 
@@ -71,7 +73,7 @@ export async function decryptMasterKey(encryptedMasterKey: string, password: str
   const salt = fromB64(saltBase64)
   const data = fromB64(encryptedMasterKey)
   const payload = data.slice(1 + NONCE)
-  if (payload.length < TAG) throw new Error('ciphertext is too short')
+  if (payload.length < TAG) throw tooShort()
   const key = payload.slice(0, payload.length - TAG)
   if (!equal(payload.slice(payload.length - TAG), tag(utf8(password), salt, key))) throw authFailure()
   return key
@@ -85,7 +87,7 @@ export async function decryptLensMasterKey(encryptedLensKey: string, appMasterKe
   const data = fromB64(encryptedLensKey)
   if (data[0] !== 1) throw new Error('Unsupported lens key version')
   const payload = data.slice(1 + NONCE)
-  if (payload.length < TAG) throw new Error('ciphertext is too short')
+  if (payload.length < TAG) throw tooShort()
   const key = payload.slice(0, payload.length - TAG)
   if (!equal(payload.slice(payload.length - TAG), tag(appMasterKey, key))) throw authFailure()
   return key

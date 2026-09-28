@@ -2,8 +2,16 @@
 
 import { useState } from 'react'
 
+export type UnlockOutcome = 'ok' | 'wrong-password' | 'unreadable-data' | 'failed'
+
 interface UnlockScreenProps {
-  onUnlock: (password: string) => Promise<boolean>
+  onUnlock: (password: string) => Promise<UnlockOutcome>
+}
+
+const MESSAGES: Record<Exclude<UnlockOutcome, 'ok'>, string> = {
+  'wrong-password': 'Incorrect password',
+  'unreadable-data': "Still couldn't read this vault's data. Nothing was changed.",
+  failed: 'Unlocking failed. Nothing was changed. Close other apps to free memory, then try again.',
 }
 
 export default function UnlockScreen({ onUnlock }: UnlockScreenProps) {
@@ -19,10 +27,10 @@ export default function UnlockScreen({ onUnlock }: UnlockScreenProps) {
     setError('')
 
     try {
-      const success = await onUnlock(input)
-      if (!success) {
-        setError('Incorrect password')
-        setInput('')
+      const outcome = await onUnlock(input)
+      if (outcome !== 'ok') {
+        setError(MESSAGES[outcome])
+        if (outcome === 'wrong-password') setInput('')
       }
     } catch (err) {
       setError('Something went wrong. Please try again.')
