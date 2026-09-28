@@ -361,13 +361,70 @@ describe('creating a vault (B4)', () => {
     expect(localStorage.getItem('still-encrypted-master-key')).toMatch(/^[A-Za-z0-9+/]+={0,2}$/)
   })
 
+  function snapshot() {
+    return Object.fromEntries(Object.keys(localStorage).map((key) => [key, localStorage.getItem(key)]))
+  }
+
   it('does not destroy existing Lenses when the master key is missing', async () => {
     localStorage.setItem('still-lenses', JSON.stringify([persisted({ id: 'o1', name: 'Orphan' })]))
-    await createVault('new-password-1')
+    const before = snapshot()
+    render(createElement(StillHome))
+
+    await screen.findByText("Still found data it can't open")
+    expect(screen.queryByPlaceholderText('Create a strong password')).toBeNull()
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('treats a master key without its salt as data it can\'t open', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    localStorage.removeItem('still-salt')
+    render(createElement(StillHome))
+
+    await screen.findByText("Still found data it can't open")
+  })
+
+  it('offers a normal new vault when leftover lists are empty', async () => {
+    localStorage.setItem('still-lenses', '[]')
+    localStorage.setItem('still-recycle-bin', '[]')
+    render(createElement(StillHome))
+
+    await screen.findByPlaceholderText('Create a strong password')
+  })
+
+  it('changes nothing if the user cancels setting the data aside', async () => {
+    localStorage.setItem('still-lenses', JSON.stringify([persisted({ id: 'o1', name: 'Orphan' })]))
+    const before = snapshot()
+    render(createElement(StillHome))
+    fireEvent.click(await screen.findByRole('button', { name: 'Set the old data aside…' }))
+    await screen.findByText('Set the old data aside?')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await screen.findByText("Still found data it can't open")
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('sets the old data aside after confirmation, keeping every value, then starts a new vault', async () => {
+    const orphan = JSON.stringify([persisted({ id: 'o1', name: 'Orphan' })])
+    localStorage.setItem('still-lenses', orphan)
+    localStorage.setItem('still-has-pin', 'false')
+    render(createElement(StillHome))
+    fireEvent.click(await screen.findByRole('button', { name: 'Set the old data aside…' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Set aside and start fresh' }))
+
+    await screen.findByPlaceholderText('Create a strong password')
+    const keptLenses = Object.keys(localStorage).find((key) => /^still-set-aside-.*-still-lenses$/.test(key))!
+    expect(localStorage.getItem(keptLenses)).toBe(orphan)
+    expect(Object.keys(localStorage).some((key) => /^still-set-aside-.*-still-has-pin$/.test(key))).toBe(true)
+    expect(localStorage.getItem('still-lenses')).toBeNull()
+
+    fireEvent.change(screen.getByPlaceholderText('Create a strong password'), { target: { value: 'new-password-1' } })
+    fireEvent.change(screen.getByPlaceholderText('Confirm your password'), { target: { value: 'new-password-1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create Secure Vault' }))
+    await screen.findByRole('button', { name: 'Archive' })
     await createLens('Fresh')
 
-    await waitFor(() => expect(storedNames('still-lenses')).toContain('Fresh'))
-    expect(storedNames('still-lenses')).toContain('Orphan')
+    await waitFor(() => expect(storedNames('still-lenses')).toEqual(['Fresh']))
+    expect(localStorage.getItem(keptLenses)).toBe(orphan)
   })
 })
 

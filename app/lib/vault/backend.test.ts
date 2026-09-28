@@ -228,6 +228,51 @@ describe('data that cannot be read', () => {
   }
 })
 
+describe('vault data without its key (B4)', () => {
+  const orphanLens = JSON.stringify([{ id: 'o', name: 'Orphan', createdAt: '', itemCount: 0, encryptedMasterKey: 'x', items: [] }])
+
+  it('reports orphaned data: Lenses without a key, or a key without its salt', () => {
+    expect(createLocalStorageBackend(new MemoryStorage({ [STORAGE_KEYS.lenses]: orphanLens }), fakeCrypto, clock).status()).toBe('orphaned')
+    expect(createLocalStorageBackend(new MemoryStorage({ [STORAGE_KEYS.bin]: '{broken' }), fakeCrypto, clock).status()).toBe('orphaned')
+    expect(createLocalStorageBackend(new MemoryStorage({ [STORAGE_KEYS.masterKey]: 'k' }), fakeCrypto, clock).status()).toBe('orphaned')
+    expect(createLocalStorageBackend(new MemoryStorage({ [STORAGE_KEYS.lenses]: '[]', [STORAGE_KEYS.bin]: '[]' }), fakeCrypto, clock).status()).toBe('empty')
+  })
+
+  it('refuses to create a vault over existing data', async () => {
+    const storage = new MemoryStorage({ [STORAGE_KEYS.lenses]: orphanLens })
+    const backend = createLocalStorageBackend(storage, fakeCrypto, clock)
+    await expect(backend.create('pw-123456')).rejects.toThrow('Vault data already exists')
+    expect(storage.getItem(STORAGE_KEYS.masterKey)).toBeNull()
+
+    const { storage: full } = await freshVault()
+    await expect(createLocalStorageBackend(full, fakeCrypto, clock).create('other')).rejects.toThrow()
+  })
+
+  it('sets data aside by copying every value before removing the originals', async () => {
+    const storage = new MemoryStorage({ [STORAGE_KEYS.lenses]: orphanLens, [STORAGE_KEYS.hasPin]: 'true', [STORAGE_KEYS.masterKey]: 'k' })
+    const backend = createLocalStorageBackend(storage, fakeCrypto, clock)
+    const prefix = await backend.setAside()
+
+    expect(prefix).toBe(`still-set-aside-${NOW.toISOString()}-`)
+    expect(Object.fromEntries(storage.data)).toEqual({
+      [prefix + STORAGE_KEYS.lenses]: orphanLens,
+      [prefix + STORAGE_KEYS.hasPin]: 'true',
+      [prefix + STORAGE_KEYS.masterKey]: 'k',
+    })
+    expect(backend.status()).toBe('empty')
+    await backend.create('pw-123456')
+    expect(backend.status()).toBe('unlocked')
+  })
+
+  it('removes nothing if copying fails', async () => {
+    const storage = new MemoryStorage({ [STORAGE_KEYS.lenses]: orphanLens })
+    storage.failWrites = true
+    const backend = createLocalStorageBackend(storage, fakeCrypto, clock)
+    await expect(backend.setAside()).rejects.toThrow()
+    expect(storage.getItem(STORAGE_KEYS.lenses)).toBe(orphanLens)
+  })
+})
+
 describe('golden fixtures with the real crypto', () => {
   for (const fixture of ['vault-v1', 'vault-v1-real']) {
     it(`opens ${fixture} and reveals every secret exactly`, async () => {

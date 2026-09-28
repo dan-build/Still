@@ -9,6 +9,7 @@ import { createLocalStorageBackend, type LensView, type VaultBackend, type Vault
 import Image from 'next/image'
 import UnlockScreen from './components/UnlockScreen'
 import CreatePasswordScreen from './components/CreatePasswordScreen'
+import RecoveryScreen from './components/RecoveryScreen'
 
 export default function StillHome() {
   const backendRef = useRef<VaultBackend | null>(null)
@@ -20,6 +21,7 @@ export default function StillHome() {
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
   const [hasPin, setHasPin] = useState(false)
+  const [isOrphaned, setIsOrphaned] = useState(false)
 
   // Created on first use: the static export renders without a window.
   const backend = () => {
@@ -37,6 +39,7 @@ export default function StillHome() {
     const status = backend().status()
     setHasPin(backend().hasPinFlag())
     setIsFirstLaunch(status === 'empty')
+    setIsOrphaned(status === 'orphaned')
   }, [])
 
   const showToast = (message: string) => {
@@ -86,6 +89,12 @@ export default function StillHome() {
     return true
   }
 
+  const handleSetAside = async () => {
+    await backend().setAside()
+    setIsOrphaned(false)
+    setIsFirstLaunch(true)
+  }
+
   const lock = () => {
     backend().lock()
     setIsUnlocked(false)
@@ -94,7 +103,9 @@ export default function StillHome() {
   return (
     <>
       {!isUnlocked ? (
-        isFirstLaunch ? (
+        isOrphaned ? (
+          <RecoveryScreen onSetAside={handleSetAside} />
+        ) : isFirstLaunch ? (
           <CreatePasswordScreen onCreate={handleCreatePassword} />
         ) : (
           <UnlockScreen onUnlock={handleUnlock} hasPin={hasPin} />

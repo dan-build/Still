@@ -40,7 +40,8 @@ export interface KeyValueStorage {
   removeItem(key: string): void
 }
 
-export type VaultStatus = 'empty' | 'locked' | 'unlocked'
+/** 'orphaned': vault data exists but the master key or salt is missing, so it can't be opened. */
+export type VaultStatus = 'empty' | 'locked' | 'unlocked' | 'orphaned'
 
 export type UnlockResult = { ok: true } | { ok: false; reason: 'wrong-password' | 'unreadable-data' | 'no-vault' }
 
@@ -76,7 +77,13 @@ export interface VaultBackend {
   status(): VaultStatus
   /** Whether the vault was created with the (never implemented) PIN option. */
   hasPinFlag(): boolean
+  /** Refuses (throws) while the status is 'orphaned', so existing data is never buried. */
   create(password: string, pin?: string): Promise<void>
+  /**
+   * Keeps a copy of every stored vault value under a new name, then clears the
+   * originals, so a new vault can be created. Nothing is deleted. Returns the prefix.
+   */
+  setAside(): Promise<string>
   unlock(password: string): Promise<UnlockResult>
   lock(): void
   view(): VaultView
@@ -117,6 +124,16 @@ export function createLocalStorageBackend(
 
   function hasStoredVault() {
     return storage.getItem(STORAGE_KEYS.masterKey) !== null && storage.getItem(STORAGE_KEYS.salt) !== null
+  }
+
+  /** Vault data that a new vault would bury: a lone key or salt, or any Lens data. */
+  function hasOrphanedData() {
+    if (hasStoredVault()) return false
+    if (storage.getItem(STORAGE_KEYS.masterKey) !== null || storage.getItem(STORAGE_KEYS.salt) !== null) return true
+    return [STORAGE_KEYS.lenses, STORAGE_KEYS.bin].some((key) => {
+      const raw = storage.getItem(key)
+      return raw !== null && raw.trim() !== '[]'
+    })
   }
 
   /** Reads both stored lists; throws VaultDataError if either is not a JSON list. */
@@ -175,7 +192,8 @@ export function createLocalStorageBackend(
   return {
     status() {
       if (unlocked) return 'unlocked'
-      return hasStoredVault() ? 'locked' : 'empty'
+      if (hasStoredVault()) return 'locked'
+      return hasOrphanedData() ? 'orphaned' : 'empty'
     },
 
     hasPinFlag() {
@@ -184,6 +202,7 @@ export function createLocalStorageBackend(
 
     create(password, pin) {
       return serial(async () => {
+        if (hasStoredVault() || hasOrphanedData()) throw new VaultDataError('Vault data already exists')
         const key = await crypto.generateMasterKey()
         const { encryptedMasterKey, salt } = await crypto.encryptMasterKey(key, password)
         storage.setItem(STORAGE_KEYS.masterKey, encryptedMasterKey)
@@ -191,15 +210,22 @@ export function createLocalStorageBackend(
         storage.setItem(STORAGE_KEYS.hasPin, pin ? 'true' : 'false')
         appKey = key
         unlocked = true
-        // v0.1.0: Lenses left without a master key are opened with the new key
-        // and fail; they are kept but can never be opened (fixed in commit 9).
-        let stored: VaultLists = { lenses: [], bin: [] }
-        try {
-          stored = readLists()
-        } catch {
-          // An unreadable list is left as it is; commit 9 handles leftover data.
+        lists = { lenses: [], bin: [] }
+        lensKeys.clear()
+      })
+    },
+
+    setAside() {
+      return serial(async () => {
+        const prefix = `still-set-aside-${now().toISOString()}-`
+        const keys = Object.values(STORAGE_KEYS)
+        const values = keys.map((key) => [key, storage.getItem(key)] as const)
+        for (const [key, value] of values) if (value !== null) storage.setItem(prefix + key, value)
+        for (const [key, value] of values) {
+          if (value !== null && storage.getItem(prefix + key) !== value) throw new VaultDataError('Could not copy vault data')
         }
-        await openLists(stored, key)
+        for (const [key, value] of values) if (value !== null) storage.removeItem(key)
+        return prefix
       })
     },
 
