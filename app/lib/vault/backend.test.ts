@@ -145,6 +145,34 @@ describe('the recycle bin', () => {
     expect(reopened.view().bin.map((l) => l.name)).toEqual(['Only'])
   })
 
+  it('saves an empty bin after deleting or restoring its last entry', async () => {
+    const { storage, backend } = await freshVault()
+    const a = await backend.createLens('A')
+    const b = await backend.createLens('B')
+    await backend.forgetLens(a)
+    await backend.deleteLensForever(a)
+    expect(storage.getItem(STORAGE_KEYS.bin)).toBe('[]')
+
+    await backend.forgetLens(b)
+    await backend.restoreLens(b)
+    expect(storage.getItem(STORAGE_KEYS.bin)).toBe('[]')
+    expect(storedList(storage, STORAGE_KEYS.lenses).map((l) => l.name)).toEqual(['B'])
+  })
+
+  it('saves an empty bin when the 7-day purge empties it', async () => {
+    const { storage, backend } = await freshVault()
+    await backend.createLens('Keep')
+    const old = await backend.createLens('Old')
+    await backend.forgetLens(old)
+    const bin = storedList(storage, STORAGE_KEYS.bin)
+    bin[0].deletedAt = new Date(NOW.getTime() - 8 * 24 * 3600 * 1000).toISOString()
+    storage.setItem(STORAGE_KEYS.bin, JSON.stringify(bin))
+
+    const reopened = createLocalStorageBackend(storage, fakeCrypto, clock)
+    await reopened.unlock('pw-123456')
+    expect(storage.getItem(STORAGE_KEYS.bin)).toBe('[]')
+  })
+
   it('purges bin entries older than 7 days on unlock and saves that', async () => {
     const { storage, backend } = await freshVault()
     await backend.createLens('Keep')

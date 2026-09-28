@@ -79,6 +79,20 @@ describe('mutations', () => {
     expect(next.bin).toEqual([])
   })
 
+  it('restoring a Lens that v0.1.0 left in both lists replaces the stale copy', () => {
+    const stale = lens('dup', { name: 'Stale copy' })
+    const newer = lens('dup', { name: 'Newer copy', deletedAt: daysAgo(1) })
+    const next = restoreLens({ lenses: [lens('a'), stale], bin: [newer] }, 'dup')
+    expect(next.lenses.map((l) => [l.id, l.name])).toEqual([['dup', 'Newer copy'], ['a', 'Lens a']])
+    expect(next.bin).toEqual([])
+  })
+
+  it('forgetting a Lens that v0.1.0 left in both lists replaces the stale bin copy', () => {
+    const next = forgetLens({ lenses: [lens('dup'), lens('a')], bin: [lens('dup', { deletedAt: daysAgo(3) })] }, 'dup', NOW)
+    expect(next.bin.map((l) => [l.id, l.deletedAt])).toEqual([['dup', NOW.toISOString()]])
+    expect(next.lenses.map((l) => l.id)).toEqual(['a'])
+  })
+
   it('deletes a bin entry for good', () => {
     expect(deleteLensForever(base, 'z').bin).toEqual([])
   })

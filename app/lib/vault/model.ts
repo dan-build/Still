@@ -42,15 +42,24 @@ export function forgetLens(state: VaultLists, lensId: string, now: Date): VaultL
   if (!lens) return state
   return {
     lenses: state.lenses.filter((l) => l.id !== lensId),
-    bin: [{ ...lens, deletedAt: now.toISOString() }, ...state.bin],
+    // A stale bin copy left by v0.1.0 (see restoreLens) is replaced, not duplicated.
+    bin: [{ ...lens, deletedAt: now.toISOString() }, ...state.bin.filter((l) => l.id !== lensId)],
   }
 }
 
+/**
+ * Moves a Lens from the bin back to the front of the list. v0.1.0 could leave
+ * a forgotten Lens in both lists; the bin copy is the newer one (forgetting
+ * moved the Lens's latest items there), so it replaces the stale copy.
+ */
 export function restoreLens(state: VaultLists, lensId: string): VaultLists {
   const recycled = state.bin.find((l) => l.id === lensId)
   if (!recycled) return state
   const { deletedAt: _deletedAt, ...lens } = recycled
-  return { lenses: [lens, ...state.lenses], bin: state.bin.filter((l) => l.id !== lensId) }
+  return {
+    lenses: [lens, ...state.lenses.filter((l) => l.id !== lensId)],
+    bin: state.bin.filter((l) => l.id !== lensId),
+  }
 }
 
 export function deleteLensForever(state: VaultLists, lensId: string): VaultLists {

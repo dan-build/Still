@@ -257,7 +257,7 @@ describe('the recycle bin (B1)', () => {
     await waitFor(() => expect(storedNames('still-recycle-bin')).toEqual(['Stays']))
   })
 
-  it.fails('persists "Delete forever" on the last bin entry', async () => {
+  it('persists "Delete forever" on the last bin entry', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Keep' }], bin: [{ id: 'b1', name: 'Gone', deletedAt: new Date().toISOString() }] })
     await unlock()
     await openArchive()
@@ -280,7 +280,7 @@ describe('the recycle bin (B1)', () => {
     await waitFor(() => expect(storedNames('still-recycle-bin')).toEqual(['Stays']))
   })
 
-  it.fails('persists restoring the last bin entry', async () => {
+  it('persists restoring the last bin entry', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Keep' }], bin: [{ id: 'b1', name: 'Back', deletedAt: new Date().toISOString() }] })
     await unlock()
     await openArchive()
@@ -302,7 +302,7 @@ describe('the recycle bin (B1)', () => {
     await waitFor(() => expect(storedNames('still-recycle-bin')).toEqual(['Recent']))
   })
 
-  it.fails('persists the 7-day purge when it empties the bin', async () => {
+  it('persists the 7-day purge when it empties the bin', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Keep' }], bin: [{ id: 'b1', name: 'Old', deletedAt: new Date(Date.now() - 8 * DAY).toISOString() }] })
     await unlock()
     await openArchive()
