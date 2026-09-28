@@ -4,7 +4,7 @@
 
 No account, no sync, no telemetry. Still never connects to the internet.
 
-> **Early pre-release (v0.1.0).** It works, but has known issues that can lose data in specific cases. Read [Known issues](#known-issues) before storing anything you can't afford to lose.
+> **Early pre-release (v0.1.1).** The data-loss issues found in v0.1.0 are fixed, but Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
 
 ![Still showing a Lens with three secrets](docs/screenshot.png)
 
@@ -14,7 +14,7 @@ No account, no sync, no telemetry. Still never connects to the internet.
 - **Lenses.** Separate collections for different parts of your life, such as work, personal or banking. Each Lens has its own encryption key.
 - **Three kinds of secret:** passwords, API keys or tokens, and multi-line secure notes. Reveal a secret, copy it, or delete it.
 - **A 7-day recycle bin.** A Lens you forget moves to the Archive for 7 days, where you can restore it or delete it for good.
-- **Lock.** One click returns Still to the password screen.
+- **Lock.** One click returns Still to the password screen and clears its keys from the app's memory.
 - **Offline by design.** No servers, no accounts and no analytics. Your vault lives only on your Mac.
 - **Open source** under the MIT licence. Read the code, or build it yourself instead of trusting a download.
 
@@ -41,27 +41,31 @@ Anyone who can read your Mac's files can see those, but not the secret values.
 
 ## Known issues
 
-These affect **v0.1.0**, the current release. Fixes are planned for **v0.1.1**.
+**Fixed in v0.1.1:**
+- forgetting your only Lens, and changes to the last item in the Archive, weren't saved;
+- a Lens that couldn't be read could be erased;
+- spaces at the start or end of a secret were removed.
 
-- **Forgetting your only Lens isn't saved.** After you restart, it shows up both in your Lenses and in the Archive. Keep at least one other Lens until the fix ships.
-- **Changes to the last item in the Archive aren't saved.** If "Delete forever" or "Restore" acts on the only Lens in the Archive, or the 7-day clean-up empties it, the Lens comes back after a restart. A Lens you've deleted forever may still be on disk.
-- **Spaces and line breaks at the start or end of a secret are removed** when you save it. A password that really ends in a space will be stored without it.
-- **The optional PIN does nothing.** Setting a PIN has no effect, and "Use PIN instead" on the unlock screen can never unlock. Use your master password. In PIN mode, the field also shows what you type as plain text.
-- **A master password made only of spaces** is accepted when you create the vault, but can't be entered afterwards.
-- **In rare cases a Lens can disappear.** This can happen if the saved data is damaged, or if part of the vault goes missing. Still hides an unreadable Lens without warning, and the next change you make erases it.
-- **Unlocking freezes the window for a few seconds.** Every failure shows as "Incorrect password or PIN", even when the real problem is something else, such as damaged data.
+The PIN, which never worked, is gone. The [CHANGELOG](CHANGELOG.md) has the full list.
+
+**If you used v0.1.0:** it removed spaces and line breaks at the start or end of a secret before saving. Still can't detect or restore those characters. If a saved secret doesn't work and the real one starts or ends with a space or line break, delete it and add it again.
+
+Still open in **v0.1.1**:
+
+- **Unlocking freezes the window for a few seconds.** The password hashing runs where the app draws its window. This goes away with the move to Rust (see the [Roadmap](#roadmap)).
+- **Lens names, labels, types and dates aren't encrypted yet.** See [What's encrypted](#whats-encrypted).
+- **Copied secrets stay on the clipboard** until you copy something else, and **Still doesn't lock itself** after a period of inactivity.
 
 ## Download and install
 
-Still is a macOS app. The current release is a pre-release.
+Still is a macOS app. The current release, v0.1.1, is a pre-release. It's a universal build that runs natively on both Intel and Apple Silicon Macs.
 
-1. Download `Still-0.1.0.dmg` from the [Releases page](https://github.com/dan-build/Still/releases).
-2. Optional but recommended: check the download. In Terminal, run `shasum -a 256 ~/Downloads/Still-0.1.0.dmg`. It should print:
-   `1ae0e529676abf693350aa85be51c6307e06a88de121a9853bf1155e90453827`
+1. From the [Releases page](https://github.com/dan-build/Still/releases), download the `.dmg` and `SHA256SUMS.txt`.
+2. Optional but recommended: check the download. In Terminal, run `cd ~/Downloads && shasum -a 256 -c SHA256SUMS.txt`. It should print the `.dmg`'s name followed by `OK`.
 3. Open the `.dmg` and drag **Still** into your **Applications** folder.
-4. The app isn't signed or notarised yet, so macOS blocks it the first time you open it. Go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the message about Still.
+4. The app isn't signed with an Apple Developer ID yet, so macOS blocks it the first time you open it. Go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the message about Still.
 
-The v0.1.0 build is for Intel Macs. On Apple Silicon Macs it runs through Rosetta 2, which macOS offers to install if needed.
+Vaults from v0.1.0 open in v0.1.1 as they are; there's nothing to migrate.
 
 Your vault is stored in `~/Library/WebKit/com.still.app/`. Deleting that folder deletes your vault.
 
@@ -93,7 +97,7 @@ Development builds keep their own separate vault, so they never touch your real 
 
 ## Roadmap
 
-1. **v0.1.1: fix the data-loss issues** listed above. It will also be the first universal macOS build, running natively on both Intel and Apple Silicon Macs, and built in GitHub Actions from the public source.
+1. ~~**v0.1.1: fix the data-loss issues**~~ Done in v0.1.1, together with the first universal macOS build, built in GitHub Actions from the public source.
 2. **Move encryption and key handling into Rust.** Keys will stay out of the app's web view. This also brings clipboard clearing and auto-lock.
 3. **Store the vault in its own file** instead of the web view's storage. Existing vaults will move across automatically on first launch.
 4. **Encrypt Lens names and labels as well.** Older vaults will keep opening.

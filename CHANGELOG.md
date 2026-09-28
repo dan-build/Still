@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-28
+
 ### Fixed
 
 - **Forgetting your only Lens is now saved.** Before, it came back after a restart, both in your Lenses and in the Archive.
@@ -16,10 +18,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Secrets are stored exactly as typed.** Spaces and line breaks at the start or end of a secret were removed before saving. When a secret starts or ends with them, Still now says so and offers to remove them.
 - **A master password made only of spaces now unlocks its vault.** New vaults no longer accept one.
 - **A change that can't be saved** (for example, because storage is full) now shows an error instead of looking saved. Nothing is lost when a save fails partway.
+- **Revealed secrets keep their spaces and line breaks on screen,** so multi-line notes show as written.
 - **Unlock errors now say what happened:** a wrong password, vault data that can't be read, or another failure such as running out of memory. Before, every failure showed "Incorrect password or PIN".
 
 ### Changed
 
+- **One download for every Mac.** The macOS app is now a universal build that runs natively on Intel and Apple Silicon. v0.1.0 was Intel-only and ran through Rosetta on Apple Silicon.
+- **The app is ad-hoc signed.** It still isn't signed with an Apple Developer ID, so macOS asks you to allow it once.
 - **Lock now clears the app's keys from its own memory** and closes the open Lens, instead of only hiding the screen.
 - **Secret fields turn off spellcheck and autocorrect.**
 - **New Lenses and secrets get random ids.** The old ones were based on the creation time, so two could clash. Existing ids are unchanged.
@@ -44,5 +49,6 @@ First public pre-release, for macOS.
 - An Archive (recycle bin) that keeps forgotten Lenses for 7 days.
 - Offline by design: no accounts, servers or telemetry.
 
-[Unreleased]: https://github.com/dan-build/Still/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/dan-build/Still/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/dan-build/Still/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/dan-build/Still/releases/tag/v0.1.0

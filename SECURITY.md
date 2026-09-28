@@ -20,7 +20,7 @@ Still is pre-1.0. Only the latest commit on `main` gets fixes.
 These are known, and being worked on:
 
 - **Lens names, item labels, item types, dates and counts are stored unencrypted.** Only the secret values are encrypted.
-- **The vault lives in the app's webview storage.** Keys stay in webview memory while the app is unlocked, and are not wiped when you press Lock.
+- **The vault lives in the app's webview storage.** Keys stay in webview memory while the app is unlocked. Lock clears the app's own copies, but the crypto library's memory may keep traces until encryption moves into Rust.
 - **Copied secrets stay on the clipboard.** Clipboard history tools may keep them.
 - **There is no auto-lock.**
 
