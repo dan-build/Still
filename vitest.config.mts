@@ -6,7 +6,7 @@ export default defineConfig({
   oxc: { jsx: { runtime: 'automatic' } },
   test: {
     environment: 'node',
-    include: ['app/**/*.test.ts', 'app/**/*.test.tsx'],
+    include: ['app/**/*.test.ts', 'app/**/*.test.tsx', 'scripts/**/*.test.mjs'],
     // Argon2id with libsodium's SENSITIVE limits allocates 1 GiB and takes
     // several seconds per derivation.
     testTimeout: 120_000,
