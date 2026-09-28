@@ -1,0 +1,131 @@
+name: Release
+
+# A v* tag builds a universal macOS app (Intel + Apple Silicon), checks it,
+# and creates a DRAFT GitHub Release for the maintainer to review and
+# publish. Pull requests that touch the build run the same build and checks
+# as a dry run and publish nothing. No updater, no uploads anywhere else.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - src-tauri/**
+      - scripts/version.mjs
+      - package.json
+      - package-lock.json
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+
+jobs:
+  build:
+    name: build (universal macOS)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Check versions (and the tag and CHANGELOG, for a release)
+        run: |
+          set -euo pipefail
+          if [ -n "$TAG" ]; then node scripts/version.mjs check "$TAG"; else node scripts/version.mjs check; fi
+          echo "VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
+
+      - name: Install Rust from rust-toolchain.toml, plus both macOS targets
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - run: npm ci
+
+      - name: Run every check before building
+        run: npm run check
+
+      - name: Build the universal app and disk image
+        run: npx tauri build --target universal-apple-darwin --bundles app,dmg
+
+      - name: Verify the app and the disk image
+        run: |
+          set -euo pipefail
+          bundle=target/universal-apple-darwin/release/bundle
+          shopt -s nullglob
+          dmgs=("$bundle"/dmg/*.dmg)
+          [ "${#dmgs[@]}" -eq 1 ] || { echo "Expected exactly one .dmg, found ${#dmgs[@]}" >&2; exit 1; }
+
+          verify() {
+            local app="$1"
+            local archs id version
+            archs=$(lipo -archs "$app/Contents/MacOS/still")
+            [[ "$archs" == *x86_64* && "$archs" == *arm64* ]] || { echo "$app: expected x86_64 and arm64, got: $archs" >&2; exit 1; }
+            codesign -dv "$app" 2>&1 | grep -q "Signature=adhoc" || { echo "$app: expected an ad-hoc signature" >&2; exit 1; }
+            codesign --verify --deep --strict "$app"
+            id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")
+            [ "$id" = "com.still.app" ] || { echo "$app: bundle id is $id; changing it orphans every vault" >&2; exit 1; }
+            version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")
+            [ "$version" = "$VERSION" ] || { echo "$app: version is $version, expected $VERSION" >&2; exit 1; }
+            echo "$app: $archs, ad-hoc signed, $id $version"
+          }
+
+          verify "$bundle/macos/Still.app"
+          mount=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "${dmgs[0]}"
+          verify "$mount/Still.app"
+          hdiutil detach "$mount"
+
+          mkdir -p release
+          cp "${dmgs[0]}" release/
+          (cd release && shasum -a 256 *.dmg > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: still-macos-universal
+          path: release/
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    name: draft GitHub Release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: still-macos-universal
+          path: release/
+
+      - name: Create the draft release with notes from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          awk -v heading="## [$version]" 'index($0, heading) == 1 { found = 1; next } found && /^## \[/ { exit } found' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "No CHANGELOG section for $version" >&2; exit 1; }
+          gh release create "$TAG" --draft --verify-tag --title "Still $TAG" --notes-file notes.md release/*
