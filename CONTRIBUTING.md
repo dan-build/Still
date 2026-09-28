@@ -46,3 +46,18 @@ This runs exactly what CI runs:
 - **No network calls, analytics or remote code at runtime.**
 - **Never log secrets.** That includes passwords, keys and decrypted values.
 - **Keep commits and pull requests small.** Each should do one thing, and explain what changed and why.
+
+## Releasing
+
+Releases are built by GitHub Actions ([release.yml](.github/workflows/release.yml)), never on a laptop.
+
+1. **Open a release PR** that:
+   - runs `npm run set-version -- X.Y.Z`;
+   - renames `## [Unreleased]` in `CHANGELOG.md` to `## [X.Y.Z] - YYYY-MM-DD`, starts a new empty `[Unreleased]`, and updates the compare links;
+   - updates the README's download and known-issues sections.
+2. **Check before merging:** `npm run check-version -- vX.Y.Z` must pass. Then merge.
+3. **Tag `main`:** `git tag vX.Y.Z && git push origin vX.Y.Z`.
+4. **The workflow does the rest.** It builds the universal macOS app, checks it (both architectures, ad-hoc signature, bundle id `com.still.app`, version), and creates a **draft** release with the disk image, `SHA256SUMS.txt`, and notes from the CHANGELOG.
+5. **Test the draft** on an Intel Mac and an Apple Silicon Mac: an existing vault must still open. Then edit the notes and publish.
+
+Never change the bundle id or the dev port in a release: both decide where existing vaults are found.
