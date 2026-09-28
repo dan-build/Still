@@ -6,9 +6,7 @@ No account, no sync, no telemetry. Still never connects to the internet.
 
 > **Early pre-release (v0.1.0).** It works, but has known issues that can lose data in specific cases. Read [Known issues](#known-issues) before storing anything you can't afford to lose.
 
-<!-- Screenshot: save it as docs/screenshot.png, then uncomment the next line.
 ![Still showing a Lens with three secrets](docs/screenshot.png)
--->
 
 ## Features
 
