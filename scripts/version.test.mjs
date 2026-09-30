@@ -52,6 +52,15 @@ describe('setVersion', () => {
     expect(other(readFileSync(join(dir, 'Cargo.lock'), 'utf8'))).toBe(before)
   })
 
+  it('updates every workspace package in Cargo.lock', () => {
+    const dir = copyOfRepo()
+    setVersion(dir, '9.8.7')
+    const lock = readFileSync(join(dir, 'Cargo.lock'), 'utf8')
+    for (const name of ['still', 'still-core']) {
+      expect(lock).toContain(`[[package]]\nname = "${name}"\nversion = "9.8.7"`)
+    }
+  })
+
   it('refuses something that is not a version', () => {
     expect(() => setVersion(copyOfRepo(), 'v1.2')).toThrow('Not a version')
   })
