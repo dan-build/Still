@@ -69,6 +69,22 @@ localStorage belongs to one origin and one WebKit data folder, so dev and releas
 
 Recycle-bin entries older than 7 days are purged when the vault is unlocked. New ids are 128 random bits in hex. v0.1.0's ids were `Date.now().toString(36)`; they're kept as they are.
 
+**Rust crypto core (stage 3a; not used by the app until stage 3b).** [crates/still-core](crates/still-core) implements the v1 format byte for byte like `crypto.ts`, on libsodium 1.0.22, the same release as the JS side.
+- `sodium.rs` is the only `unsafe` code.
+- `format.rs` parses and writes blobs and never panics.
+- `crypto.rs` holds the operations and the `Key` type, which is zeroed on drop and prints as `Key(redacted)`.
+- `error.rs`: `WrongKey`, `Corrupt`, `PasswordHashFailed`, `EmptyPlaintext`, `NotUtf8`.
+
+Differences from `crypto.ts`, on purpose:
+- Every decrypt checks the version byte, including the master key's.
+- Damaged master-key data is `Corrupt` before any Argon2id run.
+- Blank values are refused using JavaScript's definition of whitespace.
+
+Other notes:
+- `tests/golden_v1.rs` and `tests/vectors_v1.rs` must always pass.
+- libsodium is always built at `opt-level = 3` (root `Cargo.toml`), or Argon2id tests take minutes.
+- Building needs a C compiler (Xcode Command Line Tools on macOS, build-essential on Linux). Run `cargo test -p still-core` for this crate alone.
+
 ## Conventions
 
 - Components are client components (`'use client'`) styled with inline Tailwind classes and hard-coded hex colors (such as `#151515` and `#F8F9FA`) in a minimal, calm look.
@@ -111,7 +127,7 @@ stays a local-first secret manager.
 ### Decisions
 
 **Rust crypto uses `libsodium-sys-stable`** (decided 2026-09-27). Being byte-for-byte compatible with existing vaults matters more than being pure Rust. Linking the same audited libsodium that the JS app uses today reproduces `crypto_pwhash`, XChaCha20-Poly1305 IETF and `crypto_kdf_derive_from_key` exactly. We rejected the RustCrypto `argon2` and `blake2` crates, because they are partly unaudited and would need to be proven equivalent. Requirements:
-- **Reproducible CI builds.** Pin the crate version in `Cargo.lock`, and never enable a feature that fetches "latest" libsodium. On every OS, build from the libsodium source the crate ships with, not from a system library found via pkg-config. The exception is an explicitly pinned `SODIUM_LIB_DIR` that CI sets up the same way on each run. Before stage 3a merges, confirm that `cargo build --offline` works after `cargo fetch`, and check how the crate gets libsodium on Windows MSVC.
+- **Reproducible, offline builds (done in stage 3a).** The crate is pinned to `=1.24.0`, with no `fetch-latest` or pkg-config. It can't build from source on Windows MSVC and would download a prebuilt zip that changes in place upstream. So both signed archives live in [vendor/libsodium](vendor/libsodium/README.md), and `.cargo/config.toml` sets `SODIUM_DIST_DIR` to that folder. The build script still checks each archive against libsodium's pinned minisign key. CI rebuilds libsodium with `cargo build --offline --locked` on every OS. To update libsodium, follow vendor/libsodium/README.md.
 - **No network at runtime.** Link libsodium statically into the app binary. The app must not download or load anything at runtime.
-- **Only one module uses `unsafe`.** FFI calls live in a single module that exposes safe wrappers. The rest of the crate stays safe code. Wipe keys with `sodium_memzero` or `zeroize`.
-- **Tests gate the port.** The golden v1 vault fixture and the JS-generated test vectors must pass before any UI calls into the Rust crypto.
+- **Only one module uses `unsafe`:** `crates/still-core/src/sodium.rs`, behind `#![deny(unsafe_code)]`. Keys are wiped with `sodium_memzero`; no zeroize or secrecy crates.
+- **Tests gate the port.** The golden v1 vault fixture and the JS-generated test vectors must pass before any UI calls into the Rust crypto. They pass in `crates/still-core/tests/` on all three OSes.

@@ -1,8 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["src-tauri"]
+members = ["src-tauri", "crates/still-core"]
 
 [workspace.package]
 version = "0.1.1"
 edition = "2021"
 license = "MIT"
+
+# Argon2id with 1 GiB is unusably slow in unoptimised C, so libsodium is
+# always built optimised, even in debug builds and tests.
+[profile.dev.package.libsodium-sys-stable]
+opt-level = 3

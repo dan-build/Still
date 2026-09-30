@@ -8,6 +8,7 @@ You need:
 
 - **Node.js 24**, the version in `.nvmrc`.
 - **Rust.** `rust-toolchain.toml` pins the version, and rustup installs it for you.
+- **A C compiler,** to build libsodium: Xcode Command Line Tools on macOS, `build-essential` on Linux. On Windows, a prebuilt, signed libsodium is used from `vendor/libsodium`. Builds never download libsodium; see [vendor/libsodium/README.md](vendor/libsodium/README.md).
 - **On Linux,** the [Tauri system dependencies](https://tauri.app/start/prerequisites/).
 
 ```bash

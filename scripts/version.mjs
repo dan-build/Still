@@ -5,7 +5,7 @@
 //   node scripts/version.mjs check         fail unless all version sources agree
 //
 // Version sources: package.json, package-lock.json (top level and root package),
-// Cargo.toml [workspace.package], Cargo.lock (the still package) and
+// Cargo.toml [workspace.package], Cargo.lock (every workspace package) and
 // src-tauri/tauri.conf.json.
 
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -14,7 +14,9 @@ import { fileURLToPath } from 'node:url'
 
 const SEMVER = /^\d+\.\d+\.\d+$/
 const CARGO_WORKSPACE = /(\[workspace\.package\][^[]*?\nversion = ")([^"]+)(")/
-const CARGO_LOCK = /(\[\[package\]\]\nname = "still"\nversion = ")([^"]+)(")/
+// Workspace packages take the workspace version; each has its own Cargo.lock entry.
+const WORKSPACE_PACKAGES = ['still', 'still-core']
+const cargoLock = (name) => new RegExp(`(\\[\\[package\\]\\]\\nname = "${name}"\\nversion = ")([^"]+)(")`)
 const TAURI_CONF = /(\n {2}"version": ")([^"]+)(")/
 
 const read = (root, file) => readFileSync(join(root, file), 'utf8')
@@ -34,7 +36,9 @@ export function readVersions(root) {
     'package-lock.json': lock.version,
     'package-lock.json (root package)': lock.packages?.['']?.version,
     'Cargo.toml [workspace.package]': match(read(root, 'Cargo.toml'), CARGO_WORKSPACE, 'Cargo.toml'),
-    'Cargo.lock (still)': match(read(root, 'Cargo.lock'), CARGO_LOCK, 'Cargo.lock'),
+    ...Object.fromEntries(
+      WORKSPACE_PACKAGES.map((name) => [`Cargo.lock (${name})`, match(read(root, 'Cargo.lock'), cargoLock(name), 'Cargo.lock')]),
+    ),
     'src-tauri/tauri.conf.json': match(read(root, 'src-tauri/tauri.conf.json'), TAURI_CONF, 'src-tauri/tauri.conf.json'),
   }
 }
@@ -57,7 +61,7 @@ export function setVersion(root, version) {
     lock.packages[''].version = version
   })
   replace('Cargo.toml', CARGO_WORKSPACE)
-  replace('Cargo.lock', CARGO_LOCK)
+  for (const name of WORKSPACE_PACKAGES) replace('Cargo.lock', cargoLock(name))
   replace('src-tauri/tauri.conf.json', TAURI_CONF)
 }
 

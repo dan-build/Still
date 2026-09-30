@@ -2,3 +2,5 @@
 *.png binary
 *.ico binary
 *.icns binary
+# Vendored, signature-checked archives: never touch their bytes.
+vendor/** -text
