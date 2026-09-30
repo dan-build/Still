@@ -5,7 +5,7 @@
 
 use libsodium_sys as ffi;
 use std::ffi::CStr;
-use std::os::raw::{c_char, c_int};
+use std::os::raw::{c_char, c_int, c_ulonglong, c_void};
 use std::ptr;
 use std::sync::OnceLock;
 
@@ -84,6 +84,144 @@ pub fn from_base64(b64: &str) -> Option<Vec<u8>> {
     }
     out.truncate(bin_len);
     Some(out)
+}
+
+pub const NONCE_BYTES: usize = 24;
+pub const TAG_BYTES: usize = 16;
+
+/// Argon2id couldn't run (usually: not enough memory for 1 GiB).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PasswordHashFailed;
+
+/// A ciphertext failed authentication or was too short to hold a tag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuthFailed;
+
+/// Argon2id v1.3 with libsodium's SENSITIVE limits (4 passes, 1 GiB), 32-byte
+/// output: the same call as crypto_pwhash in app/lib/crypto.ts. Fails if
+/// libsodium can't allocate the memory.
+pub fn argon2id_sensitive(
+    out: &mut [u8; 32],
+    password: &[u8],
+    salt: &[u8; 16],
+) -> Result<(), PasswordHashFailed> {
+    init().map_err(|_| PasswordHashFailed)?;
+    // SAFETY: `out` is writable for 32 bytes, `password` and `salt` are valid
+    // for their lengths (salt is crypto_pwhash_SALTBYTES = 16).
+    let rc = unsafe {
+        ffi::crypto_pwhash(
+            out.as_mut_ptr(),
+            out.len() as c_ulonglong,
+            password.as_ptr() as *const c_char,
+            password.len() as c_ulonglong,
+            salt.as_ptr(),
+            ffi::crypto_pwhash_OPSLIMIT_SENSITIVE as c_ulonglong,
+            ffi::crypto_pwhash_MEMLIMIT_SENSITIVE as usize,
+            ffi::crypto_pwhash_ALG_ARGON2ID13 as c_int,
+        )
+    };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(PasswordHashFailed)
+    }
+}
+
+/// XChaCha20-Poly1305 (IETF) with no associated data. Returns ciphertext + tag.
+pub fn aead_encrypt(message: &[u8], nonce: &[u8; NONCE_BYTES], key: &[u8; 32]) -> Vec<u8> {
+    let _ = init();
+    let mut sealed = vec![0u8; message.len() + TAG_BYTES];
+    let mut sealed_len: c_ulonglong = 0;
+    // SAFETY: `sealed` has room for the message plus the 16-byte tag; the
+    // other buffers are valid for their lengths; no additional data.
+    unsafe {
+        ffi::crypto_aead_xchacha20poly1305_ietf_encrypt(
+            sealed.as_mut_ptr(),
+            &mut sealed_len,
+            message.as_ptr(),
+            message.len() as c_ulonglong,
+            ptr::null(),
+            0,
+            ptr::null(),
+            nonce.as_ptr(),
+            key.as_ptr(),
+        );
+    }
+    sealed.truncate(sealed_len as usize);
+    sealed
+}
+
+/// Opens an XChaCha20-Poly1305 (IETF) ciphertext + tag. Err if it is too short
+/// or fails authentication (wrong key or changed bytes).
+pub fn aead_decrypt(
+    sealed: &[u8],
+    nonce: &[u8; NONCE_BYTES],
+    key: &[u8; 32],
+) -> Result<Vec<u8>, AuthFailed> {
+    init().map_err(|_| AuthFailed)?;
+    if sealed.len() < TAG_BYTES {
+        return Err(AuthFailed);
+    }
+    let mut message = vec![0u8; sealed.len() - TAG_BYTES];
+    let mut message_len: c_ulonglong = 0;
+    // SAFETY: `message` has room for the ciphertext length minus the tag; the
+    // other buffers are valid for their lengths; no additional data.
+    let rc = unsafe {
+        ffi::crypto_aead_xchacha20poly1305_ietf_decrypt(
+            message.as_mut_ptr(),
+            &mut message_len,
+            ptr::null_mut(),
+            sealed.as_ptr(),
+            sealed.len() as c_ulonglong,
+            ptr::null(),
+            0,
+            nonce.as_ptr(),
+            key.as_ptr(),
+        )
+    };
+    if rc != 0 {
+        memzero(&mut message);
+        return Err(AuthFailed);
+    }
+    message.truncate(message_len as usize);
+    Ok(message)
+}
+
+/// crypto_kdf_derive_from_key: a 32-byte subkey from `key`, `id` and an
+/// 8-byte context (keyed BLAKE2b in libsodium).
+pub fn kdf_derive(out: &mut [u8; 32], id: u64, context: &[u8; 8], key: &[u8; 32]) {
+    let _ = init();
+    // SAFETY: `out` is writable for 32 bytes (within crypto_kdf's 16..64),
+    // `context` is exactly crypto_kdf_CONTEXTBYTES = 8, `key` is 32 bytes.
+    unsafe {
+        ffi::crypto_kdf_derive_from_key(
+            out.as_mut_ptr(),
+            out.len(),
+            id,
+            context.as_ptr() as *const c_char,
+            key.as_ptr(),
+        );
+    }
+}
+
+/// Fills `buf` from the OS CSPRNG via libsodium.
+pub fn random_bytes(buf: &mut [u8]) {
+    let _ = init();
+    // SAFETY: `buf` is writable for its length.
+    unsafe { ffi::randombytes_buf(buf.as_mut_ptr() as *mut c_void, buf.len()) }
+}
+
+/// A uniformly random u32 (libsodium's randombytes_random, as in crypto.ts).
+pub fn random_u32() -> u32 {
+    let _ = init();
+    // SAFETY: no arguments; returns a value.
+    unsafe { ffi::randombytes_random() }
+}
+
+/// Overwrites `buf` with zeros in a way the compiler won't optimise away.
+pub fn memzero(buf: &mut [u8]) {
+    // SAFETY: `buf` is writable for its length.
+    unsafe { ffi::sodium_memzero(buf.as_mut_ptr() as *mut c_void, buf.len()) }
 }
 
 #[cfg(test)]
