@@ -2968,6 +2968,7 @@ name = "still-core"
 version = "0.1.1"
 dependencies = [
  "libsodium-sys-stable",
+ "serde_json",
 ]
 
 [[package]]
