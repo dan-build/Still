@@ -2833,6 +2833,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "still-core"
+version = "0.1.1"
+
+[[package]]
 name = "string_cache"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

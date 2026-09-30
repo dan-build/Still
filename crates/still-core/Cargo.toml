@@ -1,0 +1,9 @@
+[package]
+name = "still-core"
+description = "Still's vault cryptography (v1 format), built on libsodium"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
