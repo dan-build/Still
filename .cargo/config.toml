@@ -1,0 +1,3 @@
+[env]
+# Build libsodium from the signed archives in the repo, never from the network.
+SODIUM_DIST_DIR = { value = "vendor/libsodium", relative = true }

@@ -48,4 +48,13 @@ jobs:
 
       - run: npm ci
 
+      # libsodium must build from the signed archives in vendor/libsodium, with
+      # no network. Cleaning it first makes the build script rerun even when
+      # the cache is warm.
+      - name: Build libsodium offline from vendor/
+        run: |
+          cargo fetch --locked
+          cargo clean -p libsodium-sys-stable
+          cargo build --offline --locked -p still-core
+
       - run: npm run check

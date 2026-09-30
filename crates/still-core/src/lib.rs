@@ -5,3 +5,5 @@
 //! everything else is safe Rust.
 
 #![deny(unsafe_code)]
+
+pub mod sodium;
