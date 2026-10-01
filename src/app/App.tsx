@@ -234,7 +234,7 @@ export default function StillHome() {
                       All Lenses
                     </div>
 
-                    {lenses.map((lens, i) => (
+                    {lenses.map((lens) => (
                       <div
                         key={lens.id}
                         onClick={() => setSelectedLensId(lens.id)}
