@@ -28,11 +28,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # A slow Ubuntu mirror once held this step for 17 minutes. Retry and
+      # time out per request, and fail the step fast instead of waiting.
       - name: Install Tauri system dependencies (Linux)
         if: runner.os == 'Linux'
+        timeout-minutes: 6
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          sudo apt-get $apt_opts update
+          sudo apt-get $apt_opts install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
             libxdo-dev libssl-dev build-essential file
 

@@ -8,7 +8,7 @@
     "build": "vite build",
     "test": "vitest run",
     "check": "npm run check:web && npm run check:rust",
-    "check:web": "vitest run && tsc -b",
+    "check:web": "vitest run && tsc -b && vite build",
     "check:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
     "set-version": "node scripts/version.mjs set",
     "check-version": "node scripts/version.mjs check",
