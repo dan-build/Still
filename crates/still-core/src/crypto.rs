@@ -1,4 +1,5 @@
-//! The v1 vault operations, byte for byte the same as app/lib/crypto.ts:
+//! The v1 vault operations, byte for byte the same as
+//! src/platform/crypto/crypto.ts:
 //!
 //! 1. Master password → Argon2id (SENSITIVE) with a 16-byte salt → a key that
 //!    wraps the 32-byte app key.

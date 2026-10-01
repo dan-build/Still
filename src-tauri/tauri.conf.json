@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
-    "frontendDist": "../out",
+    "frontendDist": "../dist",
     "devUrl": "http://localhost:3000"
   },
   "app": {
@@ -27,7 +27,31 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'unsafe-eval'",
+        "style-src": "'self'",
+        "img-src": "'self'",
+        "font-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'none'",
+        "frame-ancestors": "'none'"
+      },
+      "devCsp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'unsafe-eval' 'unsafe-inline' http://localhost:3000",
+        "style-src": "'self' 'unsafe-inline' http://localhost:3000",
+        "img-src": "'self' http://localhost:3000",
+        "font-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost http://localhost:3000 ws://localhost:3000",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'none'",
+        "frame-ancestors": "'none'"
+      },
+      "freezePrototype": true
     }
   },
   "bundle": {

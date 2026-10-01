@@ -98,8 +98,8 @@ pub struct PasswordHashFailed;
 pub struct AuthFailed;
 
 /// Argon2id v1.3 with libsodium's SENSITIVE limits (4 passes, 1 GiB), 32-byte
-/// output: the same call as crypto_pwhash in app/lib/crypto.ts. Fails if
-/// libsodium can't allocate the memory.
+/// output: the same call as crypto_pwhash in src/platform/crypto/crypto.ts.
+/// Fails if libsodium can't allocate the memory.
 pub fn argon2id_sensitive(
     out: &mut [u8; 32],
     password: &[u8],
