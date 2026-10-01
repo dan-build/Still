@@ -1,5 +1,3 @@
-'use client'
-
 import { useState, useEffect, useRef } from 'react'
 import CreateLensModal from './components/CreateLensModal'
 import LensDetail from './components/LensDetail'

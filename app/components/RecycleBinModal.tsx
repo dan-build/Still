@@ -1,5 +1,3 @@
-'use client'
-
 import type { LensView } from '../lib/vault/backend'
 
 interface RecycleBinModalProps {

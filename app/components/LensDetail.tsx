@@ -1,5 +1,3 @@
-'use client'
-
 import { useState, useEffect, useRef } from 'react'
 import type { ItemView, LensView, NewItem } from '../lib/vault/backend'
 

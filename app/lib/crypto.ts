@@ -1,5 +1,3 @@
-'use client'
-
 const KDF_CONTEXT = 'StillSec'
 
 let sodiumPromise: Promise<any> | null = null

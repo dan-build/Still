@@ -1,7 +1,5 @@
 # dependencies and builds
 node_modules/
-.next/
-out/
 dist/
 /target/
 src-tauri/gen/

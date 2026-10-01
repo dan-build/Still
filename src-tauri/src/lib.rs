@@ -33,4 +33,10 @@ mod tests {
     fn dev_url_is_unchanged() {
         assert_eq!(config()["build"]["devUrl"], "http://localhost:3000");
     }
+
+    // Release builds bundle whatever Vite writes here.
+    #[test]
+    fn frontend_dist_is_vite_output() {
+        assert_eq!(config()["build"]["frontendDist"], "../dist");
+    }
 }

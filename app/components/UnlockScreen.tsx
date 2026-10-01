@@ -1,5 +1,3 @@
-'use client'
-
 import { useState } from 'react'
 
 export type UnlockOutcome = 'ok' | 'wrong-password' | 'unreadable-data' | 'failed'
