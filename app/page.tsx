@@ -6,7 +6,6 @@ import LensDetail from './components/LensDetail'
 import RecycleBinModal from './components/RecycleBinModal'
 import * as cryptoModule from './lib/crypto'
 import { createLocalStorageBackend, type LensView, type VaultBackend, type VaultView } from './lib/vault/backend'
-import Image from 'next/image'
 import UnlockScreen, { type UnlockOutcome } from './components/UnlockScreen'
 import CreatePasswordScreen from './components/CreatePasswordScreen'
 import RecoveryScreen from './components/RecoveryScreen'
@@ -151,7 +150,7 @@ export default function StillHome() {
 
             <header className="pt-10 pb-20 flex items-end">
               <div className="flex items-left">
-                <Image
+                <img
                   src="/still.svg"
                   alt="Still Logo"
                   width={48}

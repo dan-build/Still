@@ -15,10 +15,6 @@ import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeItemBlob, fakeLensKeyBlob, fakeMasterKeyBlob, fakePlaintext } from './test/fakeCrypto'
 
-vi.mock('next/image', () => ({
-  default: ({ src, alt }: { src: string; alt: string }) => createElement('img', { src, alt }),
-}))
-
 vi.mock('./lib/crypto', () => import('./test/fakeCrypto'))
 
 import StillHome from './page'
