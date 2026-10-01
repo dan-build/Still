@@ -29,7 +29,7 @@
     "security": {
       "csp": {
         "default-src": "'self'",
-        "script-src": "'self' 'wasm-unsafe-eval'",
+        "script-src": "'self' 'unsafe-eval'",
         "style-src": "'self'",
         "img-src": "'self'",
         "font-src": "'self'",
@@ -41,7 +41,7 @@
       },
       "devCsp": {
         "default-src": "'self'",
-        "script-src": "'self' 'wasm-unsafe-eval' 'unsafe-inline' http://localhost:3000",
+        "script-src": "'self' 'unsafe-eval' 'unsafe-inline' http://localhost:3000",
         "style-src": "'self' 'unsafe-inline' http://localhost:3000",
         "img-src": "'self' http://localhost:3000",
         "font-src": "'self'",

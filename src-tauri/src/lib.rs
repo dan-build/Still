@@ -59,14 +59,17 @@ mod tests {
     const RELEASE_SOURCES: [&str; 5] = [
         "'self'",
         "'none'",
-        // libsodium compiles its embedded wasm at runtime.
-        "'wasm-unsafe-eval'",
+        // libsodium compiles its embedded wasm at runtime. 'wasm-unsafe-eval'
+        // would be enough on Safari 16+, but WebKit before that (macOS 12's
+        // Safari 15) ignores it and blocks wasm, so unlocking fails. Remove
+        // this once stage 3b moves crypto to Rust and the wasm is gone.
+        "'unsafe-eval'",
         // Tauri's IPC: the custom protocol, and its Windows/Android form.
         "ipc:",
         "http://ipc.localhost",
     ];
 
-    // The release policy allows no remote origins, no inline code and no eval.
+    // The release policy allows no remote origins and no inline code.
     #[test]
     fn csp_allows_only_the_app_itself() {
         let config = config();

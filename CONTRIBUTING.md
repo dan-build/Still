@@ -48,7 +48,7 @@ This runs exactly what CI runs:
   - the v1 encrypted format: the version byte, the byte layout, and the Argon2id and KDF parameters.
 
   Tests enforce all three.
-- **Keep the content security policy strict.** Never add a remote origin, `'unsafe-eval'` or inline code to the release `csp` in `src-tauri/tauri.conf.json`. Tests check every source.
+- **Keep the content security policy strict.** Never add a remote origin or inline code to the release `csp` in `src-tauri/tauri.conf.json`. Tests check every source.
 - **Never regenerate or edit the fixtures in `fixtures/vault-v1*`** to make a test pass. A failing golden test means existing vaults would break.
 - **Write the tests first, then refactor** the code they cover.
 - **Tests marked `it.fails` are known bugs.** When you fix one, change it to `it` in the same commit.

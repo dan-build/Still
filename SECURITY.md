@@ -14,7 +14,7 @@ Still is pre-1.0. Only the latest commit on `main` gets fixes.
 
 - **Secret values are encrypted at rest.** Your master password goes through Argon2id (libsodium `crypto_pwhash`, SENSITIVE limits) to unlock an app key. The app key wraps a separate key for each Lens, and each item is encrypted with its own subkey using XChaCha20-Poly1305. All cryptography comes from libsodium.
 - **Nothing leaves the device.** There are no accounts, no servers, no telemetry and no network calls.
-- **The app's page runs under a strict Content Security Policy.** It can load only its own bundled files, and can't fetch from the network, run injected inline scripts or use `eval`.
+- **The app's page runs under a strict Content Security Policy.** It can load only its own bundled files, and can't fetch from the network or run injected inline scripts. It still allows `eval`, because the crypto library's WebAssembly needs it on older macOS; that goes away when encryption moves into Rust.
 
 ## What Still does not protect yet
 
