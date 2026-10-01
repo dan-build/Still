@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Security
+
+- **The app now runs under a strict Content Security Policy.** Its page can load only Still's own files, so injected scripts or remote content can't run or phone home.
+
+### Changed
+
+- **Still's interface is now built with Vite instead of Next.js.** Nothing changes for you: the app looks and works the same, and opens your existing vault.
+
 ## [0.1.1] - 2026-09-28
 
 ### Fixed
