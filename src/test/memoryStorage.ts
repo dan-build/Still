@@ -1,6 +1,6 @@
 // An in-memory stand-in for localStorage in vault-layer tests.
 
-import type { KeyValueStorage } from '../lib/vault/backend'
+import type { KeyValueStorage } from '@/platform/storage/backend'
 
 export class MemoryStorage implements KeyValueStorage {
   readonly data = new Map<string, string>()

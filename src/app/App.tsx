@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import CreateLensModal from './components/CreateLensModal'
-import LensDetail from './components/LensDetail'
-import RecycleBinModal from './components/RecycleBinModal'
-import * as cryptoModule from './lib/crypto'
-import { createLocalStorageBackend, type LensView, type VaultBackend, type VaultView } from './lib/vault/backend'
-import UnlockScreen, { type UnlockOutcome } from './components/UnlockScreen'
-import CreatePasswordScreen from './components/CreatePasswordScreen'
-import RecoveryScreen from './components/RecoveryScreen'
+import CreateLensModal from '@/features/lenses/ui/CreateLensModal'
+import LensDetail from '@/features/lenses/ui/LensDetail'
+import RecycleBinModal from '@/features/recycle-bin/ui/RecycleBinModal'
+import * as cryptoModule from '@/platform/crypto/crypto'
+import { createLocalStorageBackend, type LensView, type VaultBackend, type VaultView } from '@/platform/storage/backend'
+import UnlockScreen, { type UnlockOutcome } from './lock/UnlockScreen'
+import CreatePasswordScreen from './lock/CreatePasswordScreen'
+import RecoveryScreen from './lock/RecoveryScreen'
 
 export default function StillHome() {
   const backendRef = useRef<VaultBackend | null>(null)

@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import * as realCrypto from '../crypto'
-import * as fakeCrypto from '../../test/fakeCrypto'
-import { MemoryStorage } from '../../test/memoryStorage'
+import * as realCrypto from '@/platform/crypto/crypto'
+import * as fakeCrypto from '@/test/fakeCrypto'
+import { MemoryStorage } from '@/test/memoryStorage'
 import { createLocalStorageBackend, VaultLockedError, VaultWriteError } from './backend'
-import { STORAGE_KEYS, type PersistedLens } from './types'
+import { STORAGE_KEYS, type PersistedLens } from '@/features/vault/model/types'
 
 const NOW = new Date('2026-09-28T12:00:00.000Z')
 const clock = () => NOW

@@ -1,8 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './globals.css'
-import SodiumPreloader from './components/SodiumPreloader'
-import StillHome from './page'
+import SodiumPreloader from '@/platform/crypto/SodiumPreloader'
+import StillHome from './App'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

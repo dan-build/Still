@@ -1,6 +1,6 @@
 // Generates fixed-input test vectors for the v1 format by calling libsodium
 // directly with fixed keys, nonces, salts and subkey ids. Blobs are laid out
-// exactly as app/lib/crypto.ts lays them out. Any other implementation (the
+// exactly as src/platform/crypto/crypto.ts lays them out. Any other implementation (the
 // Rust port) must reproduce these bytes exactly.
 //
 // The output is deterministic. Commit it, and never edit it by hand.

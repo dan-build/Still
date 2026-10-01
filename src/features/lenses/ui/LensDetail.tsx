@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import type { ItemView, LensView, NewItem } from '../lib/vault/backend'
+import type { ItemView, LensView, NewItem } from '@/platform/storage/backend'
 
 interface LensDetailProps {
   lens: LensView

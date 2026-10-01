@@ -34,7 +34,7 @@ const flipByte = (blob: string, index: number) => {
 
 describe.each(['vault-v1', 'vault-v1-real'])('golden fixture %s', (fixtureDir) => {
   const fixture = (name: string) =>
-    JSON.parse(readFileSync(new URL(`../../fixtures/${fixtureDir}/${name}`, import.meta.url), 'utf8'))
+    JSON.parse(readFileSync(new URL(`../../../fixtures/${fixtureDir}/${name}`, import.meta.url), 'utf8'))
 
   const vault: Record<string, string> = fixture('vault.json')
   const expected: { password: string; lenses: ExpectedLenses; recycleBin: ExpectedLenses } =

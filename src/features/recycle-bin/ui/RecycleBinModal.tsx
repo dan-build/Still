@@ -1,4 +1,4 @@
-import type { LensView } from '../lib/vault/backend'
+import type { LensView } from '@/platform/storage/backend'
 
 interface RecycleBinModalProps {
   isOpen: boolean

@@ -14,7 +14,7 @@ import {
   encryptLensMasterKey,
   encryptMasterKey,
   generateMasterKey,
-} from '../app/lib/crypto.ts'
+} from '../src/platform/crypto/crypto.ts'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = join(root, 'fixtures', 'vault-v1')
@@ -85,7 +85,7 @@ const recycleBin: LensSpec[] = [
 const appMasterKey = await generateMasterKey()
 const { encryptedMasterKey, salt } = await encryptMasterKey(appMasterKey, PASSWORD)
 
-// Mirrors PersistedLens / PersistedRecycledLens in app/page.tsx, including
+// Mirrors PersistedLens / PersistedRecycledLens in src/app/App.tsx, including
 // property order, so the JSON matches what the app writes.
 async function persist(spec: LensSpec) {
   const lensKey = await generateMasterKey()

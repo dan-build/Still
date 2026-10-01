@@ -9,7 +9,7 @@
 // v0.1.0 behaviour is kept on purpose until each fix lands; those spots are
 // marked "v0.1.0:" with the stage 1 commit that changes them.
 
-import type * as CryptoModule from '../crypto'
+import type * as CryptoModule from '@/platform/crypto/crypto'
 import {
   VaultDataError,
   addLens,
@@ -20,9 +20,9 @@ import {
   restoreLens as restoreFromBin,
   serializeLensList,
   setItems,
-} from './model'
-import { AUTH_FAILURE_MESSAGE, isV1MasterKey } from './format'
-import { STORAGE_KEYS, type ItemType, type PersistedLens, type VaultLists } from './types'
+} from '@/features/vault/model/model'
+import { AUTH_FAILURE_MESSAGE, isV1MasterKey } from '@/features/vault/model/format'
+import { STORAGE_KEYS, type ItemType, type PersistedLens, type VaultLists } from '@/features/vault/model/types'
 
 /** A change could not be saved. Nothing in memory or on screen changed. */
 export class VaultWriteError extends Error {}

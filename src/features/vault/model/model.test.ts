@@ -38,7 +38,7 @@ describe('parseLensList / serializeLensList', () => {
 
   for (const fixture of ['vault-v1', 'vault-v1-real']) {
     it(`round-trips the ${fixture} fixture byte for byte`, () => {
-      const vault = JSON.parse(readFileSync(new URL(`../../../fixtures/${fixture}/vault.json`, import.meta.url), 'utf8'))
+      const vault = JSON.parse(readFileSync(new URL(`../../../../fixtures/${fixture}/vault.json`, import.meta.url), 'utf8'))
       for (const key of ['still-lenses', 'still-recycle-bin']) {
         expect(serializeLensList(parseLensList(vault[key]))).toBe(vault[key])
       }

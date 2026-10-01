@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 //
-// UI tests for app/page.tsx: they drive the real UI and check what ends up in
-// localStorage. Crypto is replaced by app/test/fakeCrypto.ts, which produces
+// UI tests for src/app/App.tsx: they drive the real UI and check what ends up in
+// localStorage. Crypto is replaced by src/test/fakeCrypto.ts, which produces
 // real v1 blob shapes quickly; crypto.golden.test.ts and crypto.vectors.test.ts
 // cover the real thing.
 //
@@ -13,11 +13,11 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fakeItemBlob, fakeLensKeyBlob, fakeMasterKeyBlob, fakePlaintext } from './test/fakeCrypto'
+import { fakeItemBlob, fakeLensKeyBlob, fakeMasterKeyBlob, fakePlaintext } from '@/test/fakeCrypto'
 
-vi.mock('./lib/crypto', () => import('./test/fakeCrypto'))
+vi.mock('@/platform/crypto/crypto', () => import('@/test/fakeCrypto'))
 
-import StillHome from './page'
+import StillHome from './App'
 
 // ---- fixtures ---------------------------------------------------------------
 

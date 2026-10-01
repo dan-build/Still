@@ -15,7 +15,7 @@ import {
 } from './crypto'
 
 const vectors = JSON.parse(
-  readFileSync(new URL('../../fixtures/vault-v1/vectors.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../../fixtures/vault-v1/vectors.json', import.meta.url), 'utf8'),
 )
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, 'base64'))

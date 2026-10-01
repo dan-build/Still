@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { decrypt, decryptLensMasterKey, decryptMasterKey, deriveKeyFromPassword } from './crypto'
 
 const vectors = JSON.parse(
-  readFileSync(new URL('../../fixtures/vault-v1/vectors.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../../fixtures/vault-v1/vectors.json', import.meta.url), 'utf8'),
 )
 
 const fromHex = (value: string) => new Uint8Array(Buffer.from(value, 'hex'))
