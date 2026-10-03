@@ -36,7 +36,7 @@ describe('parseLensList / serializeLensList', () => {
     expect(() => parseLensList('{"id":"x"}')).toThrow(VaultDataError)
   })
 
-  for (const fixture of ['vault-v1', 'vault-v1-real']) {
+  for (const fixture of ['vault-v1', 'vault-v1-real', 'vault-v1-rust']) {
     it(`round-trips the ${fixture} fixture byte for byte`, () => {
       const vault = JSON.parse(readFileSync(new URL(`../../../../fixtures/${fixture}/vault.json`, import.meta.url), 'utf8'))
       for (const key of ['still-lenses', 'still-recycle-bin']) {

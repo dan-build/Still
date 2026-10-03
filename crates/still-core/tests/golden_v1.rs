@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::fixture;
+use common::{argon2_one_at_a_time, fixture};
 use serde_json::Value;
 use still_core::crypto::{decrypt_item, decrypt_lens_key, decrypt_master_key};
 use still_core::Error;
@@ -62,10 +62,18 @@ fn check_vault(dir: &str) {
 
 #[test]
 fn opens_the_generated_golden_vault() {
+    let _argon2 = argon2_one_at_a_time();
     check_vault("vault-v1");
 }
 
 #[test]
 fn opens_the_vault_exported_from_a_release_build() {
+    let _argon2 = argon2_one_at_a_time();
     check_vault("vault-v1-real");
+}
+
+#[test]
+fn opens_the_vault_made_by_the_rust_session() {
+    let _argon2 = argon2_one_at_a_time();
+    check_vault("vault-v1-rust");
 }

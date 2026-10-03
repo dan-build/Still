@@ -464,7 +464,7 @@ describe('golden fixtures with the real crypto', () => {
     expect(await backend.unlock('throwaway-vault-20')).toEqual({ ok: false, reason: 'wrong-password' })
   })
 
-  for (const fixture of ['vault-v1', 'vault-v1-real']) {
+  for (const fixture of ['vault-v1', 'vault-v1-real', 'vault-v1-rust']) {
     it(`opens ${fixture} and reveals every secret exactly`, async () => {
       const read = (name: string) =>
         JSON.parse(readFileSync(new URL(`../../../fixtures/${fixture}/${name}`, import.meta.url), 'utf8'))

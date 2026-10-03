@@ -7,7 +7,7 @@ const blob = (length: number, version = 1) => b64([version, ...new Array(length 
 const salt16 = b64(new Array(16).fill(7))
 
 describe('isV1MasterKey', () => {
-  for (const fixture of ['vault-v1', 'vault-v1-real']) {
+  for (const fixture of ['vault-v1', 'vault-v1-real', 'vault-v1-rust']) {
     it(`accepts the ${fixture} fixture`, () => {
       const vault = JSON.parse(readFileSync(new URL(`../../../../fixtures/${fixture}/vault.json`, import.meta.url), 'utf8'))
       expect(isV1MasterKey(vault['still-encrypted-master-key'], vault['still-salt'])).toBe(true)
