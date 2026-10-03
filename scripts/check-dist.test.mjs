@@ -1,6 +1,6 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { problems, unguardedColorMix } from './check-dist.mjs'
 
@@ -20,9 +20,10 @@ describe('check-dist', () => {
     writeFileSync(join(dir, 'a.js'), 'const x = eval("1")')
     writeFileSync(join(dir, 'b.css'), '.a{color:color-mix(in oklab,red 10%,transparent)}')
     writeFileSync(join(dir, 'ok.js'), 'console.log(1)')
-    expect(problems(dir).map((p) => p.replace(dir, ''))).toEqual([
-      '/a.js: contains eval(',
-      expect.stringMatching(/^\/b\.css: color-mix\(\) without a fallback/),
+    // Paths use the platform's separator (\ on Windows).
+    expect(problems(dir).map((p) => p.replace(dir + sep, ''))).toEqual([
+      'a.js: contains eval(',
+      expect.stringMatching(/^b\.css: color-mix\(\) without a fallback/),
     ])
   })
 })
