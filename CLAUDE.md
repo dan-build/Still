@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Still is a local-first encrypted secret manager: a Vite + React 18 + Tailwind 3 frontend wrapped in a Tauri v2 desktop shell. There are no accounts, no servers, and no telemetry. All crypto runs on the device, in Rust, via libsodium. The product promise is that nothing leaves the device, so don't add network calls, analytics, or remote dependencies at runtime.
+Still is a local-first encrypted secret manager: a Vite + React 18 + Tailwind 4 frontend wrapped in a Tauri v2 desktop shell. There are no accounts, no servers, and no telemetry. All crypto runs on the device, in Rust, via libsodium. The product promise is that nothing leaves the device, so don't add network calls, analytics, or remote dependencies at runtime.
 
 ## Commands
 
@@ -42,7 +42,7 @@ A known bug gets an `it.fails` test first, with a passing sibling that runs the 
 - `src/platform/`: `storage/` (the backend), `crypto/` (the `VaultCrypto` interface) and `tauri/` (the only code that calls `invoke`). Only platform code touches storage or crypto.
 - `src/test/`: test helpers, and `reference/` (the JS crypto, for tests only; never imported by the app).
 
-**CSP.** `tauri.conf.json` sets a strict `csp`: only the app's own files and Tauri's IPC, with `script-src 'self'`: no eval and no WebAssembly. Never bring wasm back into the page: `'wasm-unsafe-eval'` doesn't work on WebKit before Safari 16 (macOS 12), so it would need `'unsafe-eval'`. `scripts/check-dist.mjs` (in `check:web`) fails if the build contains WebAssembly, libsodium, `eval` or `new Function`. On desktop, `devCsp` is not applied in `tauri dev` (the page loads straight from Vite), so check CSP changes in a `tauri build --debug` bundle, which has the Web Inspector. Inspector console input is exempt from the CSP, so test by injecting a script element rather than calling `eval`. `freezePrototype` is on. Rust tests in `src-tauri/src/lib.rs` allow-list every source, so never add a remote origin. TypeScript is split into `tsconfig.app.json` (no tests, no Node types), `tsconfig.test.json` and `tsconfig.node.json`, all with `noUnusedLocals`/`noUnusedParameters`.
+**CSP.** `tauri.conf.json` sets a strict `csp`: only the app's own files and Tauri's IPC, with `script-src 'self'`: no eval and no WebAssembly. Never bring wasm back into the page: `'wasm-unsafe-eval'` doesn't work on WebKit before Safari 16 (macOS 12), so it would need `'unsafe-eval'`. `scripts/check-dist.mjs` (in `check:web`) fails if the build contains WebAssembly, libsodium, `eval` or `new Function`, or CSS `color-mix()` outside `@supports`. On desktop, `devCsp` is not applied in `tauri dev` (the page loads straight from Vite), so check CSP changes in a `tauri build --debug` bundle, which has the Web Inspector. Inspector console input is exempt from the CSP, so test by injecting a script element rather than calling `eval`. `freezePrototype` is on. Rust tests in `src-tauri/src/lib.rs` allow-list every source, so never add a remote origin. TypeScript is split into `tsconfig.app.json` (no tests, no Node types), `tsconfig.test.json` and `tsconfig.node.json`, all with `noUnusedLocals`/`noUnusedParameters`.
 
 **The UI talks only to the vault backend.** [src/platform/storage/backend.ts](src/platform/storage/backend.ts) defines `VaultBackend`, and `createLocalStorageBackend` implements it on localStorage and a `VaultCrypto`.
 - The backend is the only code that touches stored vault data, and the only caller of the crypto. The UI gets a key-free `view()` of ids and metadata, and calls the backend for every change and reveal.
@@ -98,7 +98,8 @@ Other notes:
 
 ## Conventions
 
-- Components are styled with inline Tailwind classes and hard-coded hex colors (such as `#151515` and `#F8F9FA`) in a minimal, calm look.
+- Components are styled with inline Tailwind classes, theme colours (`still-*`, defined in the `@theme` block of [globals.css](src/app/globals.css)) and hard-coded hex colours (such as `#151515`), in a minimal, calm look.
+- **Styles: Tailwind 4 must work on macOS 12's Safari 15.4.** `@tailwindcss/vite` builds the CSS, and Vite runs Lightning CSS with a Safari 15.4 target, in dev and release, which adds fallbacks for newer CSS. In `globals.css`, our own element rules live in `@layer base`, so utility classes beat them as in Tailwind 3 (unlayered rules would beat every utility), and `:focus-visible` sits in `@layer utilities`, after the generated ones. The reds, the default border colour and the button cursor are pinned to Tailwind 3's values. Only `src/` and `index.html` are scanned for classes.
 - UI tests replace crypto with [src/test/fakeCrypto.ts](src/test/fakeCrypto.ts), which makes real v1 blob shapes and throws libsodium's real error messages. In happy-dom, spy on `localStorage` itself, not `Storage.prototype` (that spy sees nothing), and restore it with `mockRestore()`, because `vi.restoreAllMocks()` doesn't.
 - The `@/*` path alias maps to `src/`. Use it for imports across folders; keep imports within a folder relative.
 - Domain terms: a **Lens** is an encrypted collection. An **Item** is a `password`, `key`, or `note` stored in a Lens. The UI calls the recycle bin "Archive", and deleting a Lens is called "forget".
