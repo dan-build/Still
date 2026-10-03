@@ -44,7 +44,7 @@ export default function UnlockScreen({ onUnlock }: UnlockScreenProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA]">
+    <div className="min-h-screen flex items-center justify-center bg-still-bg">
       <div className="w-full max-w-[400px] px-6">
         <div className="text-center mb-10">
           <div className="mx-auto mb-6 w-16 h-16 rounded-2xl flex items-center justify-center">
@@ -84,7 +84,7 @@ export default function UnlockScreen({ onUnlock }: UnlockScreenProps) {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Enter your password"
-              className="w-full bg-white border border-black/10 focus:border-black/30 rounded-[14px] px-5 py-4 text-[17px] placeholder:text-[#151515]/40 focus:outline-none transition-all"
+              className="w-full bg-white border border-black/10 focus:border-black/30 rounded-[14px] px-5 py-4 text-[17px] placeholder:text-[#151515]/40 focus:outline-hidden transition-all"
               autoFocus
             />
           </div>

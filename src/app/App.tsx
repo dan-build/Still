@@ -146,7 +146,7 @@ export default function StillHome() {
           <UnlockScreen onUnlock={handleUnlock} />
         )
       ) : (
-        <div className="min-h-screen bg-[#F8F9FA] text-[#151515] flex justify-center">
+        <div className="min-h-screen bg-still-bg text-[#151515] flex justify-center">
           <div className="w-full max-w-[1080px] px-10">
 
             <header className="pt-10 pb-20 flex items-end">
@@ -256,7 +256,7 @@ export default function StillHome() {
               )}
             </main>
 
-            <footer className="py-14 flex items-center justify-between text-[12px] text-[#151515]/30 tracking-[0.1em]">
+            <footer className="py-14 flex items-center justify-between text-[12px] text-[#151515]/30 tracking-widest">
               <div>Private.</div>
 
               <button
@@ -309,7 +309,7 @@ export default function StillHome() {
           {toast && (
             <div
               role={toast.error ? 'alert' : 'status'}
-              className={`fixed bottom-8 right-8 bg-white/70 backdrop-blur-xl text-sm px-6 py-2.5 rounded-[9px] border border-black/[0.04] flex items-center gap-2 z-[100] ${toast.error ? 'text-red-700' : 'text-[#151515]/80'}`}
+              className={`fixed bottom-8 right-8 bg-white/70 backdrop-blur-xl text-sm px-6 py-2.5 rounded-[9px] border border-black/4 flex items-center gap-2 z-100 ${toast.error ? 'text-red-700' : 'text-[#151515]/80'}`}
             >
               {!toast.error && <span>✓</span>} {toast.message}
             </div>

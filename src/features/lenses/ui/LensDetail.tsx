@@ -149,8 +149,8 @@ export default function LensDetail({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] bg-[#F8F9FA] flex flex-col">
-      <div className="h-[76px] border-b border-black/10 flex items-center px-10 flex-shrink-0" >
+    <div className="fixed inset-0 z-60 bg-still-bg flex flex-col">
+      <div className="h-[76px] border-b border-black/10 flex items-center px-10 shrink-0" >
         <button
           onClick={onClose}
           className="flex items-center gap-2 text-sm text-[#151515]/60 hover:text-[#151515] transition-colors duration-200"
@@ -203,7 +203,7 @@ export default function LensDetail({
                   className="group bg-white border border-black/10 rounded-[18px] px-7 py-6 flex items-center justify-between hover:border-black/20 transition-all duration-300"
                 >
                   <div className="flex items-center gap-5">
-                    <div className="w-12 h-12 rounded-[12px] flex items-center justify-center text-[#151515]/70 flex-shrink-0">
+                    <div className="w-12 h-12 rounded-[12px] flex items-center justify-center text-[#151515]/70 shrink-0">
                       {item.type === 'password' && <PasswordIcon />}
                       {item.type === 'key' && <KeyIcon />}
                       {item.type === 'note' && <NoteIcon />}
@@ -245,13 +245,13 @@ export default function LensDetail({
         )}
       </div>
 
-      <div className="h-14 border-t border-black/10 flex items-center px-10 text-xs text-[#151515]/50 flex-shrink-0">
+      <div className="h-14 border-t border-black/10 flex items-center px-10 text-xs text-[#151515]/50 shrink-0">
         This Lens stays encrypted on your device until you explicitly forget it.
       </div>
 
       {/* Add Secret Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40" onClick={() => setShowAddModal(false)}>
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/40" onClick={() => setShowAddModal(false)}>
           <div className="bg-white rounded-[18px] p-8 w-full max-w-[380px] mx-4" onClick={e => e.stopPropagation()}>
             <div className="font-medium text-xl tracking-tight mb-6">Add new secret</div>
 
@@ -263,7 +263,7 @@ export default function LensDetail({
                   value={newLabel}
                   onChange={(e) => setNewLabel(e.target.value)}
                   placeholder="What is this for?"
-                  className="w-full bg-[#F8F9FA] px-5 py-3.5 rounded-[12px] text-sm focus:outline-none border border-black/10"
+                  className="w-full bg-still-bg px-5 py-3.5 rounded-[12px] text-sm focus:outline-hidden border border-black/10"
                 />
               </div>
 
@@ -272,7 +272,7 @@ export default function LensDetail({
                 <select
                   value={newType}
                   onChange={(e) => setNewType(e.target.value as any)}
-                  className="w-full bg-[#F8F9FA] px-5 py-3.5 rounded-[12px] text-sm focus:outline-none border border-black/10"
+                  className="w-full bg-still-bg px-5 py-3.5 rounded-[12px] text-sm focus:outline-hidden border border-black/10"
                 >
                   <option value="password">Password</option>
                   <option value="key">API Key / Token</option>
@@ -291,7 +291,7 @@ export default function LensDetail({
                   onChange={(e) => setNewValue(e.target.value)}
                   placeholder="Paste or type the secret here…"
                   rows={4}
-                  className="w-full bg-[#F8F9FA] px-5 py-3.5 rounded-[12px] text-sm resize-y focus:outline-none border border-black/10"
+                  className="w-full bg-still-bg px-5 py-3.5 rounded-[12px] text-sm resize-y focus:outline-hidden border border-black/10"
                 />
                 {newValue !== '' && newValue.trim() === '' && (
                   <p className="mt-2 text-xs text-red-700">A secret can't be only spaces or line breaks.</p>
@@ -302,7 +302,7 @@ export default function LensDetail({
                     <button
                       type="button"
                       onClick={() => setNewValue(newValue.trim())}
-                      className="flex-shrink-0 font-medium text-[#151515] underline underline-offset-2"
+                      className="shrink-0 font-medium text-[#151515] underline underline-offset-2"
                     >
                       Remove them
                     </button>
@@ -312,7 +312,7 @@ export default function LensDetail({
             </div>
 
             <div className="flex gap-3 mt-8">
-              <button onClick={() => setShowAddModal(false)} className="flex-1 py-3 text-sm text-[#151515]/70 hover:bg-[#F8F9FA] rounded-[12px] transition-colors">Cancel</button>
+              <button onClick={() => setShowAddModal(false)} className="flex-1 py-3 text-sm text-[#151515]/70 hover:bg-still-bg rounded-[12px] transition-colors">Cancel</button>
               <button
                 onClick={addItem}
                 disabled={!newLabel.trim() || !newValue.trim() || isProcessing}
@@ -327,7 +327,7 @@ export default function LensDetail({
 
       {/* Forget Confirmation Modal */}
       {showForgetConfirm && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40" onClick={() => setShowForgetConfirm(false)}>
+        <div className="fixed inset-0 z-80 flex items-center justify-center bg-black/40" onClick={() => setShowForgetConfirm(false)}>
           <div className="bg-white rounded-[18px] p-8 w-full max-w-[380px] mx-4 text-center" onClick={e => e.stopPropagation()}>
             <div className="text-4xl mb-4">··</div>
             <div className="font-medium text-xl tracking-tight mb-2">Move to Recycle Bin?</div>
@@ -336,7 +336,7 @@ export default function LensDetail({
             </p>
 
             <div className="flex gap-3">
-              <button onClick={() => setShowForgetConfirm(false)} className="flex-1 py-3 text-sm text-[#151515]/70 hover:bg-[#F8F9FA] rounded-[12px] transition-colors">Cancel</button>
+              <button onClick={() => setShowForgetConfirm(false)} className="flex-1 py-3 text-sm text-[#151515]/70 hover:bg-still-bg rounded-[12px] transition-colors">Cancel</button>
               <button
                 onClick={confirmForget}
                 className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-[12px] transition-colors"
@@ -350,7 +350,7 @@ export default function LensDetail({
 
       {/* Processing Overlay */}
       {isProcessing && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center pointer-events-none">
+        <div className="fixed inset-0 z-90 flex items-center justify-center pointer-events-none">
           <div className="bg-white/95 backdrop-blur-md px-5 py-[9px] rounded-[14px] text-xs text-[#151515]/75 flex items-center gap-3 shadow-[0_2px_10px_rgb(0,0,0,0.04)] border border-black/[0.035]">
             <div className="relative flex h-[7px] w-[7px]">
               <div className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#151515] opacity-25"></div>

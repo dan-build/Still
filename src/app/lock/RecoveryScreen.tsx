@@ -24,7 +24,7 @@ export default function RecoveryScreen({ onSetAside }: RecoveryScreenProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] px-6">
+    <div className="min-h-screen flex items-center justify-center bg-still-bg px-6">
       <div className="w-full max-w-[460px]">
         {!confirming ? (
           <div>
