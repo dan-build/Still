@@ -8,10 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Security
 
+- **Encryption keys never enter the app's web page.** All encryption and decryption now happens in Still's Rust code, which holds the keys while the vault is unlocked and wipes them when you lock or quit. The page only sees encrypted data, plus the password you type and the secrets you save or reveal.
+- **The app's page no longer contains any cryptography code,** and its security policy allows no `eval` or WebAssembly at all.
+
 - **The app now runs under a strict Content Security Policy.** Its page can load only Still's own files, so injected scripts or remote content can't run or phone home.
 
 ### Changed
 
+- **Unlocking and creating a vault no longer freeze the window** while the password is checked; the check runs in the background.
 - **Still's interface is now built with Vite instead of Next.js.** Nothing changes for you: the app looks and works the same, and opens your existing vault.
 
 ## [0.1.1] - 2026-09-28

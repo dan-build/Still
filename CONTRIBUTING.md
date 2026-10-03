@@ -22,8 +22,9 @@ Development builds keep their own vault, separate from any installed release bui
 
 - `src/app/`: the app shell and the lock screens.
 - `src/features/<feature>/{model,ui}`: pure logic in `model`, React views in `ui`. Tests sit next to the code.
-- `src/platform/`: the only code that touches storage (`storage/`) or cryptography (`crypto/`).
-- `src-tauri/`: the desktop shell. `crates/still-core/`: the Rust crypto core.
+- `src/platform/`: the only code that touches storage (`storage/`) or the vault's crypto (`crypto/` for the interface, `tauri/` for the calls into Rust).
+- `src/test/`: test helpers, and `reference/`, the JS crypto that earlier versions shipped, kept to prove compatibility.
+- `src-tauri/`: the desktop shell, the vault session and its commands. `crates/still-core/`: the Rust crypto core.
 
 ## Before you push
 
