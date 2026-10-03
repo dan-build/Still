@@ -9,6 +9,7 @@
 pub mod crypto;
 pub mod error;
 pub mod format;
+pub mod session;
 pub mod sodium;
 
 pub use crypto::Key;
