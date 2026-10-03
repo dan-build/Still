@@ -7,7 +7,7 @@ use libsodium_sys as ffi;
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int, c_ulonglong, c_void};
 use std::ptr;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 /// libsodium's ORIGINAL base64 variant (standard alphabet, padded), as used by the app.
 const BASE64_ORIGINAL: c_int = ffi::sodium_base64_VARIANT_ORIGINAL as c_int;
@@ -98,14 +98,22 @@ pub struct PasswordHashFailed;
 pub struct AuthFailed;
 
 /// Argon2id v1.3 with libsodium's SENSITIVE limits (4 passes, 1 GiB), 32-byte
-/// output: the same call as crypto_pwhash in src/platform/crypto/crypto.ts.
+/// output: the same call as crypto_pwhash in src/test/reference/crypto.ts.
 /// Fails if libsodium can't allocate the memory.
+///
+/// Runs one at a time per process: each run takes 1 GiB, the app never needs
+/// two at once, and it keeps concurrency out of the one computation a vault
+/// can't recover from getting wrong.
 pub fn argon2id_sensitive(
     out: &mut [u8; 32],
     password: &[u8],
     salt: &[u8; 16],
 ) -> Result<(), PasswordHashFailed> {
     init().map_err(|_| PasswordHashFailed)?;
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+    let _running = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     // SAFETY: `out` is writable for 32 bytes, `password` and `salt` are valid
     // for their lengths (salt is crypto_pwhash_SALTBYTES = 16).
     let rc = unsafe {
@@ -218,6 +226,23 @@ pub fn random_u32() -> u32 {
     unsafe { ffi::randombytes_random() }
 }
 
+/// Constant-time equality of two byte strings (sodium_memcmp). Lengths are
+/// not secret: different lengths are simply unequal.
+pub fn memeq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let _ = init();
+    // SAFETY: both pointers are valid for `a.len()` bytes.
+    unsafe {
+        ffi::sodium_memcmp(
+            a.as_ptr() as *const c_void,
+            b.as_ptr() as *const c_void,
+            a.len(),
+        ) == 0
+    }
+}
+
 /// Overwrites `buf` with zeros in a way the compiler won't optimise away.
 pub fn memzero(buf: &mut [u8]) {
     // SAFETY: `buf` is writable for its length.
@@ -232,7 +257,8 @@ mod tests {
     fn initialises_libsodium_1_0_22() {
         assert_eq!(init(), Ok(()));
         assert_eq!(init(), Ok(()));
-        // The same libsodium release as libsodium-wrappers-sumo 0.8.4 in the app.
+        // The same libsodium release as libsodium-wrappers-sumo 0.8.4, which
+        // v0.1.x shipped and the JS reference tests use.
         assert_eq!(version(), "1.0.22");
     }
 

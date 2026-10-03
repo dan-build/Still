@@ -1,7 +1,6 @@
-// The vault backend: the only code that touches stored vault data or keys.
-// The UI sees ids and metadata; keys stay in here. Stage 3b replaces this
-// localStorage + libsodium implementation with Rust commands behind the same
-// interface.
+// The vault backend: the only code that touches stored vault data, and the
+// only caller of the vault's crypto. The UI sees ids and metadata. Keys stay
+// inside the VaultCrypto implementation; this file refers to them by Lens id.
 //
 // Every change is written to storage before it becomes visible, and changes
 // run one at a time.
@@ -9,7 +8,7 @@
 // v0.1.0 behaviour is kept on purpose until each fix lands; those spots are
 // marked "v0.1.0:" with the stage 1 commit that changes them.
 
-import type * as CryptoModule from '@/platform/crypto/crypto'
+import { VaultCryptoError, type VaultCrypto } from '@/platform/crypto/vaultCrypto'
 import {
   VaultDataError,
   addLens,
@@ -21,7 +20,7 @@ import {
   serializeLensList,
   setItems,
 } from '@/features/vault/model/model'
-import { AUTH_FAILURE_MESSAGE, isV1MasterKey } from '@/features/vault/model/format'
+import { isV1MasterKey } from '@/features/vault/model/format'
 import { STORAGE_KEYS, type ItemType, type PersistedLens, type VaultLists } from '@/features/vault/model/types'
 
 /** A change could not be saved. Nothing in memory or on screen changed. */
@@ -33,17 +32,6 @@ export class VaultLockedError extends Error {
     super('Vault is locked')
   }
 }
-
-export type CryptoApi = Pick<
-  typeof CryptoModule,
-  | 'generateMasterKey'
-  | 'encryptMasterKey'
-  | 'decryptMasterKey'
-  | 'encryptLensMasterKey'
-  | 'decryptLensMasterKey'
-  | 'encrypt'
-  | 'decrypt'
->
 
 export interface KeyValueStorage {
   getItem(key: string): string | null
@@ -99,7 +87,8 @@ export interface VaultBackend {
    */
   setAside(): Promise<string>
   unlock(password: string): Promise<UnlockResult>
-  lock(): void
+  /** Hides everything at once, then has the crypto zero its keys. */
+  lock(): Promise<void>
   view(): VaultView
   createLens(name: string): Promise<string>
   addItem(lensId: string, item: NewItem): Promise<void>
@@ -123,12 +112,12 @@ const toView = (lens: PersistedLens): LensView => ({
 
 export function createLocalStorageBackend(
   storage: KeyValueStorage,
-  crypto: CryptoApi,
+  crypto: VaultCrypto,
   now: () => Date = () => new Date(),
 ): VaultBackend {
   let lists: VaultLists = { lenses: [], bin: [] }
-  let appKey: Uint8Array | null = null
-  const lensKeys = new Map<string, Uint8Array>()
+  // Lens ids whose key the crypto holds. Others are kept but not shown.
+  const readable = new Set<string>()
   let unlocked = false
   let queue: Promise<unknown> = Promise.resolve()
 
@@ -156,23 +145,18 @@ export function createLocalStorageBackend(
   }
 
   /**
-   * Unwraps each Lens key. A Lens whose key can't be unwrapped stays in the
-   * lists exactly as stored, so saving writes it back unchanged; it just isn't shown.
+   * Takes the lists as unlocked. A Lens whose key couldn't be unwrapped stays
+   * exactly as stored, so saving writes it back unchanged; it just isn't shown.
    */
-  async function openLists(stored: VaultLists, key: Uint8Array) {
-    const opened: VaultLists = { lenses: [], bin: [] }
-    lensKeys.clear()
-    for (const name of ['lenses', 'bin'] as const) {
-      for (const lens of stored[name]) {
-        try {
-          lensKeys.set(lens.id, await crypto.decryptLensMasterKey(lens.encryptedMasterKey, key))
-          opened[name].push({ ...lens, items: lens.items ?? [] })
-        } catch {
-          opened[name].push(lens)
-        }
-      }
+  function openLists(stored: VaultLists, opened: boolean[]) {
+    const all = [...stored.lenses, ...stored.bin]
+    readable.clear()
+    all.forEach((lens, i) => opened[i] && readable.add(lens.id))
+    const open = (lens: PersistedLens, i: number) => (opened[i] ? { ...lens, items: lens.items ?? [] } : lens)
+    lists = {
+      lenses: stored.lenses.map((lens, i) => open(lens, i)),
+      bin: stored.bin.map((lens, i) => open(lens, stored.lenses.length + i)),
     }
-    lists = opened
     const purged = purgeExpired(lists, now())
     if (purged.bin.length !== lists.bin.length) {
       try {
@@ -224,23 +208,16 @@ export function createLocalStorageBackend(
     return run
   }
 
-  function requireAppKey(): Uint8Array {
-    if (!unlocked || !appKey) throw new VaultLockedError()
-    return appKey
+  function requireUnlocked() {
+    if (!unlocked) throw new VaultLockedError()
   }
 
   /** Runs a change in order, but only while the vault is unlocked. */
   function change<T>(task: () => Promise<T>): Promise<T> {
     return serial(async () => {
-      requireAppKey()
+      requireUnlocked()
       return task()
     })
-  }
-
-  function lensKey(lensId: string): Uint8Array {
-    const key = lensKeys.get(lensId)
-    if (!key) throw new Error('Unknown Lens')
-    return key
   }
 
   return {
@@ -253,16 +230,14 @@ export function createLocalStorageBackend(
     create(password) {
       return serial(async () => {
         if (hasStoredVault() || hasOrphanedData()) throw new VaultDataError('Vault data already exists')
-        const key = await crypto.generateMasterKey()
-        const { encryptedMasterKey, salt } = await crypto.encryptMasterKey(key, password)
+        const { encryptedMasterKey, salt } = await crypto.createVault(password)
         storage.setItem(STORAGE_KEYS.masterKey, encryptedMasterKey)
         storage.setItem(STORAGE_KEYS.salt, salt)
         // Kept for the v1 format; the PIN option never worked and has been removed.
         storage.setItem(STORAGE_KEYS.hasPin, 'false')
-        appKey = key
         unlocked = true
         lists = { lenses: [], bin: [] }
-        lensKeys.clear()
+        readable.clear()
       })
     },
 
@@ -286,13 +261,6 @@ export function createLocalStorageBackend(
         const salt = storage.getItem(STORAGE_KEYS.salt)
         if (blob === null || salt === null) return { ok: false, reason: 'no-vault' }
         if (!isV1MasterKey(blob, salt)) return { ok: false, reason: 'unreadable-data' }
-        let key: Uint8Array
-        try {
-          key = await crypto.decryptMasterKey(blob, password, salt)
-        } catch (error) {
-          const wrongPassword = error instanceof Error && error.message === AUTH_FAILURE_MESSAGE
-          return { ok: false, reason: wrongPassword ? 'wrong-password' : 'failed' }
-        }
         let stored: VaultLists
         try {
           stored = readLists()
@@ -301,47 +269,53 @@ export function createLocalStorageBackend(
           if (error instanceof VaultDataError) return { ok: false, reason: 'unreadable-data' }
           throw error
         }
-        appKey = key
+        let opened: boolean[]
+        try {
+          const wrapped = [...stored.lenses, ...stored.bin].map(({ id, encryptedMasterKey }) => ({ id, encryptedMasterKey }))
+          opened = await crypto.unlock(blob, salt, password, wrapped)
+        } catch (error) {
+          const code = error instanceof VaultCryptoError ? error.code : 'failed'
+          if (code === 'wrong-password') return { ok: false, reason: 'wrong-password' }
+          return { ok: false, reason: code === 'corrupt' ? 'unreadable-data' : 'failed' }
+        }
         unlocked = true
-        await openLists(stored, key)
+        openLists(stored, opened)
         return { ok: true }
       })
     },
 
     lock() {
-      // Zero every key held here and forget the vault's contents. (libsodium may
-      // still hold copies in its own memory; stage 3b moves keys to Rust.)
+      // Hide everything now, so nothing can be read or written from here on,
+      // then have the crypto zero its keys.
       unlocked = false
-      appKey?.fill(0)
-      appKey = null
-      for (const key of lensKeys.values()) key.fill(0)
-      lensKeys.clear()
+      readable.clear()
       lists = { lenses: [], bin: [] }
+      return crypto.lock()
     },
 
     view() {
-      const readable = (lens: PersistedLens) => lensKeys.has(lens.id)
+      const isReadable = (lens: PersistedLens) => readable.has(lens.id)
       return {
-        lenses: lists.lenses.filter(readable).map(toView),
-        bin: lists.bin.filter(readable).map(toView),
-        unreadable: [...lists.lenses, ...lists.bin].filter((lens) => !readable(lens)).length,
+        lenses: lists.lenses.filter(isReadable).map(toView),
+        bin: lists.bin.filter(isReadable).map(toView),
+        unreadable: [...lists.lenses, ...lists.bin].filter((lens) => !isReadable(lens)).length,
       }
     },
 
     createLens(name) {
       return change(async () => {
-        const key = await crypto.generateMasterKey()
+        const id = newId()
         const lens: PersistedLens = {
-          id: newId(),
+          id,
           name: name.trim(),
           createdAt: now().toISOString(),
           itemCount: 0,
-          encryptedMasterKey: await crypto.encryptLensMasterKey(key, requireAppKey()),
+          encryptedMasterKey: await crypto.newLensKey(id),
           items: [],
         }
         write(addLens(lists, lens), ['lenses'])
-        lensKeys.set(lens.id, key)
-        return lens.id
+        readable.add(id)
+        return id
       })
     },
 
@@ -349,7 +323,7 @@ export function createLocalStorageBackend(
       return change(async () => {
         const lens = lists.lenses.find((l) => l.id === lensId)
         if (!lens) throw new Error('Unknown Lens')
-        const encryptedValue = await crypto.encrypt(item.value, lensKey(lensId))
+        const encryptedValue = await crypto.encryptItem(lensId, item.value)
         const items = [...lens.items, { id: newId(), label: item.label, type: item.type, encryptedValue }]
         write(setItems(lists, lensId, items), ['lenses'])
       })
@@ -364,11 +338,11 @@ export function createLocalStorageBackend(
     },
 
     async revealItem(lensId, itemId) {
-      requireAppKey()
+      requireUnlocked()
       const lens = [...lists.lenses, ...lists.bin].find((l) => l.id === lensId)
       const item = lens?.items.find((i) => i.id === itemId)
       if (!item) throw new Error('Unknown item')
-      return crypto.decrypt(item.encryptedValue, lensKey(lensId))
+      return crypto.decryptItem(lensId, item.encryptedValue)
     },
 
     forgetLens(lensId) {

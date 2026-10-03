@@ -1,5 +1,5 @@
 //! The v1 vault operations, byte for byte the same as
-//! src/platform/crypto/crypto.ts:
+//! src/test/reference/crypto.ts:
 //!
 //! 1. Master password → Argon2id (SENSITIVE) with a 16-byte salt → a key that
 //!    wraps the 32-byte app key.
@@ -34,6 +34,11 @@ impl Key {
         let mut key = Key(Box::new([0; KEY_BYTES]));
         sodium::random_bytes(&mut key.0[..]);
         key
+    }
+
+    /// Whether two keys are equal, compared in constant time.
+    pub fn same_as(&self, other: &Key) -> bool {
+        sodium::memeq(&self.0[..], &other.0[..])
     }
 
     /// The raw bytes. Only for tests that compare against known vectors.

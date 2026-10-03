@@ -15,13 +15,8 @@ export default defineConfig({
     host: 'localhost',
     watch: { ignored: ['**/src-tauri/**'] },
   },
-  // libsodium is imported lazily. Pre-bundling it up front stops Vite from
-  // finding it on first load and reloading the page.
-  optimizeDeps: { include: ['libsodium-wrappers-sumo'] },
   build: {
     outDir: 'dist',
-    // The lazily loaded libsodium chunk embeds its wasm (about 530 kB).
-    chunkSizeWarningLimit: 600,
     rolldownOptions: {
       // Strip console.* calls from release builds.
       output: { minify: { compress: { dropConsole: true } } },

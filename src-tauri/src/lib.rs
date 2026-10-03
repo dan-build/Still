@@ -1,13 +1,25 @@
 use tauri::Manager;
 
+mod commands;
+mod vault;
+
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            vault::init(app);
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.center();
             }
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            commands::vault_create,
+            commands::vault_unlock,
+            commands::vault_lock,
+            commands::lens_new_key,
+            commands::item_encrypt,
+            commands::item_decrypt,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -56,20 +68,16 @@ mod tests {
             .collect()
     }
 
-    const RELEASE_SOURCES: [&str; 5] = [
+    const RELEASE_SOURCES: [&str; 4] = [
         "'self'",
         "'none'",
-        // libsodium compiles its embedded wasm at runtime. 'wasm-unsafe-eval'
-        // would be enough on Safari 16+, but WebKit before that (macOS 12's
-        // Safari 15) ignores it and blocks wasm, so unlocking fails. Remove
-        // this once stage 3b moves crypto to Rust and the wasm is gone.
-        "'unsafe-eval'",
         // Tauri's IPC: the custom protocol, and its Windows/Android form.
         "ipc:",
         "http://ipc.localhost",
     ];
 
-    // The release policy allows no remote origins and no inline code.
+    // The release policy allows no remote origins, no inline code and no eval
+    // of any kind: the crypto runs in Rust, so the page needs no WebAssembly.
     #[test]
     fn csp_allows_only_the_app_itself() {
         let config = config();
@@ -81,6 +89,7 @@ mod tests {
             );
         }
         assert_eq!(security["csp"]["default-src"], "'self'");
+        assert_eq!(security["csp"]["script-src"], "'self'");
         assert_eq!(security["csp"]["object-src"], "'none'");
     }
 
@@ -98,6 +107,27 @@ mod tests {
             assert!(
                 RELEASE_SOURCES.contains(&source.as_str()) || dev_extra.contains(&source.as_str()),
                 "devCsp {directive} allows {source}"
+            );
+        }
+    }
+
+    // Only the main window may call anything, and only the vault commands:
+    // no core:default, no plugins.
+    #[test]
+    fn capability_allows_only_the_vault_commands_in_main() {
+        let capability: Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        assert_eq!(capability["windows"], serde_json::json!(["main"]));
+        let allowed: Vec<String> = crate::commands::ALL
+            .iter()
+            .map(|c| format!("allow-{}", c.replace('_', "-")))
+            .collect();
+        assert_eq!(capability["permissions"], serde_json::json!(allowed));
+        let build_rs = include_str!("../build.rs");
+        for command in crate::commands::ALL {
+            assert!(
+                build_rs.contains(&format!("\"{command}\"")),
+                "build.rs declares {command}"
             );
         }
     }

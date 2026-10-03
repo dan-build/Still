@@ -24,6 +24,32 @@ fn argon2id_outputs_match() {
     }
 }
 
+// Derivations started from several threads at once must all give the
+// vector's exact bytes. still-core runs them one at a time; this repeats the
+// computation on every platform's Argon2 code (NEON on Apple Silicon).
+#[test]
+fn argon2id_is_exact_when_started_from_many_threads() {
+    let v = fixture("vault-v1/vectors.json");
+    let vector = &v["argon2"]["vectors"][0];
+    let password = vector["password"].as_str().unwrap().to_owned();
+    let salt: [u8; 16] = array(&vector["salt"]);
+    let want = hex(&vector["key"]);
+    let threads: Vec<_> = (0..4)
+        .map(|_| {
+            let password = password.clone();
+            std::thread::spawn(move || {
+                derive_key_from_password(&password, &salt)
+                    .unwrap()
+                    .expose()
+                    .to_vec()
+            })
+        })
+        .collect();
+    for thread in threads {
+        assert_eq!(thread.join().unwrap(), want);
+    }
+}
+
 #[test]
 fn master_key_blob_matches_and_opens() {
     let v = fixture("vault-v1/vectors.json");

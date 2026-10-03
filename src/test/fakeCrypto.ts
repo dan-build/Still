@@ -1,4 +1,4 @@
-// A fast stand-in for src/platform/crypto/crypto.ts, for UI and vault-layer tests.
+// A fast stand-in for src/test/reference/crypto.ts, for UI and vault-layer tests.
 //
 // Blobs have the real v1 shapes (base64, version byte, 24-byte nonce, 16-byte
 // tag, same lengths), so structure checks behave as they do with real data.

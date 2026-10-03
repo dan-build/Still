@@ -69,3 +69,8 @@ fn opens_the_generated_golden_vault() {
 fn opens_the_vault_exported_from_a_release_build() {
     check_vault("vault-v1-real");
 }
+
+#[test]
+fn opens_the_vault_made_by_the_rust_session() {
+    check_vault("vault-v1-rust");
+}
