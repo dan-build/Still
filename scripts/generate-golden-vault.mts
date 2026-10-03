@@ -14,7 +14,7 @@ import {
   encryptLensMasterKey,
   encryptMasterKey,
   generateMasterKey,
-} from '../src/platform/crypto/crypto.ts'
+} from '../src/test/reference/crypto.ts'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = join(root, 'fixtures', 'vault-v1')

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as fakeCrypto from '@/test/fakeCrypto'
 import { createLibsodiumVaultCrypto } from './libsodiumVaultCrypto'
-import { VaultCryptoError, type VaultCrypto } from './vaultCrypto'
+import { VaultCryptoError, type VaultCrypto } from '@/platform/crypto/vaultCrypto'
 
 const code = (promise: Promise<unknown>) =>
   promise.then(

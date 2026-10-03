@@ -1,5 +1,5 @@
 //! The v1 stored format: parse and write blobs exactly as
-//! src/platform/crypto/crypto.ts lays them out. Pure and total: malformed
+//! src/test/reference/crypto.ts lays them out. Pure and total: malformed
 //! input is an error, never a panic.
 //!
 //! - Key blob (master key or Lens key), 73 bytes:

@@ -1,4 +1,4 @@
-// Fixed-input v1 vectors (fixtures/vault-v1/vectors.json). The app's crypto
+// Fixed-input v1 vectors (fixtures/vault-v1/vectors.json). The JS reference crypto
 // must decrypt every vector, and libsodium must still produce the same bytes
 // from the same fixed inputs. The Rust port must pass the same vectors.
 

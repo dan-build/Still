@@ -98,7 +98,7 @@ pub struct PasswordHashFailed;
 pub struct AuthFailed;
 
 /// Argon2id v1.3 with libsodium's SENSITIVE limits (4 passes, 1 GiB), 32-byte
-/// output: the same call as crypto_pwhash in src/platform/crypto/crypto.ts.
+/// output: the same call as crypto_pwhash in src/test/reference/crypto.ts.
 /// Fails if libsodium can't allocate the memory.
 pub fn argon2id_sensitive(
     out: &mut [u8; 32],
@@ -232,7 +232,8 @@ mod tests {
     fn initialises_libsodium_1_0_22() {
         assert_eq!(init(), Ok(()));
         assert_eq!(init(), Ok(()));
-        // The same libsodium release as libsodium-wrappers-sumo 0.8.4 in the app.
+        // The same libsodium release as libsodium-wrappers-sumo 0.8.4, which
+        // v0.1.x shipped and the JS reference tests use.
         assert_eq!(version(), "1.0.22");
     }
 

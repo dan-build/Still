@@ -20,7 +20,7 @@ import { fakeItemBlob, fakeLensKeyBlob, fakeMasterKeyBlob, fakePlaintext } from 
 const lockCalls = vi.hoisted(() => ({ count: 0 }))
 vi.mock('@/platform/tauri/vaultCrypto', async () => {
   const fake = await import('@/test/fakeCrypto')
-  const { createLibsodiumVaultCrypto } = await import('@/platform/crypto/libsodiumVaultCrypto')
+  const { createLibsodiumVaultCrypto } = await import('@/test/reference/libsodiumVaultCrypto')
   return {
     createTauriVaultCrypto: () => {
       const crypto = createLibsodiumVaultCrypto(fake)

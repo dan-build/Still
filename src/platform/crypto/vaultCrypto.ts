@@ -1,7 +1,8 @@
 // The vault's crypto, behind key handles. Whoever implements this keeps the
 // app key and every Lens key to itself; callers only ever see encrypted blobs
-// and refer to Lens keys by Lens id. Stage 3b implements it in Rust; the
-// libsodium version (libsodiumVaultCrypto.ts) keeps the keys in JS.
+// and refer to Lens keys by Lens id. The app's implementation calls Rust
+// (platform/tauri/vaultCrypto.ts); tests use the JS reference one
+// (test/reference/libsodiumVaultCrypto.ts).
 
 /**
  * wrong-password: the password didn't open the master key.
