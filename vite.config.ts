@@ -1,9 +1,17 @@
 import { fileURLToPath } from 'node:url'
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  // macOS's webview is the system Safari. Tailwind 4 needs Safari 15.4 (CSS
+  // cascade layers); Lightning CSS adds fallbacks for anything newer, in dev
+  // and in release, so macOS 12 renders exactly like current macOS.
+  css: {
+    transformer: 'lightningcss',
+    lightningcss: { targets: { safari: (15 << 16) | (4 << 8) } },
+  },
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   // Tauri prints its own output; keep Vite's next to it.
   clearScreen: false,
@@ -17,6 +25,7 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    cssMinify: 'lightningcss',
     rolldownOptions: {
       // Strip console.* calls from release builds.
       output: { minify: { compress: { dropConsole: true } } },

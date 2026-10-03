@@ -18,7 +18,7 @@ export default function RecycleBinModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-white w-full max-w-[480px] mx-4 rounded-[18px] p-8" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-8">
           <div>
@@ -61,7 +61,7 @@ export default function RecycleBinModal({
             {recycleBin.map((item) => (
               <div 
                 key={item.id} 
-                className="group flex items-center justify-between bg-[#F8F9FA] hover:bg-white border border-transparent hover:border-black/10 rounded-[16px] px-6 py-5 transition-all duration-200"
+                className="group flex items-center justify-between bg-still-bg hover:bg-white border border-transparent hover:border-black/10 rounded-[16px] px-6 py-5 transition-all duration-200"
               >
                 <div className="min-w-0">
                     <div className="flex items-baseline gap-3">

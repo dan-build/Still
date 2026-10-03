@@ -41,7 +41,7 @@ export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenP
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] px-6">
+    <div className="min-h-screen flex items-center justify-center bg-still-bg px-6">
       <div className="w-full max-w-[420px]">
         <div className="text-center mb-10">
           <div className="mx-auto mb-6 w-16 h-16 rounded-2xl flex items-center justify-center">
@@ -79,7 +79,7 @@ export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenP
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Create a strong password"
-              className="w-full bg-white border border-black/10 focus:border-black/30 rounded-[14px] px-5 py-4 text-[17px] placeholder:text-[#151515]/40 focus:outline-none"
+              className="w-full bg-white border border-black/10 focus:border-black/30 rounded-[14px] px-5 py-4 text-[17px] placeholder:text-[#151515]/40 focus:outline-hidden"
             />
           </div>
 
@@ -92,7 +92,7 @@ export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenP
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Confirm your password"
-              className="w-full bg-white border border-black/10 focus:border-black/30 rounded-[14px] px-5 py-4 text-[17px] placeholder:text-[#151515]/40 focus:outline-none"
+              className="w-full bg-white border border-black/10 focus:border-black/30 rounded-[14px] px-5 py-4 text-[17px] placeholder:text-[#151515]/40 focus:outline-hidden"
             />
           </div>
 

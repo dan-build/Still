@@ -59,7 +59,7 @@ export default function CreateLensModal({ isOpen, onClose, onCreate }: CreateLen
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Banking Keys"
-            className="w-full bg-[#F8F9FA] border border-black/10 focus:border-black/30 rounded-[9px] px-5 py-4 text-[15px] placeholder:text-[#151515]/40 focus:outline-none transition-colors duration-200"
+            className="w-full bg-still-bg border border-black/10 focus:border-black/30 rounded-[9px] px-5 py-4 text-[15px] placeholder:text-[#151515]/40 focus:outline-hidden transition-colors duration-200"
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
             autoFocus
           />
@@ -68,7 +68,7 @@ export default function CreateLensModal({ isOpen, onClose, onCreate }: CreateLen
         <div className="flex gap-3 mt-8">
           <button
             onClick={onClose}
-            className="flex-1 py-3.5 text-sm font-medium text-[#151515]/70 hover:bg-[#F8F9FA] rounded-[9px] transition-colors duration-200"
+            className="flex-1 py-3.5 text-sm font-medium text-[#151515]/70 hover:bg-still-bg rounded-[9px] transition-colors duration-200"
           >
             Cancel
           </button>
