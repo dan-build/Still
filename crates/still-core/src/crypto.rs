@@ -36,6 +36,11 @@ impl Key {
         key
     }
 
+    /// Whether two keys are equal, compared in constant time.
+    pub fn same_as(&self, other: &Key) -> bool {
+        sodium::memeq(&self.0[..], &other.0[..])
+    }
+
     /// The raw bytes. Only for tests that compare against known vectors.
     #[doc(hidden)]
     pub fn expose(&self) -> &[u8; KEY_BYTES] {

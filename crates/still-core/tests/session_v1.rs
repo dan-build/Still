@@ -5,7 +5,6 @@
 
 mod common;
 
-use common::argon2_one_at_a_time;
 use common::fixture;
 use serde_json::Value;
 use still_core::crypto::encrypt_lens_key;
@@ -69,7 +68,6 @@ fn open(dir: &str, password: &str) -> Result<(Unlocked, Vec<bool>), SessionError
 
 #[test]
 fn opens_both_golden_vaults_and_reveals_every_secret_exactly() {
-    let _argon2 = argon2_one_at_a_time();
     for dir in ["vault-v1", "vault-v1-real"] {
         let vault = fixture(&format!("{dir}/vault.json"));
         let expected = fixture(&format!("{dir}/expected.json"));
@@ -102,7 +100,6 @@ fn opens_both_golden_vaults_and_reveals_every_secret_exactly() {
 
 #[test]
 fn tells_a_wrong_password_from_damaged_data() {
-    let _argon2 = argon2_one_at_a_time();
     assert_eq!(
         open("vault-v1-real", "throwaway-vault-20").unwrap_err(),
         SessionError::WrongPassword
@@ -118,7 +115,6 @@ fn tells_a_wrong_password_from_damaged_data() {
 
 #[test]
 fn reports_each_lens_entry_and_holds_only_keys_that_opened() {
-    let _argon2 = argon2_one_at_a_time();
     let vault = fixture("vault-v1/vault.json");
     let expected = fixture("vault-v1/expected.json");
     let lenses = stored_lenses(&vault);
@@ -171,7 +167,6 @@ fn reports_each_lens_entry_and_holds_only_keys_that_opened() {
 
 #[test]
 fn a_new_vault_reopens_with_its_password_and_keeps_secrets_exact() {
-    let _argon2 = argon2_one_at_a_time();
     let (mut session, blob, salt) = Unlocked::create(&secret("pw-123456")).unwrap();
     let wrapped_key = session.new_lens_key("lens-a");
     let value = "  Pässwörd 🔐 with spaces\nand a line  ";
@@ -204,7 +199,6 @@ fn a_new_vault_reopens_with_its_password_and_keeps_secrets_exact() {
 
 #[test]
 fn never_prints_keys_or_secrets() {
-    let _argon2 = argon2_one_at_a_time();
     let (mut session, _, _) = Unlocked::create(&secret("pw-123456")).unwrap();
     session.new_lens_key("lens-a");
     assert_eq!(format!("{session:?}"), "Unlocked(1 Lens keys, redacted)");

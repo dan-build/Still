@@ -95,10 +95,15 @@ pub struct Unlocked {
 impl Unlocked {
     /// A new vault: a fresh app key, wrapped by the password. Returns the
     /// session and the (key blob, salt) to store.
+    ///
+    /// Before returning, it proves the blob opens with the password, by
+    /// deriving the key a second time. A wrong derivation here would lock the
+    /// vault forever, so nothing is handed out to be stored unless it opens.
     pub fn create(password: &SecretText) -> Result<(Self, String, String), SessionError> {
         let app_key = Key::random();
         let (blob, salt) =
             encrypt_master_key(&app_key, password.expose()).map_err(|_| SessionError::Failed)?;
+        verify_master_key(&app_key, &blob, &salt, password)?;
         let session = Self {
             app_key,
             lens_keys: HashMap::new(),
@@ -165,8 +170,54 @@ impl Unlocked {
     }
 }
 
+/// Fails unless `blob` opens with `password` and `salt` to exactly `app_key`.
+fn verify_master_key(
+    app_key: &Key,
+    blob: &str,
+    salt: &str,
+    password: &SecretText,
+) -> Result<(), SessionError> {
+    match decrypt_master_key(blob, password.expose(), salt) {
+        Ok(opened) if opened.same_as(app_key) => Ok(()),
+        _ => Err(SessionError::Failed),
+    }
+}
+
 impl std::fmt::Debug for Unlocked {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Unlocked({} Lens keys, redacted)", self.lens_keys.len())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn secret(text: &str) -> SecretText {
+        SecretText::from(text.to_owned())
+    }
+
+    // The check create() runs before handing out a new vault: only a blob that
+    // opens to the very same app key passes.
+    #[test]
+    fn a_new_vault_is_only_handed_out_once_it_opens() {
+        let app_key = Key::random();
+        let (blob, salt) = encrypt_master_key(&app_key, "pw-123456").unwrap();
+        assert_eq!(
+            verify_master_key(&app_key, &blob, &salt, &secret("pw-123456")),
+            Ok(())
+        );
+
+        // A blob the password can't open (as after a wrong derivation).
+        assert_eq!(
+            verify_master_key(&app_key, &blob, &salt, &secret("pw-1234567")),
+            Err(SessionError::Failed)
+        );
+        // A blob that opens, but to some other key.
+        let (other, other_salt) = encrypt_master_key(&Key::random(), "pw-123456").unwrap();
+        assert_eq!(
+            verify_master_key(&app_key, &other, &other_salt, &secret("pw-123456")),
+            Err(SessionError::Failed)
+        );
     }
 }

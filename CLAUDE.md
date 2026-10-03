@@ -28,7 +28,7 @@ Tests sit next to the code (`src/**/*.test.ts(x)`):
 - `app/App.persistence.test.tsx`: drives the UI in happy-dom with fake crypto and checks localStorage.
 - `features/vault/model/*.test.ts` and `platform/storage/backend.test.ts`: the vault model, format checks and backend. The backend tests also open every golden vault with the real crypto.
 - `platform/tauri/vaultCrypto.test.ts`: the Tauri commands' names, arguments and error codes, with `invoke` mocked.
-- Rust: `crates/still-core/tests/` (golden vaults, vectors, the session) and `src-tauri/src/` (the session state, config and capability guards). Tests that run Argon2id take `argon2_one_at_a_time()`.
+- Rust: `crates/still-core/tests/` (golden vaults, vectors, the session) and `src-tauri/src/` (the session state, config and capability guards).
 
 A known bug gets an `it.fails` test first, with a passing sibling that runs the same steps. When you fix it, flip it to `it` in the same commit. Stage 1 left none. Never regenerate or edit the fixtures to make a test pass.
 
@@ -78,11 +78,11 @@ localStorage belongs to one origin and one WebKit data folder, so dev and releas
 Recycle-bin entries older than 7 days are purged when the vault is unlocked. New ids are 128 random bits in hex. v0.1.0's ids were `Date.now().toString(36)`; they're kept as they are.
 
 **Rust crypto core.** [crates/still-core](crates/still-core) implements the v1 format byte for byte like the JS reference `crypto.ts`, on libsodium 1.0.22, the same release v0.1.x shipped.
-- `sodium.rs` is the only `unsafe` code.
+- `sodium.rs` is the only `unsafe` code. Argon2id runs one at a time per process (a 1 GiB lock), so tests need no guard of their own.
 - `format.rs` parses and writes blobs and never panics.
 - `crypto.rs` holds the operations and the `Key` type, which is zeroed on drop and prints as `Key(redacted)`.
 - `error.rs`: `WrongKey`, `Corrupt`, `PasswordHashFailed`, `EmptyPlaintext`, `NotUtf8`.
-- `session.rs`: `Unlocked` holds the app key and the Lens keys that opened, built without any lock held (Argon2id takes seconds). `SecretText` carries passwords and values, zeroes itself on drop and never prints. `SessionError::code()` gives the same codes as the JS `VaultCrypto`.
+- `session.rs`: `Unlocked` holds the app key and the Lens keys that opened, built without any lock held (Argon2id takes seconds). `create()` derives the key a second time and refuses unless the new blob opens to the same app key, because a wrong derivation there would lock the vault forever. `SecretText` carries passwords and values, zeroes itself on drop and never prints. `SessionError::code()` gives the same codes as the JS `VaultCrypto`.
 
 **The Tauri side** ([src-tauri/src](src-tauri/src)): `vault.rs` keeps a `Mutex<Option<Unlocked>>` registered in `setup`; locking drops it. `commands.rs` holds the six commands (`vault_create`, `vault_unlock`, `vault_lock`, `lens_new_key`, `item_encrypt`, `item_decrypt`); Argon2id runs in `spawn_blocking`. `build.rs` declares them, so Tauri refuses anything [capabilities/default.json](src-tauri/capabilities/default.json) doesn't allow: exactly these six, for the `main` window, with no `core:default`. Adding a command means updating all three places; a test checks they agree.
 
