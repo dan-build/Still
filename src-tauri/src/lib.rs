@@ -1,13 +1,25 @@
 use tauri::Manager;
 
+mod commands;
+mod vault;
+
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            vault::init(app);
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.center();
             }
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            commands::vault_create,
+            commands::vault_unlock,
+            commands::vault_lock,
+            commands::lens_new_key,
+            commands::item_encrypt,
+            commands::item_decrypt,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -98,6 +110,27 @@ mod tests {
             assert!(
                 RELEASE_SOURCES.contains(&source.as_str()) || dev_extra.contains(&source.as_str()),
                 "devCsp {directive} allows {source}"
+            );
+        }
+    }
+
+    // Only the main window may call anything, and only the vault commands:
+    // no core:default, no plugins.
+    #[test]
+    fn capability_allows_only_the_vault_commands_in_main() {
+        let capability: Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        assert_eq!(capability["windows"], serde_json::json!(["main"]));
+        let allowed: Vec<String> = crate::commands::ALL
+            .iter()
+            .map(|c| format!("allow-{}", c.replace('_', "-")))
+            .collect();
+        assert_eq!(capability["permissions"], serde_json::json!(allowed));
+        let build_rs = include_str!("../build.rs");
+        for command in crate::commands::ALL {
+            assert!(
+                build_rs.contains(&format!("\"{command}\"")),
+                "build.rs declares {command}"
             );
         }
     }

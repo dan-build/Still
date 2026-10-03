@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The main window may call the vault commands, and nothing else.",
+  "windows": ["main"],
+  "permissions": [
+    "allow-vault-create",
+    "allow-vault-unlock",
+    "allow-vault-lock",
+    "allow-lens-new-key",
+    "allow-item-encrypt",
+    "allow-item-decrypt"
+  ]
+}
