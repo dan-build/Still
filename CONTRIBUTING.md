@@ -53,6 +53,7 @@ This runs exactly what CI runs:
 - **Never regenerate or edit the fixtures in `fixtures/vault-v1*`** to make a test pass. A failing golden test means existing vaults would break.
 - **Write the tests first, then refactor** the code they cover.
 - **Tests marked `it.fails` are known bugs.** When you fix one, change it to `it` in the same commit.
+- **Dependency advisories block CI.** `npm audit` and `cargo audit` fail on any high or critical advisory, dev tools included. To accept one that can't be fixed yet, add an entry with a reason and a review date to `scripts/npm-audit-allowlist.json` (or `.cargo/audit.toml`); an npm entry stops counting after its review date.
 - **No custom cryptography.** Use libsodium.
 - **No network calls, analytics or remote code at runtime.**
 - **Never log secrets.** That includes passwords, keys and decrypted values.

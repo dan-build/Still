@@ -34,9 +34,10 @@ jobs:
           node-version-file: .nvmrc
 
       # Reads package-lock.json only; fails on high or critical advisories
-      # anywhere in the tree, dev tools included.
+      # anywhere in the tree, dev tools included. Ignoring one needs an entry
+      # with a reason and a review date in scripts/npm-audit-allowlist.json.
       - name: npm audit
-        run: npm audit --audit-level=high
+        run: node scripts/npm-audit.mjs
 
       - name: Install cargo-audit (pinned release, checksum verified)
         run: |
