@@ -2,8 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import CreateLensModal from '@/features/lenses/ui/CreateLensModal'
 import LensDetail from '@/features/lenses/ui/LensDetail'
 import RecycleBinModal from '@/features/recycle-bin/ui/RecycleBinModal'
-import * as cryptoModule from '@/platform/crypto/crypto'
-import { createLibsodiumVaultCrypto } from '@/platform/crypto/libsodiumVaultCrypto'
+import { createTauriVaultCrypto } from '@/platform/tauri/vaultCrypto'
 import { createLocalStorageBackend, type LensView, type VaultBackend, type VaultView } from '@/platform/storage/backend'
 import UnlockScreen, { type UnlockOutcome } from './lock/UnlockScreen'
 import CreatePasswordScreen from './lock/CreatePasswordScreen'
@@ -21,9 +20,9 @@ export default function StillHome() {
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
   const [isOrphaned, setIsOrphaned] = useState(false)
 
-  // Created on first use: the static export renders without a window.
+  // Created on first use. The keys live in Rust, behind the Tauri commands.
   const backend = () => {
-    if (!backendRef.current) backendRef.current = createLocalStorageBackend(window.localStorage, createLibsodiumVaultCrypto(cryptoModule))
+    if (!backendRef.current) backendRef.current = createLocalStorageBackend(window.localStorage, createTauriVaultCrypto())
     return backendRef.current
   }
 
@@ -34,6 +33,9 @@ export default function StillHome() {
   const selectedLens = lenses.find(l => l.id === selectedLensId) ?? null
 
   useEffect(() => {
+    // Rust keeps its keys across a page reload, but this page starts locked,
+    // so have Rust forget them too. If that fails, the next unlock replaces them.
+    backend().lock().catch(() => {})
     const status = backend().status()
     setIsFirstLaunch(status === 'empty')
     setIsOrphaned(status === 'orphaned')

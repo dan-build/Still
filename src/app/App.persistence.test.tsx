@@ -15,7 +15,19 @@ import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeItemBlob, fakeLensKeyBlob, fakeMasterKeyBlob, fakePlaintext } from '@/test/fakeCrypto'
 
-vi.mock('@/platform/crypto/crypto', () => import('@/test/fakeCrypto'))
+// The app's crypto is the Rust one behind Tauri commands. Here it's the JS
+// VaultCrypto on fake crypto, with its calls to lock recorded.
+const lockCalls = vi.hoisted(() => ({ count: 0 }))
+vi.mock('@/platform/tauri/vaultCrypto', async () => {
+  const fake = await import('@/test/fakeCrypto')
+  const { createLibsodiumVaultCrypto } = await import('@/platform/crypto/libsodiumVaultCrypto')
+  return {
+    createTauriVaultCrypto: () => {
+      const crypto = createLibsodiumVaultCrypto(fake)
+      return { ...crypto, lock: () => { lockCalls.count += 1; return crypto.lock() } }
+    },
+  }
+})
 
 import StillHome from './App'
 
@@ -172,6 +184,14 @@ describe('unlock', () => {
 })
 
 describe('lock', () => {
+  it('has the crypto forget any keys as soon as the app starts', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    lockCalls.count = 0
+    render(createElement(StillHome))
+    await screen.findByPlaceholderText('Enter your password')
+    expect(lockCalls.count).toBeGreaterThan(0)
+  })
+
   it('returns to the unlock screen', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     await unlock()
