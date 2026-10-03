@@ -3,6 +3,7 @@ import CreateLensModal from '@/features/lenses/ui/CreateLensModal'
 import LensDetail from '@/features/lenses/ui/LensDetail'
 import RecycleBinModal from '@/features/recycle-bin/ui/RecycleBinModal'
 import * as cryptoModule from '@/platform/crypto/crypto'
+import { createLibsodiumVaultCrypto } from '@/platform/crypto/libsodiumVaultCrypto'
 import { createLocalStorageBackend, type LensView, type VaultBackend, type VaultView } from '@/platform/storage/backend'
 import UnlockScreen, { type UnlockOutcome } from './lock/UnlockScreen'
 import CreatePasswordScreen from './lock/CreatePasswordScreen'
@@ -22,7 +23,7 @@ export default function StillHome() {
 
   // Created on first use: the static export renders without a window.
   const backend = () => {
-    if (!backendRef.current) backendRef.current = createLocalStorageBackend(window.localStorage, cryptoModule)
+    if (!backendRef.current) backendRef.current = createLocalStorageBackend(window.localStorage, createLibsodiumVaultCrypto(cryptoModule))
     return backendRef.current
   }
 
@@ -121,10 +122,10 @@ export default function StillHome() {
     setIsFirstLaunch(true)
   }
 
-  // Lock forgets everything shown: keys are zeroed in the backend, and the
-  // open Lens, modals and any revealed values go with the unmounted UI.
+  // Lock forgets everything shown: the crypto zeroes its keys, and the open
+  // Lens, modals and any revealed values go with the unmounted UI.
   const lock = () => {
-    backend().lock()
+    backend().lock().catch(() => showToast("Couldn't clear the keys from memory. Quit Still to be sure.", true))
     setIsUnlocked(false)
     setSelectedLensId(null)
     setIsCreateOpen(false)
