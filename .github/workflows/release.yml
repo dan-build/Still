@@ -59,6 +59,18 @@ jobs:
 
       - run: npm ci
 
+      # As in CI: libsodium must build from the signed archives in
+      # vendor/libsodium, with no network, and never come from the cache.
+      # On 2026-10-03 a run here got one wrong Argon2id result from a cached
+      # build; rebuilding rules the cache out.
+      - name: Build libsodium offline from vendor/
+        run: |
+          cargo fetch --locked
+          cargo clean -p libsodium-sys-stable
+          cargo clean -p libsodium-sys-stable --target aarch64-apple-darwin
+          cargo clean -p libsodium-sys-stable --target x86_64-apple-darwin
+          cargo build --offline --locked -p still-core
+
       - name: Run every check before building
         run: npm run check
 
