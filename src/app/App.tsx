@@ -4,7 +4,7 @@ import LensDetail from '@/features/lenses/ui/LensDetail'
 import RecycleBinModal from '@/features/recycle-bin/ui/RecycleBinModal'
 import { onAutoLocked, reportActivity } from '@/platform/tauri/session'
 import { createTauriVaultCrypto } from '@/platform/tauri/vaultCrypto'
-import { createLocalStorageBackend, type LensView, type VaultBackend, type VaultView } from '@/platform/storage/backend'
+import { createVaultBackend, type LensView, type VaultBackend, type VaultStorage, type VaultView } from '@/platform/storage/backend'
 import UnlockScreen, { type UnlockOutcome } from './lock/UnlockScreen'
 import CreatePasswordScreen from './lock/CreatePasswordScreen'
 import RecoveryScreen from './lock/RecoveryScreen'
@@ -12,13 +12,27 @@ import RecoveryScreen from './lock/RecoveryScreen'
 // Activity is reported to Rust's auto-lock at most this often.
 const ACTIVITY_EVERY_MS = 15_000
 
-export default function StillHome() {
+const NOTICES = {
+  moved: 'Your vault now lives in its own file. The copy from before is kept, unchanged.',
+  'old-copy-changed': 'An older version of Still changed its own copy of your vault. This version uses its file, which is unchanged; both are kept.',
+}
+
+interface StillHomeProps {
+  /** Where the vault is stored: the vault file, opened by StillApp. */
+  storage: VaultStorage
+  /** Shown once, after the vault moved into its file or an older version changed the old copy. */
+  notice?: keyof typeof NOTICES
+}
+
+export default function StillHome({ storage, notice }: StillHomeProps) {
   const backendRef = useRef<VaultBackend | null>(null)
   const [view, setView] = useState<VaultView>({ lenses: [], bin: [], unreadable: 0 })
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [selectedLensId, setSelectedLensId] = useState<string | null>(null)
   const [isRecycleOpen, setIsRecycleOpen] = useState(false)
   const [toast, setToast] = useState<{ message: string; error: boolean } | null>(null)
+  // Notices about where the vault lives stay until dismissed, unlike toasts.
+  const [shownNotice, setShownNotice] = useState(notice)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
@@ -26,7 +40,7 @@ export default function StillHome() {
 
   // Created on first use. The keys live in Rust, behind the Tauri commands.
   const backend = () => {
-    if (!backendRef.current) backendRef.current = createLocalStorageBackend(window.localStorage, createTauriVaultCrypto())
+    if (!backendRef.current) backendRef.current = createVaultBackend(storage, createTauriVaultCrypto())
     return backendRef.current
   }
 
@@ -333,6 +347,18 @@ export default function StillHome() {
             onRestore={restoreFromRecycleBin}
             onPermanentDelete={permanentDelete}
           />
+        </div>
+      )}
+
+      {shownNotice && (
+        <div
+          role="status"
+          className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[min(520px,calc(100vw-4rem))] bg-white/90 backdrop-blur-xl text-sm text-[#151515]/80 px-6 py-4 rounded-2xl border border-black/10 shadow-xl flex items-center gap-4 z-100"
+        >
+          <span className="flex-1 leading-relaxed">{NOTICES[shownNotice]}</span>
+          <button onClick={() => setShownNotice(undefined)} className="px-4 py-2 rounded-xl bg-[#151515] text-white text-sm">
+            OK
+          </button>
         </div>
       )}
 

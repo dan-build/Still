@@ -2,8 +2,8 @@
 // only caller of the vault's crypto. The UI sees ids and metadata. Keys stay
 // inside the VaultCrypto implementation; this file refers to them by Lens id.
 //
-// Every change is written to storage before it becomes visible, and changes
-// run one at a time.
+// Every change is written to storage, in one all-or-nothing write, before it
+// becomes visible, and changes run one at a time.
 //
 // v0.1.0 behaviour is kept on purpose until each fix lands; those spots are
 // marked "v0.1.0:" with the stage 1 commit that changes them.
@@ -33,10 +33,14 @@ export class VaultLockedError extends Error {
   }
 }
 
-export interface KeyValueStorage {
-  getItem(key: string): string | null
-  setItem(key: string, value: string): void
-  removeItem(key: string): void
+/**
+ * Where the vault's values live: the vault file (via Rust) in the app. Reads
+ * come from what was loaded; each write sets (a string) or removes (null)
+ * several values at once, and either all of it is saved or none of it.
+ */
+export interface VaultStorage {
+  get(key: string): string | null
+  write(changes: Record<string, string | null>): Promise<void>
 }
 
 /** 'orphaned': vault data exists but the master key or salt is missing, so it can't be opened. */
@@ -101,8 +105,6 @@ export interface VaultBackend {
   deleteLensForever(lensId: string): Promise<void>
 }
 
-type ListName = 'lenses' | 'bin'
-
 const toView = (lens: PersistedLens): LensView => ({
   id: lens.id,
   name: lens.name,
@@ -112,8 +114,8 @@ const toView = (lens: PersistedLens): LensView => ({
   ...(lens.deletedAt ? { deletedAt: lens.deletedAt } : {}),
 })
 
-export function createLocalStorageBackend(
-  storage: KeyValueStorage,
+export function createVaultBackend(
+  storage: VaultStorage,
   crypto: VaultCrypto,
   now: () => Date = () => new Date(),
 ): VaultBackend {
@@ -128,29 +130,29 @@ export function createLocalStorageBackend(
   const newId = () => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('')
 
   function hasStoredVault() {
-    return storage.getItem(STORAGE_KEYS.masterKey) !== null && storage.getItem(STORAGE_KEYS.salt) !== null
+    return storage.get(STORAGE_KEYS.masterKey) !== null && storage.get(STORAGE_KEYS.salt) !== null
   }
 
   /** Vault data that a new vault would bury: a lone key or salt, or any Lens data. */
   function hasOrphanedData() {
     if (hasStoredVault()) return false
-    if (storage.getItem(STORAGE_KEYS.masterKey) !== null || storage.getItem(STORAGE_KEYS.salt) !== null) return true
+    if (storage.get(STORAGE_KEYS.masterKey) !== null || storage.get(STORAGE_KEYS.salt) !== null) return true
     return [STORAGE_KEYS.lenses, STORAGE_KEYS.bin].some((key) => {
-      const raw = storage.getItem(key)
+      const raw = storage.get(key)
       return raw !== null && raw.trim() !== '[]'
     })
   }
 
   /** Reads both stored lists; throws VaultDataError if either is not a JSON list. */
   function readLists(): VaultLists {
-    return { lenses: parseLensList(storage.getItem(STORAGE_KEYS.lenses)), bin: parseLensList(storage.getItem(STORAGE_KEYS.bin)) }
+    return { lenses: parseLensList(storage.get(STORAGE_KEYS.lenses)), bin: parseLensList(storage.get(STORAGE_KEYS.bin)) }
   }
 
   /**
    * Takes the lists as unlocked. A Lens whose key couldn't be unwrapped stays
    * exactly as stored, so saving writes it back unchanged; it just isn't shown.
    */
-  function openLists(stored: VaultLists, opened: boolean[]) {
+  async function openLists(stored: VaultLists, opened: boolean[]) {
     const all = [...stored.lenses, ...stored.bin]
     readable.clear()
     all.forEach((lens, i) => opened[i] && readable.add(lens.id))
@@ -162,7 +164,7 @@ export function createLocalStorageBackend(
     const purged = purgeExpired(lists, now())
     if (purged.bin.length !== lists.bin.length) {
       try {
-        write(purged, ['bin'])
+        await write(purged)
       } catch {
         // Unlocking still succeeds; the purge runs again next time.
       }
@@ -170,37 +172,25 @@ export function createLocalStorageBackend(
   }
 
   /**
-   * Saves the given lists, then makes them current. Lists that gain entries are
-   * written first, so a Lens moving between lists is never missing from both if
-   * a write fails midway. On failure, lists already written are put back where
-   * possible, nothing in memory changes, and a VaultWriteError is thrown.
+   * Saves the lists that differ from the current ones, in one write, then
+   * makes them current. A Lens moving between lists is saved in both at once,
+   * so it can't end up in neither. On failure nothing changes and a
+   * VaultWriteError is thrown.
    */
-  function write(next: VaultLists, which: ListName[]) {
+  async function write(next: VaultLists) {
     // Lock can happen while a change is waiting on crypto. Its lists are then
     // empty, and writing them would wipe the vault, so refuse.
     if (!unlocked) throw new VaultLockedError()
-    const keyOf = (name: ListName) => (name === 'lenses' ? STORAGE_KEYS.lenses : STORAGE_KEYS.bin)
-    const ordered = [...which].sort((a, b) => (next[b].length - lists[b].length) - (next[a].length - lists[a].length))
-    const written: [string, string | null][] = []
+    const changes: Record<string, string> = {}
+    if (next.lenses !== lists.lenses) changes[STORAGE_KEYS.lenses] = serializeLensList(next.lenses)
+    if (next.bin !== lists.bin) changes[STORAGE_KEYS.bin] = serializeLensList(next.bin)
     try {
-      for (const name of ordered) {
-        const key = keyOf(name)
-        const previous = storage.getItem(key)
-        storage.setItem(key, serializeLensList(next[name]))
-        written.push([key, previous])
-      }
+      if (Object.keys(changes).length > 0) await storage.write(changes)
     } catch (error) {
-      for (const [key, previous] of written.reverse()) {
-        try {
-          if (previous === null) storage.removeItem(key)
-          else storage.setItem(key, previous)
-        } catch {
-          // Best effort: the gaining list was written first, so nothing is lost.
-        }
-      }
       throw new VaultWriteError('Could not save the change', { cause: error })
     }
-    lists = next
+    // Locked while the write was on its way: it's saved, but stays hidden.
+    if (unlocked) lists = next
   }
 
   /** Runs changes one at a time, in order. */
@@ -241,10 +231,12 @@ export function createLocalStorageBackend(
       return serial(async () => {
         if (hasStoredVault() || hasOrphanedData()) throw new VaultDataError('Vault data already exists')
         const { encryptedMasterKey, salt } = await crypto.createVault(password)
-        storage.setItem(STORAGE_KEYS.masterKey, encryptedMasterKey)
-        storage.setItem(STORAGE_KEYS.salt, salt)
-        // Kept for the v1 format; the PIN option never worked and has been removed.
-        storage.setItem(STORAGE_KEYS.hasPin, 'false')
+        await storage.write({
+          [STORAGE_KEYS.masterKey]: encryptedMasterKey,
+          [STORAGE_KEYS.salt]: salt,
+          // Kept for the v1 format; the PIN option never worked and has been removed.
+          [STORAGE_KEYS.hasPin]: 'false',
+        })
         unlocked = true
         lists = { lenses: [], bin: [] }
         readable.clear()
@@ -254,21 +246,23 @@ export function createLocalStorageBackend(
     setAside() {
       return serial(async () => {
         const prefix = `still-set-aside-${now().toISOString()}-`
-        const keys = Object.values(STORAGE_KEYS)
-        const values = keys.map((key) => [key, storage.getItem(key)] as const)
-        for (const [key, value] of values) if (value !== null) storage.setItem(prefix + key, value)
-        for (const [key, value] of values) {
-          if (value !== null && storage.getItem(prefix + key) !== value) throw new VaultDataError('Could not copy vault data')
+        // Copies and removals go in one write: all of it happens or none of it.
+        const changes: Record<string, string | null> = {}
+        for (const key of Object.values(STORAGE_KEYS)) {
+          const value = storage.get(key)
+          if (value === null) continue
+          changes[prefix + key] = value
+          changes[key] = null
         }
-        for (const [key, value] of values) if (value !== null) storage.removeItem(key)
+        await storage.write(changes)
         return prefix
       })
     },
 
     unlock(password) {
       return serial(async (): Promise<UnlockResult> => {
-        const blob = storage.getItem(STORAGE_KEYS.masterKey)
-        const salt = storage.getItem(STORAGE_KEYS.salt)
+        const blob = storage.get(STORAGE_KEYS.masterKey)
+        const salt = storage.get(STORAGE_KEYS.salt)
         if (blob === null || salt === null) return { ok: false, reason: 'no-vault' }
         if (!isV1MasterKey(blob, salt)) return { ok: false, reason: 'unreadable-data' }
         let stored: VaultLists
@@ -289,7 +283,7 @@ export function createLocalStorageBackend(
           return { ok: false, reason: code === 'corrupt' ? 'unreadable-data' : 'failed' }
         }
         unlocked = true
-        openLists(stored, opened)
+        await openLists(stored, opened)
         return { ok: true }
       })
     },
@@ -323,7 +317,7 @@ export function createLocalStorageBackend(
           encryptedMasterKey: await crypto.newLensKey(id),
           items: [],
         }
-        write(addLens(lists, lens), ['lenses'])
+        await write(addLens(lists, lens))
         readable.add(id)
         return id
       })
@@ -335,7 +329,7 @@ export function createLocalStorageBackend(
         if (!lens) throw new Error('Unknown Lens')
         const encryptedValue = await crypto.encryptItem(lensId, item.value)
         const items = [...lens.items, { id: newId(), label: item.label, type: item.type, encryptedValue }]
-        write(setItems(lists, lensId, items), ['lenses'])
+        await write(setItems(lists, lensId, items))
       })
     },
 
@@ -343,7 +337,7 @@ export function createLocalStorageBackend(
       return change(async () => {
         const lens = lists.lenses.find((l) => l.id === lensId)
         if (!lens) throw new Error('Unknown Lens')
-        write(setItems(lists, lensId, lens.items.filter((i) => i.id !== itemId)), ['lenses'])
+        await write(setItems(lists, lensId, lens.items.filter((i) => i.id !== itemId)))
       })
     },
 
@@ -356,15 +350,15 @@ export function createLocalStorageBackend(
     },
 
     forgetLens(lensId) {
-      return change(async () => write(moveToBin(lists, lensId, now()), ['lenses', 'bin']))
+      return change(() => write(moveToBin(lists, lensId, now())))
     },
 
     restoreLens(lensId) {
-      return change(async () => write(restoreFromBin(lists, lensId), ['lenses', 'bin']))
+      return change(() => write(restoreFromBin(lists, lensId)))
     },
 
     deleteLensForever(lensId) {
-      return change(async () => write(deleteFromBin(lists, lensId), ['bin']))
+      return change(() => write(deleteFromBin(lists, lensId)))
     },
   }
 }

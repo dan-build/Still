@@ -12,6 +12,9 @@
     "allow-item-encrypt",
     "allow-item-decrypt",
     "allow-item-copy",
+    "allow-storage-load",
+    "allow-storage-write",
+    "allow-storage-import-legacy",
     "core:event:allow-listen",
     "core:event:allow-unlisten"
   ]

@@ -3,6 +3,7 @@ use tauri::{Manager, RunEvent};
 mod autolock;
 mod clipboard;
 mod commands;
+mod store;
 mod vault;
 mod watcher;
 
@@ -10,6 +11,8 @@ pub fn run() {
     let app = tauri::Builder::default()
         .setup(|app| {
             vault::init(app);
+            let app_data = app.path().app_data_dir()?;
+            app.manage(store::AppStore::open(store::vault_dir(app_data)));
             app.manage(clipboard::ClipboardGuard::new(Box::new(
                 clipboard::Arboard::default(),
             )));
@@ -29,6 +32,9 @@ pub fn run() {
             commands::item_encrypt,
             commands::item_decrypt,
             commands::item_copy,
+            commands::storage_load,
+            commands::storage_write,
+            commands::storage_import_legacy,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
