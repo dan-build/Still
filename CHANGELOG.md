@@ -6,12 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-### Security
-
-- **Encryption keys never enter the app's web page.** All encryption and decryption now happens in Still's Rust code, which holds the keys while the vault is unlocked and wipes them when you lock or quit. The page only sees encrypted data, plus the password you type and the secrets you save or reveal.
-- **The app's page no longer contains any cryptography code,** and its security policy allows no `eval` or WebAssembly at all.
-- **A build tool with an unfixed security advisory is gone.** Tailwind CSS 3 depended on `braces` (GHSA-vfj7-8cjw-p6xm, no fixed release); Tailwind CSS 4 doesn't. It was only used while building and never shipped in the app.
-- **The app now runs under a strict Content Security Policy.** Its page can load only Still's own files, so injected scripts or remote content can't run or phone home.
+## [0.2.0] - 2026-10-04
 
 ### Added
 
@@ -25,6 +20,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Unlocking and creating a vault no longer freeze the window** while the password is checked; the check runs in the background.
 - **Still's styles are now built with Tailwind CSS 4.** The app looks the same. Still's window is drawn by your Mac's Safari engine, which must now be **Safari 15.4 or newer**: any Mac on macOS 10.15 or later with Safari updates installed. If Still ever looks unstyled, update Safari.
 - **Still's interface is now built with Vite instead of Next.js.** Nothing changes for you: the app looks and works the same, and opens your existing vault.
+
+### Security
+
+- **Encryption keys never enter the app's web page.** All encryption and decryption now happens in Still's Rust code, which holds the keys while the vault is unlocked and wipes them when you lock or quit. The page only sees encrypted data, plus the password you type and the secrets you save or reveal.
+- **The app's page no longer contains any cryptography code,** and its security policy allows no `eval` or WebAssembly at all.
+- **A build tool with an unfixed security advisory is gone.** Tailwind CSS 3 depended on `braces` (GHSA-vfj7-8cjw-p6xm, no fixed release); Tailwind CSS 4 doesn't. It was only used while building and never shipped in the app.
+- **The app now runs under a strict Content Security Policy.** Its page can load only Still's own files, so injected scripts or remote content can't run or phone home.
 
 ## [0.1.1] - 2026-09-28
 
@@ -69,6 +71,7 @@ First public pre-release, for macOS.
 - An Archive (recycle bin) that keeps forgotten Lenses for 7 days.
 - Offline by design: no accounts, servers or telemetry.
 
-[Unreleased]: https://github.com/dan-build/Still/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/dan-build/Still/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/dan-build/Still/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/dan-build/Still/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/dan-build/Still/releases/tag/v0.1.0
