@@ -15,11 +15,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Your vault now lives in its own file,** `vault.json` in Still's app data folder (on macOS, `~/Library/Application Support/com.still.app/`). Still moves an existing vault there on first launch, unchanged, and keeps the old copy where it was. Every save is all-or-nothing, so a crash or power cut can't leave a half-saved vault, and the previous version is kept as `vault.json.bak`. Only one copy of Still can use the vault at a time.
 - **Copied secrets are cleared from the clipboard after 30 seconds,** and when the vault locks or Still quits, unless you've copied something else since. Copying no longer passes the secret through the app's page, and clipboard-history tools are asked not to record it.
 - **Auto-lock.** The vault locks after 5 minutes without activity, and whenever your computer goes to sleep. Still tells you why when it locks itself.
 
 ### Changed
 
+- **Don't go back to an older version once this one has opened your vault.** Older versions only see the copy from before the move, so changes made since would seem to vanish. If one does change that old copy, this version says so, and both are kept.
 - **Unlocking and creating a vault no longer freeze the window** while the password is checked; the check runs in the background.
 - **Still's styles are now built with Tailwind CSS 4.** The app looks the same. Still's window is drawn by your Mac's Safari engine, which must now be **Safari 15.4 or newer**: any Mac on macOS 10.15 or later with Safari updates installed. If Still ever looks unstyled, update Safari.
 - **Still's interface is now built with Vite instead of Next.js.** Nothing changes for you: the app looks and works the same, and opens your existing vault.
