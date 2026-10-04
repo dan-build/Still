@@ -3,6 +3,8 @@ use tauri::{Manager, RunEvent};
 mod autolock;
 mod clipboard;
 mod commands;
+#[allow(dead_code)] // wired up in the next commit
+mod store;
 mod vault;
 mod watcher;
 
