@@ -1,8 +1,9 @@
-// VaultStorage on the webview's localStorage, where versions before the vault
-// file kept the vault. localStorage can't write several keys atomically, so a
-// failed write puts back what it already changed, as well as it can.
+// VaultStorage on localStorage, for UI tests that check the stored values
+// there (the app itself stores them in the vault file). localStorage can't
+// write several keys atomically, so a failed write puts back what it already
+// changed, as well as it can.
 
-import type { VaultStorage } from './backend'
+import type { VaultStorage } from '@/platform/storage/backend'
 
 export function localStorageVault(storage: Storage): VaultStorage {
   return {

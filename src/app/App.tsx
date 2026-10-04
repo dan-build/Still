@@ -4,8 +4,7 @@ import LensDetail from '@/features/lenses/ui/LensDetail'
 import RecycleBinModal from '@/features/recycle-bin/ui/RecycleBinModal'
 import { onAutoLocked, reportActivity } from '@/platform/tauri/session'
 import { createTauriVaultCrypto } from '@/platform/tauri/vaultCrypto'
-import { localStorageVault } from '@/platform/storage/localStorageVault'
-import { createVaultBackend, type LensView, type VaultBackend, type VaultView } from '@/platform/storage/backend'
+import { createVaultBackend, type LensView, type VaultBackend, type VaultStorage, type VaultView } from '@/platform/storage/backend'
 import UnlockScreen, { type UnlockOutcome } from './lock/UnlockScreen'
 import CreatePasswordScreen from './lock/CreatePasswordScreen'
 import RecoveryScreen from './lock/RecoveryScreen'
@@ -13,7 +12,19 @@ import RecoveryScreen from './lock/RecoveryScreen'
 // Activity is reported to Rust's auto-lock at most this often.
 const ACTIVITY_EVERY_MS = 15_000
 
-export default function StillHome() {
+const NOTICES = {
+  moved: 'Your vault now lives in its own file. The copy from before is kept, unchanged.',
+  'old-copy-changed': 'An older version of Still changed its own copy of your vault. This version uses its file, which is unchanged; both are kept.',
+}
+
+interface StillHomeProps {
+  /** Where the vault is stored: the vault file, opened by StillApp. */
+  storage: VaultStorage
+  /** Shown once, after the vault moved into its file or an older version changed the old copy. */
+  notice?: keyof typeof NOTICES
+}
+
+export default function StillHome({ storage, notice }: StillHomeProps) {
   const backendRef = useRef<VaultBackend | null>(null)
   const [view, setView] = useState<VaultView>({ lenses: [], bin: [], unreadable: 0 })
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -27,7 +38,7 @@ export default function StillHome() {
 
   // Created on first use. The keys live in Rust, behind the Tauri commands.
   const backend = () => {
-    if (!backendRef.current) backendRef.current = createVaultBackend(localStorageVault(window.localStorage), createTauriVaultCrypto())
+    if (!backendRef.current) backendRef.current = createVaultBackend(storage, createTauriVaultCrypto())
     return backendRef.current
   }
 
@@ -44,13 +55,14 @@ export default function StillHome() {
     const status = backend().status()
     setIsFirstLaunch(status === 'empty')
     setIsOrphaned(status === 'orphaned')
+    if (notice) showToast(NOTICES[notice], false, 9000)
   }, [])
 
   // Errors stay up longer and replace any earlier toast instead of racing its timer.
-  const showToast = (message: string, error = false) => {
+  const showToast = (message: string, error = false, ms = error ? 6000 : 2200) => {
     clearTimeout(toastTimer.current)
     setToast({ message, error })
-    toastTimer.current = setTimeout(() => setToast(null), error ? 6000 : 2200)
+    toastTimer.current = setTimeout(() => setToast(null), ms)
   }
 
   const SAVE_FAILED = "Couldn't save that change. Nothing was changed. Please try again."

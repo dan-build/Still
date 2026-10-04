@@ -39,6 +39,7 @@ vi.mock('@/platform/tauri/vaultCrypto', async () => {
   }
 })
 
+import { localStorageVault } from '@/test/localStorageVault'
 import StillHome from './App'
 
 // ---- fixtures ---------------------------------------------------------------
@@ -95,7 +96,7 @@ async function enterPassword(password = PASSWORD) {
 }
 
 async function unlock(password = PASSWORD) {
-  render(createElement(StillHome))
+  render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
   await enterPassword(password)
   await screen.findByRole('button', { name: 'Archive' })
 }
@@ -171,7 +172,7 @@ describe('unlock', () => {
 
   it('shows an error and stays locked on a wrong password', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
-    render(createElement(StillHome))
+    render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
     await enterPassword('not-the-password')
 
     await screen.findByText('Incorrect password')
@@ -186,10 +187,19 @@ describe('unlock', () => {
   it('reports unreadable vault data differently from a wrong password (S4)', async () => {
     const truncated = Buffer.from(new Uint8Array(40).fill(1)).toString('base64')
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }], masterKeyBlob: truncated })
-    render(createElement(StillHome))
+    render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
     await enterPassword()
 
     await screen.findByText(/couldn.t read this vault/i)
+  })
+})
+
+describe('after the vault moved into its file', () => {
+  it('says so once, on the unlock screen', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    render(createElement(StillHome, { storage: localStorageVault(localStorage), notice: 'moved' }))
+    await screen.findByPlaceholderText('Enter your password')
+    expect(screen.getByRole('status').textContent).toContain('Your vault now lives in its own file.')
   })
 })
 
@@ -212,7 +222,7 @@ describe('auto-lock', () => {
 
   it('reports activity at most every 15 seconds, and only while unlocked', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
-    render(createElement(StillHome))
+    render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
     await screen.findByPlaceholderText('Enter your password')
     autoLock.activity = 0
     fireEvent.keyDown(window, { key: 'a' })
@@ -234,7 +244,7 @@ describe('lock', () => {
   it('has the crypto forget any keys as soon as the app starts', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     lockCalls.count = 0
-    render(createElement(StillHome))
+    render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
     await screen.findByPlaceholderText('Enter your password')
     expect(lockCalls.count).toBeGreaterThan(0)
   })
@@ -544,7 +554,7 @@ describe('Lenses that cannot be decrypted (B2)', () => {
 
 describe('creating a vault (B4)', () => {
   async function createVault(password: string) {
-    render(createElement(StillHome))
+    render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
     fireEvent.change(await screen.findByPlaceholderText('Create a strong password'), { target: { value: password } })
     fireEvent.change(screen.getByPlaceholderText('Confirm your password'), { target: { value: password } })
     fireEvent.click(screen.getByRole('button', { name: 'Create Secure Vault' }))
@@ -552,7 +562,7 @@ describe('creating a vault (B4)', () => {
   }
 
   it('refuses a new master password made only of spaces', async () => {
-    render(createElement(StillHome))
+    render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
     fireEvent.change(await screen.findByPlaceholderText('Create a strong password'), { target: { value: '          ' } })
     fireEvent.change(screen.getByPlaceholderText('Confirm your password'), { target: { value: '          ' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create Secure Vault' }))
@@ -576,7 +586,7 @@ describe('creating a vault (B4)', () => {
   it('does not destroy existing Lenses when the master key is missing', async () => {
     localStorage.setItem('still-lenses', JSON.stringify([persisted({ id: 'o1', name: 'Orphan' })]))
     const before = snapshot()
-    render(createElement(StillHome))
+    render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
 
     await screen.findByText("Still found data it can't open")
     expect(screen.queryByPlaceholderText('Create a strong password')).toBeNull()
@@ -586,7 +596,7 @@ describe('creating a vault (B4)', () => {
   it('treats a master key without its salt as data it can\'t open', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     localStorage.removeItem('still-salt')
-    render(createElement(StillHome))
+    render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
 
     await screen.findByText("Still found data it can't open")
   })
@@ -594,7 +604,7 @@ describe('creating a vault (B4)', () => {
   it('offers a normal new vault when leftover lists are empty', async () => {
     localStorage.setItem('still-lenses', '[]')
     localStorage.setItem('still-recycle-bin', '[]')
-    render(createElement(StillHome))
+    render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
 
     await screen.findByPlaceholderText('Create a strong password')
   })
@@ -602,7 +612,7 @@ describe('creating a vault (B4)', () => {
   it('changes nothing if the user cancels setting the data aside', async () => {
     localStorage.setItem('still-lenses', JSON.stringify([persisted({ id: 'o1', name: 'Orphan' })]))
     const before = snapshot()
-    render(createElement(StillHome))
+    render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
     fireEvent.click(await screen.findByRole('button', { name: 'Set the old data aside…' }))
     await screen.findByText('Set the old data aside?')
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
@@ -615,7 +625,7 @@ describe('creating a vault (B4)', () => {
     const orphan = JSON.stringify([persisted({ id: 'o1', name: 'Orphan' })])
     localStorage.setItem('still-lenses', orphan)
     localStorage.setItem('still-has-pin', 'false')
-    render(createElement(StillHome))
+    render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
     fireEvent.click(await screen.findByRole('button', { name: 'Set the old data aside…' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Set aside and start fresh' }))
 
@@ -638,7 +648,7 @@ describe('creating a vault (B4)', () => {
 
 describe('PIN (B6)', () => {
   it('offers no PIN when creating a vault', async () => {
-    render(createElement(StillHome))
+    render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
     await screen.findByPlaceholderText('Create a strong password')
 
     expect(screen.queryByRole('button', { name: 'Add PIN' })).toBeNull()
@@ -646,7 +656,7 @@ describe('PIN (B6)', () => {
 
   it('offers no PIN on the unlock screen, even for vaults saved with the PIN flag', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }], hasPin: true })
-    render(createElement(StillHome))
+    render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
     await screen.findByPlaceholderText('Enter your password')
 
     expect(screen.queryByRole('button', { name: 'Use PIN instead' })).toBeNull()
