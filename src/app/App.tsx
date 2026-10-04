@@ -292,6 +292,7 @@ export default function StillHome() {
               onClose={() => setSelectedLensId(null)}
               onAddItem={async (item) => { await backend().addItem(selectedLens.id, item); refresh() }}
               onRevealItem={(itemId) => backend().revealItem(selectedLens.id, itemId)}
+              onCopyItem={(itemId) => backend().copyItem(selectedLens.id, itemId)}
               onDeleteItem={async (itemId) => { await backend().deleteItem(selectedLens.id, itemId); refresh() }}
               onShowToast={showToast}
               onForget={() => moveToRecycleBin(selectedLens)}

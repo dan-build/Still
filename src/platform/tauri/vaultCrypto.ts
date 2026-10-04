@@ -29,6 +29,7 @@ export function createTauriVaultCrypto(): VaultCrypto {
     newLensKey: (lensId) => call('lens_new_key', { lensId }),
     encryptItem: (lensId, plaintext) => call('item_encrypt', { lensId, plaintext }),
     decryptItem: (lensId, encryptedValue) => call('item_decrypt', { lensId, encryptedValue }),
+    copyItem: (lensId, encryptedValue) => call('item_copy', { lensId, encryptedValue }),
     lock: () => call('vault_lock'),
   }
 }

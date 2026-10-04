@@ -20,6 +20,7 @@ describe('the Tauri VaultCrypto', () => {
     await crypto.newLensKey('a')
     await crypto.encryptItem('a', '  v  ')
     await crypto.decryptItem('a', 'blob')
+    await crypto.copyItem('a', 'blob')
     await crypto.lock()
     expect(invoke.mock.calls).toEqual([
       ['vault_create', { password: 'pw' }],
@@ -27,6 +28,7 @@ describe('the Tauri VaultCrypto', () => {
       ['lens_new_key', { lensId: 'a' }],
       ['item_encrypt', { lensId: 'a', plaintext: '  v  ' }],
       ['item_decrypt', { lensId: 'a', encryptedValue: 'blob' }],
+      ['item_copy', { lensId: 'a', encryptedValue: 'blob' }],
       ['vault_lock', undefined],
     ])
   })

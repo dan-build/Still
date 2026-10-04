@@ -18,12 +18,13 @@ import { fakeItemBlob, fakeLensKeyBlob, fakeMasterKeyBlob, fakePlaintext } from 
 // The app's crypto is the Rust one behind Tauri commands. Here it's the JS
 // VaultCrypto on fake crypto, with its calls to lock recorded.
 const lockCalls = vi.hoisted(() => ({ count: 0 }))
+const clipboard = vi.hoisted(() => ({ copied: [] as string[] }))
 vi.mock('@/platform/tauri/vaultCrypto', async () => {
   const fake = await import('@/test/fakeCrypto')
   const { createLibsodiumVaultCrypto } = await import('@/test/reference/libsodiumVaultCrypto')
   return {
     createTauriVaultCrypto: () => {
-      const crypto = createLibsodiumVaultCrypto(fake)
+      const crypto = createLibsodiumVaultCrypto(fake, (text) => clipboard.copied.push(text))
       return { ...crypto, lock: () => { lockCalls.count += 1; return crypto.lock() } }
     },
   }
@@ -278,6 +279,21 @@ describe('secrets', () => {
     expect(value.getAttribute('spellcheck')).toBe('false')
     expect(value.getAttribute('autocorrect')).toBe('off')
     expect(value.getAttribute('autocomplete')).toBe('off')
+  })
+
+  it('copies a secret without revealing it in the page', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    clipboard.copied = []
+    const writeText = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+
+    await screen.findByText('Copied. Clears in 30 seconds.')
+    expect(clipboard.copied).toEqual(['value-of-l1'])
+    expect(writeText).not.toHaveBeenCalled()
+    expect(screen.queryByText('value-of-l1')).toBeNull()
   })
 
   it('reveals a saved secret', async () => {
