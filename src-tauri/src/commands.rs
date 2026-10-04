@@ -6,17 +6,19 @@ use serde::Deserialize;
 use still_core::session::{SecretText, SessionError, Unlocked};
 use tauri::State;
 
+use crate::clipboard::ClipboardGuard;
 use crate::vault::{self, CreatedVault, Revealed, VaultError, VaultSession};
 
 /// Every command, as named in build.rs and the capability.
 #[cfg(test)]
-pub const ALL: [&str; 6] = [
+pub const ALL: [&str; 7] = [
     "vault_create",
     "vault_unlock",
     "vault_lock",
     "lens_new_key",
     "item_encrypt",
     "item_decrypt",
+    "item_copy",
 ];
 
 #[derive(Deserialize)]
@@ -70,8 +72,9 @@ pub async fn vault_unlock(
 }
 
 #[tauri::command]
-pub fn vault_lock(session: State<'_, VaultSession>) {
+pub fn vault_lock(session: State<'_, VaultSession>, clipboard: State<'_, ClipboardGuard>) {
     session.lock();
+    clipboard.clear_now();
 }
 
 #[tauri::command]
@@ -98,4 +101,19 @@ pub fn item_decrypt(
     encrypted_value: String,
 ) -> Result<Revealed, VaultError> {
     session.decrypt_item(&lens_id, &encrypted_value)
+}
+
+/// Decrypts an item straight onto the clipboard; the value never goes back to
+/// the webview. It's cleared after 30 seconds (see clipboard.rs).
+#[tauri::command]
+pub fn item_copy(
+    session: State<'_, VaultSession>,
+    clipboard: State<'_, ClipboardGuard>,
+    lens_id: String,
+    encrypted_value: String,
+) -> Result<(), VaultError> {
+    let value = session.decrypt_item(&lens_id, &encrypted_value)?;
+    clipboard
+        .copy(&value.0, std::time::Instant::now())
+        .map_err(|_| VaultError(SessionError::Failed))
 }

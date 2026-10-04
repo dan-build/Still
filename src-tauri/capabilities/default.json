@@ -9,6 +9,7 @@
     "allow-vault-lock",
     "allow-lens-new-key",
     "allow-item-encrypt",
-    "allow-item-decrypt"
+    "allow-item-decrypt",
+    "allow-item-copy"
   ]
 }

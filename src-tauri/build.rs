@@ -8,6 +8,7 @@ const COMMANDS: &[&str] = &[
     "lens_new_key",
     "item_encrypt",
     "item_decrypt",
+    "item_copy",
 ];
 
 fn main() {
