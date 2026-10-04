@@ -234,6 +234,50 @@ fn sync_dir(_dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// The store as the app uses it: the vault folder, held by this copy of
+/// Still alone. A second copy sees `already_open` and stores nothing.
+pub struct AppStore {
+    store: std::sync::Mutex<Store>,
+    // Held for the life of the process; the OS releases it if Still crashes.
+    _lock: Option<File>,
+    pub already_open: bool,
+}
+
+impl AppStore {
+    pub fn open(dir: PathBuf) -> Self {
+        let lock = create_private_dir(&dir)
+            .and_then(|()| {
+                OpenOptions::new()
+                    .create(true)
+                    .truncate(false)
+                    .write(true)
+                    .open(dir.join(".lock"))
+            })
+            .ok();
+        let held = lock.as_ref().is_some_and(|f| f.try_lock().is_ok());
+        Self {
+            store: std::sync::Mutex::new(Store::new(dir)),
+            _lock: if held { lock } else { None },
+            already_open: !held,
+        }
+    }
+
+    pub fn store(&self) -> std::sync::MutexGuard<'_, Store> {
+        self.store.lock().unwrap_or_else(|p| p.into_inner())
+    }
+}
+
+/// Where the vault lives: the app-data folder, or a `dev` folder inside it
+/// for debug builds, which share the identifier (and so the folder) with
+/// release builds.
+pub fn vault_dir(app_data_dir: PathBuf) -> PathBuf {
+    if cfg!(debug_assertions) {
+        app_data_dir.join("dev")
+    } else {
+        app_data_dir
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -429,6 +473,30 @@ mod tests {
             Err(StoreError::Exists)
         );
         assert_eq!(store.load(), Loaded::Values(values(&[("a", "mine")])));
+    }
+
+    #[test]
+    fn only_one_copy_of_still_holds_the_vault() {
+        let tmp = TempDir::new();
+        let dir = tmp.0.join("com.still.app");
+        let first = AppStore::open(dir.clone());
+        assert!(!first.already_open);
+        let second = AppStore::open(dir.clone());
+        assert!(second.already_open);
+        drop(first);
+        drop(second);
+        // Once the first copy has gone, the next one gets the vault.
+        assert!(!AppStore::open(dir).already_open);
+    }
+
+    #[test]
+    fn debug_builds_keep_their_vault_apart() {
+        let dir = vault_dir(PathBuf::from("/data/com.still.app"));
+        if cfg!(debug_assertions) {
+            assert_eq!(dir, PathBuf::from("/data/com.still.app/dev"));
+        } else {
+            assert_eq!(dir, PathBuf::from("/data/com.still.app"));
+        }
     }
 
     #[test]

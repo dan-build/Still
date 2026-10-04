@@ -10,6 +10,9 @@ const COMMANDS: &[&str] = &[
     "item_encrypt",
     "item_decrypt",
     "item_copy",
+    "storage_load",
+    "storage_write",
+    "storage_import_legacy",
 ];
 
 fn main() {
