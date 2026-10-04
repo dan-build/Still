@@ -6,6 +6,7 @@ interface LensDetailProps {
   onClose: () => void
   onAddItem: (item: NewItem) => Promise<void>
   onRevealItem: (itemId: string) => Promise<string>
+  onCopyItem: (itemId: string) => Promise<void>
   onDeleteItem: (itemId: string) => Promise<void>
   onShowToast: (msg: string, error?: boolean) => void
   onForget: () => void
@@ -35,6 +36,7 @@ export default function LensDetail({
   onClose,
   onAddItem,
   onRevealItem,
+  onCopyItem,
   onDeleteItem,
   onShowToast,
   onForget,
@@ -101,10 +103,9 @@ export default function LensDetail({
   const copyToClipboard = async (item: ItemView) => {
     startProcessing()
     try {
-      let text = revealed[item.id]
-      if (!text) text = await onRevealItem(item.id)
-      await navigator.clipboard.writeText(text)
-      onShowToast('Copied')
+      // Rust puts the value on the clipboard; it never comes back to this page.
+      await onCopyItem(item.id)
+      onShowToast('Copied. Clears in 30 seconds.')
     } catch {
       onShowToast('Copy failed', true)
     } finally {

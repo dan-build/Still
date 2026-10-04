@@ -16,7 +16,8 @@ export type CryptoApi = Pick<
   | 'decrypt'
 >
 
-export function createLibsodiumVaultCrypto(crypto: CryptoApi): VaultCrypto {
+/** `clipboard` receives what copyItem would put on the clipboard (tests only). */
+export function createLibsodiumVaultCrypto(crypto: CryptoApi, clipboard: (text: string) => void = () => {}): VaultCrypto {
   let appKey: Uint8Array | null = null
   const lensKeys = new Map<string, Uint8Array>()
 
@@ -84,6 +85,10 @@ export function createLibsodiumVaultCrypto(crypto: CryptoApi): VaultCrypto {
 
     async decryptItem(lensId, encryptedValue) {
       return crypto.decrypt(encryptedValue, lensKey(lensId))
+    },
+
+    async copyItem(lensId, encryptedValue) {
+      clipboard(await crypto.decrypt(encryptedValue, lensKey(lensId)))
     },
 
     async lock() {

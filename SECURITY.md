@@ -13,7 +13,9 @@ Still is pre-1.0. Only the latest commit on `main` gets fixes.
 ## What Still protects today
 
 - **Secret values are encrypted at rest.** Your master password goes through Argon2id (libsodium `crypto_pwhash`, SENSITIVE limits) to unlock an app key. The app key wraps a separate key for each Lens, and each item is encrypted with its own subkey using XChaCha20-Poly1305. All cryptography comes from libsodium.
-- **Keys never enter the app's web page.** The app key and every Lens key are held by the app's Rust code, which does all encryption and decryption. The page only handles encrypted data, plus what passes through it by necessity: the master password you type, a secret you're saving, and a secret you reveal or copy. Lock and quitting drop the keys, which are zeroed in memory.
+- **Keys never enter the app's web page.** The app key and every Lens key are held by the app's Rust code, which does all encryption and decryption. The page only handles encrypted data, plus what passes through it by necessity: the master password you type, a secret you're saving, and a secret you reveal. Lock and quitting drop the keys, which are zeroed in memory.
+- **Copied secrets don't linger.** Copying goes straight from Rust to the clipboard, so the page never sees the value. Still asks clipboard-history tools not to record it (the `org.nspasteboard.ConcealedType` marker on macOS; history and cloud exclusion on Windows), and clears it after 30 seconds, when the vault locks and when Still quits, unless you've copied something else since.
+- **Auto-lock.** The vault locks after 5 minutes without activity, and as soon as Still sees that the computer slept.
 - **Nothing leaves the device.** There are no accounts, no servers, no telemetry and no network calls.
 - **The app's page runs under a strict Content Security Policy.** It can load only its own bundled files, and can't fetch from the network or run injected inline scripts. It allows no `eval` and no WebAssembly: all cryptography runs in the app's Rust code.
 
@@ -24,8 +26,8 @@ These are known, and being worked on:
 - **Lens names, item labels, item types, dates and counts are stored unencrypted.** Only the secret values are encrypted.
 - **The vault lives in the app's webview storage** (encrypted, as above), not yet in its own file.
 - **Typed and revealed secrets pass through the web page's memory,** which can't be wiped on demand. The Rust side zeroes its own copies.
-- **Copied secrets stay on the clipboard.** Clipboard history tools may keep them.
-- **There is no auto-lock.**
+- **Clipboard-history tools may still record copied secrets.** The "don't record" marker is a convention that most, but not all, tools follow. For 30 seconds, any app can read the clipboard.
+- **Sleep detection relies on the system's clock behaviour.** It is checked on macOS. Elsewhere the 5-minute idle lock still applies after a sleep.
 
 ## Where the vault is stored (macOS)
 

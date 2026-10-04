@@ -1,12 +1,20 @@
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 
+mod autolock;
+mod clipboard;
 mod commands;
 mod vault;
+mod watcher;
 
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .setup(|app| {
             vault::init(app);
+            app.manage(clipboard::ClipboardGuard::new(Box::new(
+                clipboard::Arboard::default(),
+            )));
+            app.manage(autolock::AutoLock::new(autolock::idle_timeout()));
+            watcher::start(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.center();
             }
@@ -16,12 +24,20 @@ pub fn run() {
             commands::vault_create,
             commands::vault_unlock,
             commands::vault_lock,
+            commands::vault_touch,
             commands::lens_new_key,
             commands::item_encrypt,
             commands::item_decrypt,
+            commands::item_copy,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+    app.run(|app, event| {
+        // A copied secret doesn't outlive the app.
+        if let RunEvent::Exit = event {
+            app.state::<clipboard::ClipboardGuard>().clear_now();
+        }
+    });
 }
 
 #[cfg(test)]
@@ -111,17 +127,22 @@ mod tests {
         }
     }
 
-    // Only the main window may call anything, and only the vault commands:
-    // no core:default, no plugins.
+    // Only the main window may call anything, and only the vault commands,
+    // plus listening for events (auto-lock tells the page when it locked):
+    // no core:default, no emitting, no plugins.
     #[test]
     fn capability_allows_only_the_vault_commands_in_main() {
         let capability: Value =
             serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
         assert_eq!(capability["windows"], serde_json::json!(["main"]));
-        let allowed: Vec<String> = crate::commands::ALL
+        let mut allowed: Vec<String> = crate::commands::ALL
             .iter()
             .map(|c| format!("allow-{}", c.replace('_', "-")))
             .collect();
+        allowed.extend([
+            "core:event:allow-listen".into(),
+            "core:event:allow-unlisten".into(),
+        ]);
         assert_eq!(capability["permissions"], serde_json::json!(allowed));
         let build_rs = include_str!("../build.rs");
         for command in crate::commands::ALL {

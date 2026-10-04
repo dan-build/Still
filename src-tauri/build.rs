@@ -5,9 +5,11 @@ const COMMANDS: &[&str] = &[
     "vault_create",
     "vault_unlock",
     "vault_lock",
+    "vault_touch",
     "lens_new_key",
     "item_encrypt",
     "item_decrypt",
+    "item_copy",
 ];
 
 fn main() {

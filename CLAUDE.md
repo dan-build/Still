@@ -34,7 +34,7 @@ A known bug gets an `it.fails` test first, with a passing sibling that runs the 
 
 ## Architecture
 
-**Vite + Tauri.** [vite.config.ts](vite.config.ts) builds [index.html](index.html) and `src/` into `dist/`, which Tauri bundles ([src-tauri/tauri.conf.json](src-tauri/tauri.conf.json)). The app is fully static. The Rust side ([src-tauri/src/lib.rs](src-tauri/src/lib.rs)) holds the unlocked vault's keys and does all the crypto behind six commands; persistence is still in the webview's localStorage until stage 4. `console.*` calls are stripped in production builds. Vitest settings live in `vite.config.ts` too.
+**Vite + Tauri.** [vite.config.ts](vite.config.ts) builds [index.html](index.html) and `src/` into `dist/`, which Tauri bundles ([src-tauri/tauri.conf.json](src-tauri/tauri.conf.json)). The app is fully static. The Rust side ([src-tauri/src/lib.rs](src-tauri/src/lib.rs)) holds the unlocked vault's keys, does all the crypto, copies to the clipboard and runs auto-lock, behind eight commands; persistence is still in the webview's localStorage until stage 4. `console.*` calls are stripped in production builds. Vitest settings live in `vite.config.ts` too.
 
 **Layout** (`@/` is `src/`):
 - `src/app/`: the shell (`main.tsx`, `App.tsx`, styles); `lock/` holds the unlock, create-password and recovery screens.
@@ -46,8 +46,8 @@ A known bug gets an `it.fails` test first, with a passing sibling that runs the 
 
 **The UI talks only to the vault backend.** [src/platform/storage/backend.ts](src/platform/storage/backend.ts) defines `VaultBackend`, and `createLocalStorageBackend` implements it on localStorage and a `VaultCrypto`.
 - The backend is the only code that touches stored vault data, and the only caller of the crypto. The UI gets a key-free `view()` of ids and metadata, and calls the backend for every change and reveal.
-- [`VaultCrypto`](src/platform/crypto/vaultCrypto.ts) works by key handle: it keeps the app key and Lens keys to itself, and callers pass blobs and Lens ids. Its errors are codes: `wrong-password`, `corrupt`, `failed`, `locked`, `unknown-lens`. The app uses [the Tauri one](src/platform/tauri/vaultCrypto.ts); the keys never reach the webview. Only the password, a value being saved, and a revealed value pass through it.
-- The app tells Rust to lock when it starts, since Rust keeps its keys across a page reload.
+- [`VaultCrypto`](src/platform/crypto/vaultCrypto.ts) works by key handle: it keeps the app key and Lens keys to itself, and callers pass blobs and Lens ids. Its errors are codes: `wrong-password`, `corrupt`, `failed`, `locked`, `unknown-lens`. The app uses [the Tauri one](src/platform/tauri/vaultCrypto.ts); the keys never reach the webview. Only the password, a value being saved, and a revealed value pass through it; copying goes straight from Rust to the clipboard.
+- The app tells Rust to lock when it starts, since Rust keeps its keys across a page reload. While unlocked it reports activity ([session.ts](src/platform/tauri/session.ts), at most every 15 s) and follows Rust's `vault-locked` event.
 - [src/app/App.tsx](src/app/App.tsx) holds UI state only: the view, the selected Lens id, modals and toasts.
 - [src/features/vault/model/model.ts](src/features/vault/model/model.ts) holds pure list operations.
 - [src/features/vault/model/format.ts](src/features/vault/model/format.ts) holds v1 shape checks.
@@ -84,7 +84,10 @@ Recycle-bin entries older than 7 days are purged when the vault is unlocked. New
 - `error.rs`: `WrongKey`, `Corrupt`, `PasswordHashFailed`, `EmptyPlaintext`, `NotUtf8`.
 - `session.rs`: `Unlocked` holds the app key and the Lens keys that opened, built without any lock held (Argon2id takes seconds). `create()` derives the key a second time and refuses unless the new blob opens to the same app key, because a wrong derivation there would lock the vault forever. `SecretText` carries passwords and values, zeroes itself on drop and never prints. `SessionError::code()` gives the same codes as the JS `VaultCrypto`.
 
-**The Tauri side** ([src-tauri/src](src-tauri/src)): `vault.rs` keeps a `Mutex<Option<Unlocked>>` registered in `setup`; locking drops it. `commands.rs` holds the six commands (`vault_create`, `vault_unlock`, `vault_lock`, `lens_new_key`, `item_encrypt`, `item_decrypt`); Argon2id runs in `spawn_blocking`. `build.rs` declares them, so Tauri refuses anything [capabilities/default.json](src-tauri/capabilities/default.json) doesn't allow: exactly these six, for the `main` window, with no `core:default`. Adding a command means updating all three places; a test checks they agree.
+**The Tauri side** ([src-tauri/src](src-tauri/src)): `vault.rs` keeps a `Mutex<Option<Unlocked>>` registered in `setup`; locking drops it. `commands.rs` holds the eight commands (`vault_create`, `vault_unlock`, `vault_lock`, `vault_touch`, `lens_new_key`, `item_encrypt`, `item_decrypt`, `item_copy`); Argon2id runs in `spawn_blocking`, and every command counts as activity. `build.rs` declares them, so Tauri refuses anything [capabilities/default.json](src-tauri/capabilities/default.json) doesn't allow: exactly these eight plus `core:event:allow-listen`/`allow-unlisten`, for the `main` window, with no `core:default`.
+- `clipboard.rs`: `item_copy` writes through `arboard` (used directly; the Tauri plugin wraps it), marked for clipboard history to skip. It clears after 30 s, on lock and on quit, only while the clipboard still holds that value, recognised by a keyed BLAKE2b fingerprint. Tests use a fake clipboard.
+- `autolock.rs`: locks after 5 minutes idle (wall clock, so sleep counts) or when the wall clock runs ahead of the monotonic one (the computer slept). Debug builds accept `STILL_IDLE_SECONDS` (5 at least) for manual checks; release builds ignore it.
+- `watcher.rs`: one thread, ticking every second: auto-lock (then clears the clipboard and emits `vault-locked` with `idle` or `sleep`) and the clipboard's 30-second clear. Adding a command means updating all three places; a test checks they agree.
 
 Differences from `crypto.ts`, on purpose:
 - Every decrypt checks the version byte, including the master key's.

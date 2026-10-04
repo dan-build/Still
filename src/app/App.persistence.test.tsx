@@ -10,7 +10,7 @@
 // same commit. Each `it.fails` has a passing sibling that runs the same steps,
 // so a broken step can't make a known-bug test "pass" by accident.
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeItemBlob, fakeLensKeyBlob, fakeMasterKeyBlob, fakePlaintext } from '@/test/fakeCrypto'
@@ -18,12 +18,22 @@ import { fakeItemBlob, fakeLensKeyBlob, fakeMasterKeyBlob, fakePlaintext } from 
 // The app's crypto is the Rust one behind Tauri commands. Here it's the JS
 // VaultCrypto on fake crypto, with its calls to lock recorded.
 const lockCalls = vi.hoisted(() => ({ count: 0 }))
+const clipboard = vi.hoisted(() => ({ copied: [] as string[] }))
+// Rust's auto-lock: the test can fire the vault-locked event and count activity reports.
+const autoLock = vi.hoisted(() => ({ fire: undefined as undefined | ((reason: 'idle' | 'sleep') => void), activity: 0 }))
+vi.mock('@/platform/tauri/session', () => ({
+  reportActivity: () => { autoLock.activity += 1 },
+  onAutoLocked: (onLocked: (reason: 'idle' | 'sleep') => void) => {
+    autoLock.fire = onLocked
+    return () => { if (autoLock.fire === onLocked) autoLock.fire = undefined }
+  },
+}))
 vi.mock('@/platform/tauri/vaultCrypto', async () => {
   const fake = await import('@/test/fakeCrypto')
   const { createLibsodiumVaultCrypto } = await import('@/test/reference/libsodiumVaultCrypto')
   return {
     createTauriVaultCrypto: () => {
-      const crypto = createLibsodiumVaultCrypto(fake)
+      const crypto = createLibsodiumVaultCrypto(fake, (text) => clipboard.copied.push(text))
       return { ...crypto, lock: () => { lockCalls.count += 1; return crypto.lock() } }
     },
   }
@@ -183,6 +193,43 @@ describe('unlock', () => {
   })
 })
 
+describe('auto-lock', () => {
+  for (const [reason, message] of [
+    ['idle', 'Locked after 5 minutes without activity.'],
+    ['sleep', 'Locked while your computer was asleep.'],
+  ] as const) {
+    it(`returns to the unlock screen and says why when Rust locks (${reason})`, async () => {
+      seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+      await unlock()
+      await openLens('Alpha')
+      act(() => autoLock.fire!(reason))
+
+      await screen.findByPlaceholderText('Enter your password')
+      expect(screen.getByRole('status').textContent).toContain(message)
+      expect(screen.queryByText('Alpha')).toBeNull()
+    })
+  }
+
+  it('reports activity at most every 15 seconds, and only while unlocked', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    render(createElement(StillHome))
+    await screen.findByPlaceholderText('Enter your password')
+    autoLock.activity = 0
+    fireEvent.keyDown(window, { key: 'a' })
+    expect(autoLock.activity).toBe(0)
+    expect(autoLock.fire).toBeUndefined()
+    cleanup()
+
+    await unlock()
+    autoLock.activity = 0
+    fireEvent.keyDown(window, { key: 'a' })
+    fireEvent.pointerDown(window)
+    fireEvent.keyDown(window, { key: 'b' })
+    expect(autoLock.activity).toBe(1)
+    expect(autoLock.fire).toBeDefined()
+  })
+})
+
 describe('lock', () => {
   it('has the crypto forget any keys as soon as the app starts', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
@@ -278,6 +325,21 @@ describe('secrets', () => {
     expect(value.getAttribute('spellcheck')).toBe('false')
     expect(value.getAttribute('autocorrect')).toBe('off')
     expect(value.getAttribute('autocomplete')).toBe('off')
+  })
+
+  it('copies a secret without revealing it in the page', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    clipboard.copied = []
+    const writeText = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+
+    await screen.findByText('Copied. Clears in 30 seconds.')
+    expect(clipboard.copied).toEqual(['value-of-l1'])
+    expect(writeText).not.toHaveBeenCalled()
+    expect(screen.queryByText('value-of-l1')).toBeNull()
   })
 
   it('reveals a saved secret', async () => {

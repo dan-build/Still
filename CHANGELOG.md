@@ -13,6 +13,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **A build tool with an unfixed security advisory is gone.** Tailwind CSS 3 depended on `braces` (GHSA-vfj7-8cjw-p6xm, no fixed release); Tailwind CSS 4 doesn't. It was only used while building and never shipped in the app.
 - **The app now runs under a strict Content Security Policy.** Its page can load only Still's own files, so injected scripts or remote content can't run or phone home.
 
+### Added
+
+- **Copied secrets are cleared from the clipboard after 30 seconds,** and when the vault locks or Still quits, unless you've copied something else since. Copying no longer passes the secret through the app's page, and clipboard-history tools are asked not to record it.
+- **Auto-lock.** The vault locks after 5 minutes without activity, and whenever your computer goes to sleep. Still tells you why when it locks itself.
+
 ### Changed
 
 - **Unlocking and creating a vault no longer freeze the window** while the password is checked; the check runs in the background.

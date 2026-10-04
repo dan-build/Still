@@ -94,6 +94,8 @@ export interface VaultBackend {
   addItem(lensId: string, item: NewItem): Promise<void>
   deleteItem(lensId: string, itemId: string): Promise<void>
   revealItem(lensId: string, itemId: string): Promise<string>
+  /** Puts the item's value on the clipboard without returning it. */
+  copyItem(lensId: string, itemId: string): Promise<void>
   forgetLens(lensId: string): Promise<void>
   restoreLens(lensId: string): Promise<void>
   deleteLensForever(lensId: string): Promise<void>
@@ -210,6 +212,14 @@ export function createLocalStorageBackend(
 
   function requireUnlocked() {
     if (!unlocked) throw new VaultLockedError()
+  }
+
+  function storedItem(lensId: string, itemId: string) {
+    requireUnlocked()
+    const lens = [...lists.lenses, ...lists.bin].find((l) => l.id === lensId)
+    const item = lens?.items.find((i) => i.id === itemId)
+    if (!item) throw new Error('Unknown item')
+    return item
   }
 
   /** Runs a change in order, but only while the vault is unlocked. */
@@ -338,11 +348,11 @@ export function createLocalStorageBackend(
     },
 
     async revealItem(lensId, itemId) {
-      requireUnlocked()
-      const lens = [...lists.lenses, ...lists.bin].find((l) => l.id === lensId)
-      const item = lens?.items.find((i) => i.id === itemId)
-      if (!item) throw new Error('Unknown item')
-      return crypto.decryptItem(lensId, item.encryptedValue)
+      return crypto.decryptItem(lensId, storedItem(lensId, itemId).encryptedValue)
+    },
+
+    async copyItem(lensId, itemId) {
+      return crypto.copyItem(lensId, storedItem(lensId, itemId).encryptedValue)
     },
 
     forgetLens(lensId) {

@@ -98,7 +98,7 @@ Development builds keep their own separate vault, so they never touch your real 
 ## Roadmap
 
 1. ~~**v0.1.1: fix the data-loss issues**~~ Done in v0.1.1, together with the first universal macOS build, built in GitHub Actions from the public source.
-2. **Move encryption and key handling into Rust.** Done on `main`, for the next release: keys stay out of the app's web view, and unlocking no longer freezes the window. Next: clipboard clearing and auto-lock.
+2. **Move encryption and key handling into Rust.** Done on `main`, for the next release: keys stay out of the app's web view, and unlocking no longer freezes the window. Also done on `main`: copied secrets are cleared from the clipboard after 30 seconds, and the vault locks itself after 5 minutes idle or when the computer sleeps.
 3. **Store the vault in its own file** instead of the web view's storage. Existing vaults will move across automatically on first launch.
 4. **Encrypt Lens names and labels as well.** Older vaults will keep opening.
 5. **Signed and notarised releases,** so macOS opens Still without the "Open Anyway" step.

@@ -38,6 +38,11 @@ export interface VaultCrypto {
   newLensKey(lensId: string): Promise<string>
   encryptItem(lensId: string, plaintext: string): Promise<string>
   decryptItem(lensId: string, encryptedValue: string): Promise<string>
+  /**
+   * Decrypts an item straight onto the clipboard, without returning it. The
+   * app's implementation clears it again after 30 seconds.
+   */
+  copyItem(lensId: string, encryptedValue: string): Promise<void>
   /** Forgets and zeroes every key. */
   lock(): Promise<void>
 }

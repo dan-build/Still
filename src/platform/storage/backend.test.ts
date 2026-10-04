@@ -142,6 +142,17 @@ describe('Lenses and items', () => {
     expect(await backend.revealItem(lensId, backend.view().lenses[0].items[0].id)).toBe('ghp-123')
   })
 
+  it('copies a secret through the crypto, without returning it', async () => {
+    const copied: string[] = []
+    const storage = new MemoryStorage()
+    const backend = createLocalStorageBackend(storage, createLibsodiumVaultCrypto(fakeCrypto, (t) => copied.push(t)), clock)
+    await backend.create('pw-123456')
+    const lensId = await backend.createLens('A')
+    await backend.addItem(lensId, { label: 'L', type: 'password', value: '  exact\nvalue ' })
+    expect(await backend.copyItem(lensId, backend.view().lenses[0].items[0].id)).toBeUndefined()
+    expect(copied).toEqual(['  exact\nvalue '])
+  })
+
   it('never exposes keys or encrypted values in the view', async () => {
     const { backend } = await freshVault()
     const lensId = await backend.createLens('A')
@@ -298,6 +309,7 @@ describe('lock (S1)', () => {
     await expect(backend.addItem(a, { label: 'M', type: 'note', value: 'w' })).rejects.toThrow(VaultLockedError)
     await expect(backend.deleteItem(a, itemId)).rejects.toThrow(VaultLockedError)
     await expect(backend.revealItem(a, itemId)).rejects.toThrow(VaultLockedError)
+    await expect(backend.copyItem(a, itemId)).rejects.toThrow(VaultLockedError)
     expect(storage.data).toEqual(before)
 
     expect(await backend.unlock('pw-123456')).toEqual({ ok: true })
