@@ -31,6 +31,8 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
   const [selectedLensId, setSelectedLensId] = useState<string | null>(null)
   const [isRecycleOpen, setIsRecycleOpen] = useState(false)
   const [toast, setToast] = useState<{ message: string; error: boolean } | null>(null)
+  // Notices about where the vault lives stay until dismissed, unlike toasts.
+  const [shownNotice, setShownNotice] = useState(notice)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
@@ -55,14 +57,13 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
     const status = backend().status()
     setIsFirstLaunch(status === 'empty')
     setIsOrphaned(status === 'orphaned')
-    if (notice) showToast(NOTICES[notice], false, 9000)
   }, [])
 
   // Errors stay up longer and replace any earlier toast instead of racing its timer.
-  const showToast = (message: string, error = false, ms = error ? 6000 : 2200) => {
+  const showToast = (message: string, error = false) => {
     clearTimeout(toastTimer.current)
     setToast({ message, error })
-    toastTimer.current = setTimeout(() => setToast(null), ms)
+    toastTimer.current = setTimeout(() => setToast(null), error ? 6000 : 2200)
   }
 
   const SAVE_FAILED = "Couldn't save that change. Nothing was changed. Please try again."
@@ -346,6 +347,18 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
             onRestore={restoreFromRecycleBin}
             onPermanentDelete={permanentDelete}
           />
+        </div>
+      )}
+
+      {shownNotice && (
+        <div
+          role="status"
+          className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[min(520px,calc(100vw-4rem))] bg-white/90 backdrop-blur-xl text-sm text-[#151515]/80 px-6 py-4 rounded-2xl border border-black/10 shadow-xl flex items-center gap-4 z-100"
+        >
+          <span className="flex-1 leading-relaxed">{NOTICES[shownNotice]}</span>
+          <button onClick={() => setShownNotice(undefined)} className="px-4 py-2 rounded-xl bg-[#151515] text-white text-sm">
+            OK
+          </button>
         </div>
       )}
 

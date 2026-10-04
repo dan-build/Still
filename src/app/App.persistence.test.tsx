@@ -195,11 +195,22 @@ describe('unlock', () => {
 })
 
 describe('after the vault moved into its file', () => {
-  it('says so once, on the unlock screen', async () => {
-    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
-    render(createElement(StillHome, { storage: localStorageVault(localStorage), notice: 'moved' }))
-    await screen.findByPlaceholderText('Enter your password')
-    expect(screen.getByRole('status').textContent).toContain('Your vault now lives in its own file.')
+  it('says so on the unlock screen, and keeps saying it until dismissed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+      render(createElement(StillHome, { storage: localStorageVault(localStorage), notice: 'moved' }))
+      await screen.findByPlaceholderText('Enter your password')
+      const notice = () => screen.queryByText(/Your vault now lives in its own file\./)
+      expect(notice()).not.toBeNull()
+      act(() => vi.advanceTimersByTime(60_000))
+      expect(notice()).not.toBeNull()
+
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }))
+      expect(notice()).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
