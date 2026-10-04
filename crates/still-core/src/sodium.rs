@@ -195,6 +195,29 @@ pub fn aead_decrypt(
     Ok(message)
 }
 
+/// BLAKE2b-256 of `data` (crypto_generichash), keyed with `key` when one is
+/// given. Used to recognise a value later without keeping the value itself.
+pub fn blake2b_256(data: &[u8], key: Option<&[u8; 32]>) -> [u8; 32] {
+    let _ = init();
+    let mut out = [0u8; 32];
+    let (key_ptr, key_len) = key.map_or((ptr::null(), 0), |k| (k.as_ptr(), k.len()));
+    // SAFETY: `out` is writable for 32 bytes, `data` is readable for its
+    // length, and the key pointer is either null with length 0 or valid for 32
+    // bytes (within crypto_generichash's 16..=64 key range).
+    let rc = unsafe {
+        ffi::crypto_generichash(
+            out.as_mut_ptr(),
+            out.len(),
+            data.as_ptr(),
+            data.len() as c_ulonglong,
+            key_ptr,
+            key_len,
+        )
+    };
+    debug_assert_eq!(rc, 0, "crypto_generichash takes these lengths");
+    out
+}
+
 /// crypto_kdf_derive_from_key: a 32-byte subkey from `key`, `id` and an
 /// 8-byte context (keyed BLAKE2b in libsodium).
 pub fn kdf_derive(out: &mut [u8; 32], id: u64, context: &[u8; 8], key: &[u8; 32]) {
@@ -260,6 +283,21 @@ mod tests {
         // The same libsodium release as libsodium-wrappers-sumo 0.8.4, which
         // v0.1.x shipped and the JS reference tests use.
         assert_eq!(version(), "1.0.22");
+    }
+
+    // Reference values from Python's hashlib.blake2b(digest_size=32).
+    #[test]
+    fn blake2b_256_matches_an_independent_implementation() {
+        let hex = |b: [u8; 32]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+        assert_eq!(
+            hex(blake2b_256(b"", None)),
+            "0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8"
+        );
+        let key: [u8; 32] = std::array::from_fn(|i| i as u8);
+        assert_eq!(
+            hex(blake2b_256("Pässwörd 🔐".as_bytes(), Some(&key))),
+            "da49d4fefa9c3cf3b9ccd87f3a7a83b532489acaae81791fedf882e31126fdac"
+        );
     }
 
     #[test]
