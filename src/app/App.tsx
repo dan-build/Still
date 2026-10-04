@@ -4,7 +4,8 @@ import LensDetail from '@/features/lenses/ui/LensDetail'
 import RecycleBinModal from '@/features/recycle-bin/ui/RecycleBinModal'
 import { onAutoLocked, reportActivity } from '@/platform/tauri/session'
 import { createTauriVaultCrypto } from '@/platform/tauri/vaultCrypto'
-import { createLocalStorageBackend, type LensView, type VaultBackend, type VaultView } from '@/platform/storage/backend'
+import { localStorageVault } from '@/platform/storage/localStorageVault'
+import { createVaultBackend, type LensView, type VaultBackend, type VaultView } from '@/platform/storage/backend'
 import UnlockScreen, { type UnlockOutcome } from './lock/UnlockScreen'
 import CreatePasswordScreen from './lock/CreatePasswordScreen'
 import RecoveryScreen from './lock/RecoveryScreen'
@@ -26,7 +27,7 @@ export default function StillHome() {
 
   // Created on first use. The keys live in Rust, behind the Tauri commands.
   const backend = () => {
-    if (!backendRef.current) backendRef.current = createLocalStorageBackend(window.localStorage, createTauriVaultCrypto())
+    if (!backendRef.current) backendRef.current = createVaultBackend(localStorageVault(window.localStorage), createTauriVaultCrypto())
     return backendRef.current
   }
 
