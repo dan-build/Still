@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window may call the vault commands, and nothing else.",
+  "description": "The main window may call the vault commands and listen for events (auto-lock), and nothing else.",
   "windows": ["main"],
   "permissions": [
     "allow-vault-create",
@@ -11,6 +11,8 @@
     "allow-lens-new-key",
     "allow-item-encrypt",
     "allow-item-decrypt",
-    "allow-item-copy"
+    "allow-item-copy",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
   ]
 }

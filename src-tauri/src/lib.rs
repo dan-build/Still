@@ -127,17 +127,22 @@ mod tests {
         }
     }
 
-    // Only the main window may call anything, and only the vault commands:
-    // no core:default, no plugins.
+    // Only the main window may call anything, and only the vault commands,
+    // plus listening for events (auto-lock tells the page when it locked):
+    // no core:default, no emitting, no plugins.
     #[test]
     fn capability_allows_only_the_vault_commands_in_main() {
         let capability: Value =
             serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
         assert_eq!(capability["windows"], serde_json::json!(["main"]));
-        let allowed: Vec<String> = crate::commands::ALL
+        let mut allowed: Vec<String> = crate::commands::ALL
             .iter()
             .map(|c| format!("allow-{}", c.replace('_', "-")))
             .collect();
+        allowed.extend([
+            "core:event:allow-listen".into(),
+            "core:event:allow-unlisten".into(),
+        ]);
         assert_eq!(capability["permissions"], serde_json::json!(allowed));
         let build_rs = include_str!("../build.rs");
         for command in crate::commands::ALL {

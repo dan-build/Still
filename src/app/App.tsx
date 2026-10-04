@@ -2,11 +2,15 @@ import { useState, useEffect, useRef } from 'react'
 import CreateLensModal from '@/features/lenses/ui/CreateLensModal'
 import LensDetail from '@/features/lenses/ui/LensDetail'
 import RecycleBinModal from '@/features/recycle-bin/ui/RecycleBinModal'
+import { onAutoLocked, reportActivity } from '@/platform/tauri/session'
 import { createTauriVaultCrypto } from '@/platform/tauri/vaultCrypto'
 import { createLocalStorageBackend, type LensView, type VaultBackend, type VaultView } from '@/platform/storage/backend'
 import UnlockScreen, { type UnlockOutcome } from './lock/UnlockScreen'
 import CreatePasswordScreen from './lock/CreatePasswordScreen'
 import RecoveryScreen from './lock/RecoveryScreen'
+
+// Activity is reported to Rust's auto-lock at most this often.
+const ACTIVITY_EVERY_MS = 15_000
 
 export default function StillHome() {
   const backendRef = useRef<VaultBackend | null>(null)
@@ -134,6 +138,29 @@ export default function StillHome() {
     setIsRecycleOpen(false)
     setView({ lenses: [], bin: [], unreadable: 0 })
   }
+
+  // While unlocked: tell Rust someone is here, and follow it when it locks the
+  // vault by itself (5 minutes idle, or the computer slept).
+  useEffect(() => {
+    if (!isUnlocked) return
+    let last = 0
+    const active = () => {
+      const now = Date.now()
+      if (now - last < ACTIVITY_EVERY_MS) return
+      last = now
+      reportActivity()
+    }
+    const events = ['pointerdown', 'pointermove', 'keydown', 'wheel'] as const
+    for (const name of events) window.addEventListener(name, active, { passive: true })
+    const stopListening = onAutoLocked((reason) => {
+      lock()
+      showToast(reason === 'sleep' ? 'Locked while your computer was asleep.' : 'Locked after 5 minutes without activity.')
+    })
+    return () => {
+      for (const name of events) window.removeEventListener(name, active)
+      stopListening()
+    }
+  }, [isUnlocked])
 
   return (
     <>
@@ -306,15 +333,16 @@ export default function StillHome() {
             onRestore={restoreFromRecycleBin}
             onPermanentDelete={permanentDelete}
           />
+        </div>
+      )}
 
-          {toast && (
-            <div
-              role={toast.error ? 'alert' : 'status'}
-              className={`fixed bottom-8 right-8 bg-white/70 backdrop-blur-xl text-sm px-6 py-2.5 rounded-[9px] border border-black/4 flex items-center gap-2 z-100 ${toast.error ? 'text-red-700' : 'text-[#151515]/80'}`}
-            >
-              {!toast.error && <span>✓</span>} {toast.message}
-            </div>
-          )}
+      {/* On every screen, so messages about locking show on the lock screen. */}
+      {toast && (
+        <div
+          role={toast.error ? 'alert' : 'status'}
+          className={`fixed bottom-8 right-8 bg-white/70 backdrop-blur-xl text-sm px-6 py-2.5 rounded-[9px] border border-black/4 flex items-center gap-2 z-100 ${toast.error ? 'text-red-700' : 'text-[#151515]/80'}`}
+        >
+          {!toast.error && <span>✓</span>} {toast.message}
         </div>
       )}
     </>
