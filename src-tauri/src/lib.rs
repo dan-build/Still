@@ -1,5 +1,6 @@
 use tauri::{Manager, RunEvent};
 
+mod autolock;
 mod clipboard;
 mod commands;
 mod vault;
@@ -12,6 +13,7 @@ pub fn run() {
             app.manage(clipboard::ClipboardGuard::new(Box::new(
                 clipboard::Arboard::default(),
             )));
+            app.manage(autolock::AutoLock::new(autolock::idle_timeout()));
             watcher::start(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.center();
@@ -22,6 +24,7 @@ pub fn run() {
             commands::vault_create,
             commands::vault_unlock,
             commands::vault_lock,
+            commands::vault_touch,
             commands::lens_new_key,
             commands::item_encrypt,
             commands::item_decrypt,

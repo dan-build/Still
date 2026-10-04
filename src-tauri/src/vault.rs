@@ -66,7 +66,6 @@ impl VaultSession {
         self.keys().take();
     }
 
-    #[cfg(test)]
     pub fn is_unlocked(&self) -> bool {
         self.keys().is_some()
     }

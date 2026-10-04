@@ -7,6 +7,7 @@
     "allow-vault-create",
     "allow-vault-unlock",
     "allow-vault-lock",
+    "allow-vault-touch",
     "allow-lens-new-key",
     "allow-item-encrypt",
     "allow-item-decrypt",
