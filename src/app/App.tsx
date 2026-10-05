@@ -1,10 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
-import CreateLensModal from '@/features/lenses/ui/CreateLensModal'
-import LensDetail from '@/features/lenses/ui/LensDetail'
-import RecycleBinModal from '@/features/recycle-bin/ui/RecycleBinModal'
+import LensView from '@/features/lenses/ui/LensView'
+import NewLensDialog from '@/features/lenses/ui/NewLensDialog'
+import ArchiveView from '@/features/recycle-bin/ui/ArchiveView'
 import { onAutoLocked, reportActivity } from '@/platform/tauri/session'
 import { createTauriVaultCrypto } from '@/platform/tauri/vaultCrypto'
-import { createVaultBackend, type LensView, type VaultBackend, type VaultStorage, type VaultView } from '@/platform/storage/backend'
+import { createVaultBackend, type LensView as Lens, type VaultBackend, type VaultStorage, type VaultView } from '@/platform/storage/backend'
+import { Button } from '@/shared/ui/Button'
+import { Icon } from '@/shared/ui/Icon'
+import { Toaster, type ToastMessage } from '@/shared/ui/Toast'
+import Sidebar, { type Selection } from './shell/Sidebar'
 import UnlockScreen, { type UnlockOutcome } from './lock/UnlockScreen'
 import CreatePasswordScreen from './lock/CreatePasswordScreen'
 import RecoveryScreen from './lock/RecoveryScreen'
@@ -28,12 +32,12 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
   const backendRef = useRef<VaultBackend | null>(null)
   const [view, setView] = useState<VaultView>({ lenses: [], bin: [], unreadable: 0 })
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [selectedLensId, setSelectedLensId] = useState<string | null>(null)
-  const [isRecycleOpen, setIsRecycleOpen] = useState(false)
-  const [toast, setToast] = useState<{ message: string; error: boolean } | null>(null)
+  const [selection, setSelection] = useState<Selection | null>(null)
+  const [toast, setToast] = useState<(ToastMessage & { id: number }) | null>(null)
   // Notices about where the vault lives stay until dismissed, unlike toasts.
   const [shownNotice, setShownNotice] = useState(notice)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const toastId = useRef(0)
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
   const [isOrphaned, setIsOrphaned] = useState(false)
@@ -48,7 +52,11 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
 
   const lenses = view.lenses
   const recycleBin = view.bin
-  const selectedLens = lenses.find(l => l.id === selectedLensId) ?? null
+  // The selected Lens, or the first (newest) one when none is chosen.
+  const chosen = selection?.kind === 'lens' ? lenses.find((l) => l.id === selection.id) : undefined
+  const currentLens: Lens | null = chosen ?? (selection?.kind === 'archive' ? null : (lenses[0] ?? null))
+  const showArchive = selection?.kind === 'archive'
+  const sidebarSelection: Selection | null = currentLens ? { kind: 'lens', id: currentLens.id } : selection
 
   useEffect(() => {
     // Rust keeps its keys across a page reload, but this page starts locked,
@@ -57,62 +65,68 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
     const status = backend().status()
     setIsFirstLaunch(status === 'empty')
     setIsOrphaned(status === 'orphaned')
+    // Once, when the app starts: backend() is the same object for its life.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Errors stay up longer and replace any earlier toast instead of racing its timer.
-  const showToast = (message: string, error = false) => {
+  // One toast at a time. Errors stay up longer; the copy toast stays until
+  // the clipboard clears, its bar counting down.
+  const showToast = (next: ToastMessage) => {
     clearTimeout(toastTimer.current)
-    setToast({ message, error })
-    toastTimer.current = setTimeout(() => setToast(null), error ? 6000 : 2200)
+    setToast({ ...next, id: ++toastId.current })
+    const ms = next.countdown ? next.countdown * 1000 : next.tone === 'error' ? 6000 : 2200
+    toastTimer.current = setTimeout(() => setToast(null), ms)
   }
+  useEffect(() => () => clearTimeout(toastTimer.current), [])
 
-  const SAVE_FAILED = "Couldn't save that change. Nothing was changed. Please try again."
+  const SAVE_FAILED: ToastMessage = { message: "Couldn't save that change. Nothing was changed. Please try again.", tone: 'error' }
 
   const createLens = async (name: string) => {
     let id: string
     try {
       id = await backend().createLens(name)
     } catch {
-      showToast(SAVE_FAILED, true)
-      return
+      showToast(SAVE_FAILED)
+      return false
     }
     refresh()
     setIsCreateOpen(false)
-    setTimeout(() => setSelectedLensId(id), 150)
+    setSelection({ kind: 'lens', id })
+    return true
   }
 
-  const moveToRecycleBin = async (lens: LensView) => {
+  const forgetLens = async (lens: Lens) => {
     try {
       await backend().forgetLens(lens.id)
     } catch {
-      showToast(SAVE_FAILED, true)
+      showToast(SAVE_FAILED)
       return
     }
     refresh()
-    setSelectedLensId(null)
-    showToast('Moved to Recycle Bin')
+    setSelection(null)
+    showToast({ message: `${lens.name} moved to Archive` })
   }
 
-  const restoreFromRecycleBin = async (recycledLens: LensView) => {
+  const restoreFromRecycleBin = async (recycledLens: Lens) => {
     try {
       await backend().restoreLens(recycledLens.id)
     } catch {
-      showToast(SAVE_FAILED, true)
+      showToast(SAVE_FAILED)
       return
     }
     refresh()
-    showToast('Restored')
+    showToast({ message: `${recycledLens.name} restored` })
   }
 
-  const permanentDelete = async (id: string) => {
+  const deleteForever = async (lens: Lens) => {
     try {
-      await backend().deleteLensForever(id)
+      await backend().deleteLensForever(lens.id)
     } catch {
-      showToast(SAVE_FAILED, true)
+      showToast(SAVE_FAILED)
       return
     }
     refresh()
-    showToast('Permanently deleted')
+    showToast({ message: `${lens.name} deleted for good` })
   }
 
   const handleCreatePassword = async (password: string) => {
@@ -120,7 +134,7 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
     refresh()
     setIsUnlocked(true)
     setIsFirstLaunch(false)
-    showToast('Secure vault created')
+    showToast({ message: 'Vault created' })
   }
 
   const handleUnlock = async (password: string): Promise<UnlockOutcome> => {
@@ -143,18 +157,19 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
   }
 
   // Lock forgets everything shown: the crypto zeroes its keys, and the open
-  // Lens, modals and any revealed values go with the unmounted UI.
+  // Lens, dialogs and any revealed values go with the unmounted UI.
   const lock = () => {
-    backend().lock().catch(() => showToast("Couldn't clear the keys from memory. Quit Still to be sure.", true))
+    backend().lock().catch(() => showToast({ message: "Couldn't clear the keys from memory. Quit Still to be sure.", tone: 'error' }))
     setIsUnlocked(false)
-    setSelectedLensId(null)
+    setSelection(null)
     setIsCreateOpen(false)
-    setIsRecycleOpen(false)
     setView({ lenses: [], bin: [], unreadable: 0 })
+    // A copy toast would outlive what it describes; Rust clears the clipboard on lock.
+    setToast((current) => (current?.countdown ? null : current))
   }
 
-  // While unlocked: tell Rust someone is here, and follow it when it locks the
-  // vault by itself (5 minutes idle, or the computer slept).
+  // While unlocked: tell Rust someone is here, follow it when it locks the
+  // vault by itself (5 minutes idle, or the computer slept), and lock on ⌘L.
   useEffect(() => {
     if (!isUnlocked) return
     let last = 0
@@ -164,16 +179,27 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
       last = now
       reportActivity()
     }
+    const shortcut = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'l') {
+        e.preventDefault()
+        lock()
+      }
+    }
     const events = ['pointerdown', 'pointermove', 'keydown', 'wheel'] as const
     for (const name of events) window.addEventListener(name, active, { passive: true })
+    window.addEventListener('keydown', shortcut)
     const stopListening = onAutoLocked((reason) => {
       lock()
-      showToast(reason === 'sleep' ? 'Locked while your computer was asleep.' : 'Locked after 5 minutes without activity.')
+      showToast({ message: reason === 'sleep' ? 'Locked while your computer was asleep.' : 'Locked after 5 minutes without activity.' })
     })
     return () => {
       for (const name of events) window.removeEventListener(name, active)
+      window.removeEventListener('keydown', shortcut)
       stopListening()
     }
+    // Per unlock: lock and showToast only use state setters and refs, so the
+    // first render's copies stay correct.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUnlocked])
 
   return (
@@ -187,190 +213,77 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
           <UnlockScreen onUnlock={handleUnlock} />
         )
       ) : (
-        <div className="min-h-screen bg-still-bg text-[#151515] flex justify-center">
-          <div className="w-full max-w-[1080px] px-10">
-
-            <header className="pt-10 pb-20 flex items-end">
-              <div className="flex items-left">
-                <img
-                  src="/still.svg"
-                  alt="Still Logo"
-                  width={48}
-                  height={48}
-                />
-              </div>
-
-              <div className="ml-auto flex items-center gap-3">
-                <button
-                  onClick={() => setIsRecycleOpen(true)}
-                  className="text-sm text-[#151515]/40 hover:text-[#151515] transition"
-                >
-                  Archive
-                </button>
-
-                <button
-                  onClick={() => setIsCreateOpen(true)}
-                  className="text-sm text-[#151515]/40 hover:text-[#151515] transition"
-                >
-                  New Lens
-                </button>
-              </div>
-            </header>
-
-            <main className="space-y-14">
-              {view.unreadable > 0 && (
-                <div role="status" className="rounded-[12px] border border-black/10 bg-white px-5 py-4 text-sm text-[#151515]/80">
-                  {view.unreadable === 1
-                    ? "1 Lens couldn't be opened. It's kept safe and unchanged."
-                    : `${view.unreadable} Lenses couldn't be opened. They're kept safe and unchanged.`}
-                </div>
-              )}
-              {lenses.length === 0 ? (
-                <div className="min-h-[60vh] flex flex-col justify-center">
-                  <div className="relative">
-                    <div className="text-[34px] font-medium leading-[0.5]">
-                      Your storage
-                    </div>
-                    <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-black/5 blur-2xl" />
-                  </div>
-
-                  <div className="mt-6 max-w-[420px] text-[#151515]/55 text-[14px] leading-relaxed">
-                    Local. Encrypted. No accounts.<br />
-                    Protected by your master password.
-                  </div>
-
-                  <button
-                    onClick={() => setIsCreateOpen(true)}
-                    className="mt-10 w-fit px-5 h-9 bg-[#151515] text-white rounded-[9px] text-sm"
-                  >
-                    Create your first lens
-                  </button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-12 gap-10">
-                  <div className="col-span-7">
-                    <div className="sticky top-10 space-y-4">
-                      <div className="text-[11px] tracking-[0.2em] uppercase text-[#151515]/40">
-                        Active Lens
-                      </div>
-
-                      <div
-                        onClick={() => setSelectedLensId(lenses[0].id)}
-                        className="bg-[#ECEFF1] rounded-[28px] p-10 min-h-[420px] flex flex-col justify-between cursor-pointer hover:bg-[#DDE2E7] transition-all duration-500"
-                      >
-                        <div>
-                          <div className="text-[44px] tracking-[-0.06em] leading-[0.95]">
-                            {lenses[0]?.name}
-                          </div>
-                          <div className="mt-6 text-sm text-[#151515]/50">
-                            {lenses[0]?.itemCount} items stored locally
-                          </div>
-                        </div>
-                        <div className="text-[12px] uppercase tracking-[0.2em] text-[#151515]/30">
-                          Primary collection
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="col-span-5 space-y-3">
-                    <div className="text-[11px] tracking-[0.2em] uppercase text-[#151515]/40 mb-4">
-                      All Lenses
-                    </div>
-
-                    {lenses.map((lens) => (
-                      <div
-                        key={lens.id}
-                        onClick={() => setSelectedLensId(lens.id)}
-                        className="group cursor-pointer px-5 py-4 rounded-[16px] bg-white/60 hover:bg-white transition flex justify-between items-center"
-                      >
-                        <div className="text-[15px] tracking-[-0.02em] group-hover:translate-x-1 transition">
-                          {lens.name}
-                        </div>
-                        <div className="text-xs text-[#151515]/40">
-                          {lens.itemCount}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </main>
-
-            <footer className="py-14 flex items-center justify-between text-[12px] text-[#151515]/30 tracking-widest">
-              <div>Private.</div>
-
-              <button
-                onClick={lock}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-[#151515]/60 hover:text-[#151515] transition"
-                title="Lock app"
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    d="M7 11V8C7 5.23858 9.23858 3 12 3C14.419 3 16.4367 4.71776 16.9 7M8.8 21H15.2C16.8802 21 17.7202 21 18.362 20.673C18.9265 20.3854 19.3854 19.9265 19.673 19.362C20 18.7202 20 17.8802 20 16.2V15.8C20 14.1198 20 13.2798 19.673 12.638C19.3854 12.0735 18.9265 11.6146 18.362 11.327C17.7202 11 16.8802 11 15.2 11H8.8C7.11984 11 6.27976 11 5.63803 11.327C5.07354 11.6146 4.6146 12.0735 4.32698 12.638C4 13.2798 4 14.1198 4 15.8V16.2C4 17.8802 4 18.7202 4.32698 19.362C4.6146 19.9265 5.07354 20.3854 5.63803 20.673C6.27976 21 7.11984 21 8.8 21Z"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <span>Lock</span>
-              </button>
-            </footer>
-          </div>
-
-          <CreateLensModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} onCreate={createLens} />
-
-          {selectedLens && (
-            <LensDetail
-              lens={selectedLens}
-              onClose={() => setSelectedLensId(null)}
-              onAddItem={async (item) => { await backend().addItem(selectedLens.id, item); refresh() }}
-              onRevealItem={(itemId) => backend().revealItem(selectedLens.id, itemId)}
-              onCopyItem={(itemId) => backend().copyItem(selectedLens.id, itemId)}
-              onDeleteItem={async (itemId) => { await backend().deleteItem(selectedLens.id, itemId); refresh() }}
-              onShowToast={showToast}
-              onForget={() => moveToRecycleBin(selectedLens)}
-            />
-          )}
-
-          <RecycleBinModal
-            isOpen={isRecycleOpen}
-            onClose={() => setIsRecycleOpen(false)}
-            recycleBin={recycleBin}
-            onRestore={restoreFromRecycleBin}
-            onPermanentDelete={permanentDelete}
+        <div className="flex h-screen w-full overflow-hidden bg-bg text-13 text-g1">
+          <Sidebar
+            lenses={lenses}
+            selected={sidebarSelection}
+            archiveCount={recycleBin.length}
+            onSelect={setSelection}
+            onNewLens={() => setIsCreateOpen(true)}
+            onLock={lock}
           />
+          <main className="flex min-w-0 flex-1 flex-col">
+            {view.unreadable > 0 && (
+              <div role="status" className="mx-3 mt-3 flex items-start gap-2.5 rounded-8 bg-sidebar px-3 py-3 text-13 leading-[1.45] text-g2 shadow-[inset_0_0_0_1px_var(--hairline)]">
+                <Icon name="warning" className="mt-0.5 text-warning" />
+                {view.unreadable === 1
+                  ? "1 Lens couldn't be opened. It's kept safe and unchanged."
+                  : `${view.unreadable} Lenses couldn't be opened. They're kept safe and unchanged.`}
+              </div>
+            )}
+            {showArchive ? (
+              <ArchiveView bin={recycleBin} onRestore={restoreFromRecycleBin} onDeleteForever={deleteForever} />
+            ) : currentLens ? (
+              <LensView
+                key={currentLens.id}
+                lens={currentLens}
+                onAddItem={async (item) => {
+                  await backend().addItem(currentLens.id, item)
+                  refresh()
+                }}
+                onRevealItem={(itemId) => backend().revealItem(currentLens.id, itemId)}
+                onCopyItem={(itemId) => backend().copyItem(currentLens.id, itemId)}
+                onDeleteItem={async (itemId) => {
+                  await backend().deleteItem(currentLens.id, itemId)
+                  refresh()
+                }}
+                onToast={showToast}
+                onForget={() => forgetLens(currentLens)}
+              />
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 pb-10 text-center">
+                <div className="mb-2 flex size-10 items-center justify-center rounded-8 bg-sidebar text-g4 shadow-[inset_0_0_0_1px_var(--hairline)]">
+                  <Icon name="lens" />
+                </div>
+                <h1 className="text-14 font-semibold">No Lenses yet</h1>
+                <p className="mb-3 max-w-[300px] text-13 leading-[1.5] text-g3">
+                  A Lens is an encrypted collection of secrets. Make one for each part of your life.
+                </p>
+                <Button variant="primary" size="md" icon="plus" onClick={() => setIsCreateOpen(true)}>
+                  Create a Lens
+                </Button>
+              </div>
+            )}
+          </main>
+
+          <NewLensDialog open={isCreateOpen} onClose={() => setIsCreateOpen(false)} onCreate={createLens} />
         </div>
       )}
 
       {shownNotice && (
         <div
+         
           role="status"
-          className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[min(520px,calc(100vw-4rem))] bg-white/90 backdrop-blur-xl text-sm text-[#151515]/80 px-6 py-4 rounded-2xl border border-black/10 shadow-xl flex items-center gap-4 z-100"
+          className="fixed top-3 left-1/2 z-40 flex w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-2.5 rounded-8 bg-sidebar py-2 pr-2 pl-3 text-13 leading-[1.45] text-g2 shadow-[inset_0_0_0_1px_var(--hairline)]"
         >
-          <span className="flex-1 leading-relaxed">{NOTICES[shownNotice]}</span>
-          <button onClick={() => setShownNotice(undefined)} className="px-4 py-2 rounded-xl bg-[#151515] text-white text-sm">
-            OK
-          </button>
+          {shownNotice === 'old-copy-changed' && <Icon name="warning" className="text-warning" />}
+          <p className="flex-1">{NOTICES[shownNotice]}</p>
+          <Button onClick={() => setShownNotice(undefined)}>OK</Button>
         </div>
       )}
 
       {/* On every screen, so messages about locking show on the lock screen. */}
-      {toast && (
-        <div
-          role={toast.error ? 'alert' : 'status'}
-          className={`fixed bottom-8 right-8 bg-white/70 backdrop-blur-xl text-sm px-6 py-2.5 rounded-[9px] border border-black/4 flex items-center gap-2 z-100 ${toast.error ? 'text-red-700' : 'text-[#151515]/80'}`}
-        >
-          {!toast.error && <span>✓</span>} {toast.message}
-        </div>
-      )}
+      <Toaster toast={toast} />
     </>
   )
 }

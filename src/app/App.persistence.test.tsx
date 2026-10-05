@@ -91,29 +91,30 @@ const storedItems = (lensName: string) => (stored('still-lenses') ?? []).find((l
 // ---- UI steps ---------------------------------------------------------------
 
 async function enterPassword(password = PASSWORD) {
-  fireEvent.change(await screen.findByPlaceholderText('Enter your password'), { target: { value: password } })
+  fireEvent.change(await screen.findByPlaceholderText('Master password'), { target: { value: password } })
   fireEvent.click(screen.getByRole('button', { name: 'Unlock' }))
 }
 
 async function unlock(password = PASSWORD) {
   render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
   await enterPassword(password)
-  await screen.findByRole('button', { name: 'Archive' })
+  await screen.findByRole('button', { name: /^Archive/ })
 }
 
 async function openLens(name: string) {
-  fireEvent.click((await screen.findAllByText(name))[0])
-  await screen.findByRole('button', { name: 'Forget Lens' })
+  fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^${name},`) }))
+  await screen.findByRole('heading', { name, level: 1 })
 }
 
 async function forgetOpenLens() {
-  fireEvent.click(screen.getByRole('button', { name: 'Forget Lens' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Move to Recycle Bin' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Lens actions' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Forget Lens' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Forget Lens' }))
 }
 
 async function openArchive() {
-  fireEvent.click(screen.getByRole('button', { name: 'Archive' }))
-  await screen.findByText('Recycle Bin')
+  fireEvent.click(screen.getByRole('button', { name: /^Archive/ }))
+  await screen.findByRole('heading', { name: 'Archive', level: 1 })
 }
 
 async function createLens(name: string) {
@@ -122,11 +123,14 @@ async function createLens(name: string) {
   fireEvent.click(screen.getByRole('button', { name: 'Create Lens' }))
 }
 
+// The Lens header's Add secret (an empty Lens shows a second one).
+const openAddSecret = () => fireEvent.click(screen.getAllByRole('button', { name: 'Add secret' })[0])
+
 async function addSecret(label: string, value: string) {
-  fireEvent.click(screen.getByRole('button', { name: 'Add Secret' }))
+  openAddSecret()
   fireEvent.change(await screen.findByPlaceholderText('What is this for?'), { target: { value: label } })
   fireEvent.change(screen.getByPlaceholderText('Paste or type the secret here…'), { target: { value } })
-  fireEvent.click(screen.getByRole('button', { name: 'Add to Lens' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Add secret' }))
 }
 
 // vi.restoreAllMocks() does not undo a spy on happy-dom's localStorage, but
@@ -175,8 +179,8 @@ describe('unlock', () => {
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
     await enterPassword('not-the-password')
 
-    await screen.findByText('Incorrect password')
-    expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull()
+    await screen.findByText('Incorrect password. Try again.')
+    expect(screen.queryByRole('button', { name: /^Archive/ })).toBeNull()
   })
 
   it('unlocks a vault whose password is only spaces (B7)', async () => {
@@ -200,7 +204,7 @@ describe('after the vault moved into its file', () => {
     try {
       seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
       render(createElement(StillHome, { storage: localStorageVault(localStorage), notice: 'moved' }))
-      await screen.findByPlaceholderText('Enter your password')
+      await screen.findByPlaceholderText('Master password')
       const notice = () => screen.queryByText(/Your vault now lives in its own file\./)
       expect(notice()).not.toBeNull()
       act(() => vi.advanceTimersByTime(60_000))
@@ -225,7 +229,7 @@ describe('auto-lock', () => {
       await openLens('Alpha')
       act(() => autoLock.fire!(reason))
 
-      await screen.findByPlaceholderText('Enter your password')
+      await screen.findByPlaceholderText('Master password')
       expect(screen.getByRole('status').textContent).toContain(message)
       expect(screen.queryByText('Alpha')).toBeNull()
     })
@@ -234,7 +238,7 @@ describe('auto-lock', () => {
   it('reports activity at most every 15 seconds, and only while unlocked', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
-    await screen.findByPlaceholderText('Enter your password')
+    await screen.findByPlaceholderText('Master password')
     autoLock.activity = 0
     fireEvent.keyDown(window, { key: 'a' })
     expect(autoLock.activity).toBe(0)
@@ -256,7 +260,7 @@ describe('lock', () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     lockCalls.count = 0
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
-    await screen.findByPlaceholderText('Enter your password')
+    await screen.findByPlaceholderText('Master password')
     expect(lockCalls.count).toBeGreaterThan(0)
   })
 
@@ -265,8 +269,8 @@ describe('lock', () => {
     await unlock()
     fireEvent.click(screen.getByRole('button', { name: 'Lock' }))
 
-    await screen.findByPlaceholderText('Enter your password')
-    expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull()
+    await screen.findByPlaceholderText('Master password')
+    expect(screen.queryByRole('button', { name: /^Archive/ })).toBeNull()
   })
 
   it('closes the open Lens, so it is not shown again after unlocking (S1)', async () => {
@@ -275,7 +279,7 @@ describe('lock', () => {
     await openLens('Alpha')
     fireEvent.click(screen.getByRole('button', { name: 'Lock' }))
     await enterPassword()
-    await screen.findByRole('button', { name: 'Archive' })
+    await screen.findByRole('button', { name: /^Archive/ })
 
     expect(screen.queryByRole('button', { name: 'Forget Lens' })).toBeNull()
   })
@@ -309,7 +313,7 @@ describe('secrets', () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     await unlock()
     await openLens('Alpha')
-    fireEvent.click(screen.getByRole('button', { name: 'Add Secret' }))
+    openAddSecret()
     fireEvent.change(await screen.findByPlaceholderText('What is this for?'), { target: { value: 'Token' } })
     const value = screen.getByPlaceholderText('Paste or type the secret here…') as HTMLTextAreaElement
     fireEvent.change(value, { target: { value: 'tok-123\n' } })
@@ -319,7 +323,7 @@ describe('secrets', () => {
     expect(value.value).toBe('tok-123')
     expect(screen.queryByRole('button', { name: 'Remove them' })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add to Lens' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add secret' }))
     await waitFor(() => expect(storedItems('Alpha').map((i) => i.label)).toContain('Token'))
     expect(fakePlaintext(storedItems('Alpha').find((i) => i.label === 'Token')!.encryptedValue)).toBe('tok-123')
   })
@@ -328,19 +332,19 @@ describe('secrets', () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     await unlock()
     await openLens('Alpha')
-    fireEvent.click(screen.getByRole('button', { name: 'Add Secret' }))
+    openAddSecret()
     fireEvent.change(await screen.findByPlaceholderText('What is this for?'), { target: { value: 'Blank' } })
     fireEvent.change(screen.getByPlaceholderText('Paste or type the secret here…'), { target: { value: '  \n ' } })
 
     await screen.findByText("A secret can't be only spaces or line breaks.")
-    expect((screen.getByRole('button', { name: 'Add to Lens' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Add secret' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('turns off spellcheck and autocorrect for the secret value', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     await unlock()
     await openLens('Alpha')
-    fireEvent.click(screen.getByRole('button', { name: 'Add Secret' }))
+    openAddSecret()
     const value = await screen.findByPlaceholderText('Paste or type the secret here…')
 
     expect(value.getAttribute('spellcheck')).toBe('false')
@@ -355,9 +359,9 @@ describe('secrets', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     await unlock()
     await openLens('Alpha')
-    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Alpha secret' }))
 
-    await screen.findByText('Copied. Clears in 30 seconds.')
+    await screen.findByText('Alpha secret copied')
     expect(clipboard.copied).toEqual(['value-of-l1'])
     expect(writeText).not.toHaveBeenCalled()
     expect(screen.queryByText('value-of-l1')).toBeNull()
@@ -367,7 +371,7 @@ describe('secrets', () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     await unlock()
     await openLens('Alpha')
-    fireEvent.click(screen.getByRole('button', { name: 'Reveal' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal Alpha secret' }))
 
     await screen.findByText('value-of-l1')
   })
@@ -378,7 +382,7 @@ describe('secrets', () => {
     await openLens('Alpha')
     await addSecret('Spaced', '  two-spaces-in-front\nsecond line')
     await waitFor(() => expect(storedItems('Alpha').map((i) => i.label)).toContain('Spaced'))
-    const reveal = (await screen.findAllByRole('button', { name: 'Reveal' }))[1] as HTMLButtonElement
+    const reveal = (await screen.findByRole('button', { name: 'Reveal Spaced' })) as HTMLButtonElement
     await waitFor(() => expect(reveal.disabled).toBe(false))
     fireEvent.click(reveal)
 
@@ -394,7 +398,10 @@ describe('secrets', () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     await unlock()
     await openLens('Alpha')
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Alpha secret' }))
+    // Deleting can't be undone, so it asks first.
+    expect(storedItems('Alpha')).toHaveLength(1)
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete secret' }))
 
     await waitFor(() => expect(storedItems('Alpha')).toEqual([]))
     expect(storedNames('still-lenses')).toEqual(['Alpha'])
@@ -418,12 +425,12 @@ describe('failed saves (B5)', () => {
     const spy = failWritesTo('still-lenses')
     await addSecret('Unsaved', 'v')
 
-    expect((await screen.findByRole('alert')).textContent).toContain("Couldn't save the secret. Nothing was changed.")
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain("Couldn't save the secret. Nothing was changed."))
     expect(localStorage.getItem('still-lenses')).toBe(before)
     expect(screen.queryByText('Unsaved')).toBeNull()
 
     spy.mockRestore()
-    fireEvent.click(await screen.findByRole('button', { name: 'Add to Lens' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Add secret' }))
     await waitFor(() => expect(storedItems('Alpha').map((i) => i.label)).toContain('Unsaved'))
   })
 
@@ -435,7 +442,7 @@ describe('failed saves (B5)', () => {
     failWritesTo('still-lenses')
     await forgetOpenLens()
 
-    expect((await screen.findByRole('alert')).textContent).toContain("Couldn't save that change. Nothing was changed.")
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain("Couldn't save that change. Nothing was changed."))
     expect({ lenses: localStorage.getItem('still-lenses'), bin: localStorage.getItem('still-recycle-bin') }).toEqual(before)
     expect(screen.getAllByText('Drop').length).toBeGreaterThan(0)
   })
@@ -471,7 +478,8 @@ describe('the recycle bin (B1)', () => {
     })
     await unlock()
     await openArchive()
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Delete forever' }))[0])
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Gone now' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete forever' }))
 
     await waitFor(() => expect(storedNames('still-recycle-bin')).toEqual(['Stays']))
   })
@@ -480,9 +488,12 @@ describe('the recycle bin (B1)', () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Keep' }], bin: [{ id: 'b1', name: 'Gone', deletedAt: new Date().toISOString() }] })
     await unlock()
     await openArchive()
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Gone now' }))
+    // Deleting for good can't be undone, so it asks first.
+    expect(storedNames('still-recycle-bin')).toEqual(['Gone'])
     fireEvent.click(await screen.findByRole('button', { name: 'Delete forever' }))
 
-    await screen.findByText('Recycle Bin is empty')
+    await screen.findByText('Archive is empty')
     await waitFor(() => expect(stored('still-recycle-bin')).toEqual([]))
   })
 
@@ -493,7 +504,7 @@ describe('the recycle bin (B1)', () => {
     })
     await unlock()
     await openArchive()
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Restore' }))[0])
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore Back' }))
 
     await waitFor(() => expect(storedNames('still-lenses').sort()).toEqual(['Back', 'Keep']))
     await waitFor(() => expect(storedNames('still-recycle-bin')).toEqual(['Stays']))
@@ -503,7 +514,7 @@ describe('the recycle bin (B1)', () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Keep' }], bin: [{ id: 'b1', name: 'Back', deletedAt: new Date().toISOString() }] })
     await unlock()
     await openArchive()
-    fireEvent.click(await screen.findByRole('button', { name: 'Restore' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore Back' }))
 
     await waitFor(() => expect(storedNames('still-lenses').sort()).toEqual(['Back', 'Keep']))
     await waitFor(() => expect(stored('still-recycle-bin')).toEqual([]))
@@ -525,7 +536,7 @@ describe('the recycle bin (B1)', () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Keep' }], bin: [{ id: 'b1', name: 'Old', deletedAt: new Date(Date.now() - 8 * DAY).toISOString() }] })
     await unlock()
     await openArchive()
-    await screen.findByText('Recycle Bin is empty')
+    await screen.findByText('Archive is empty')
 
     await waitFor(() => expect(stored('still-recycle-bin')).toEqual([]))
   })
@@ -566,19 +577,21 @@ describe('Lenses that cannot be decrypted (B2)', () => {
 describe('creating a vault (B4)', () => {
   async function createVault(password: string) {
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
-    fireEvent.change(await screen.findByPlaceholderText('Create a strong password'), { target: { value: password } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm your password'), { target: { value: password } })
-    fireEvent.click(screen.getByRole('button', { name: 'Create Secure Vault' }))
-    await screen.findByRole('button', { name: 'Archive' })
+    fireEvent.change(await screen.findByLabelText('Master password'), { target: { value: password } })
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: password } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create vault' }))
+    await screen.findByRole('button', { name: /^Archive/ })
   }
 
   it('refuses a new master password made only of spaces', async () => {
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
-    fireEvent.change(await screen.findByPlaceholderText('Create a strong password'), { target: { value: '          ' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm your password'), { target: { value: '          ' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Create Secure Vault' }))
-
-    await screen.findByText("Password can't be only spaces")
+    fireEvent.change(await screen.findByLabelText('Master password'), { target: { value: '          ' } })
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: '          ' } })
+    // Said as soon as it's typed, and the button stays disabled.
+    await screen.findByText("A password can't be only spaces.")
+    const create = screen.getByRole('button', { name: 'Create vault' }) as HTMLButtonElement
+    expect(create.disabled).toBe(true)
+    fireEvent.click(create)
     expect(localStorage.getItem('still-encrypted-master-key')).toBeNull()
   })
 
@@ -600,7 +613,7 @@ describe('creating a vault (B4)', () => {
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
 
     await screen.findByText("Still found data it can't open")
-    expect(screen.queryByPlaceholderText('Create a strong password')).toBeNull()
+    expect(screen.queryByLabelText('Master password')).toBeNull()
     expect(snapshot()).toEqual(before)
   })
 
@@ -617,7 +630,7 @@ describe('creating a vault (B4)', () => {
     localStorage.setItem('still-recycle-bin', '[]')
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
 
-    await screen.findByPlaceholderText('Create a strong password')
+    await screen.findByLabelText('Master password')
   })
 
   it('changes nothing if the user cancels setting the data aside', async () => {
@@ -640,16 +653,16 @@ describe('creating a vault (B4)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Set the old data aside…' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Set aside and start fresh' }))
 
-    await screen.findByPlaceholderText('Create a strong password')
+    await screen.findByLabelText('Master password')
     const keptLenses = Object.keys(localStorage).find((key) => /^still-set-aside-.*-still-lenses$/.test(key))!
     expect(localStorage.getItem(keptLenses)).toBe(orphan)
     expect(Object.keys(localStorage).some((key) => /^still-set-aside-.*-still-has-pin$/.test(key))).toBe(true)
     expect(localStorage.getItem('still-lenses')).toBeNull()
 
-    fireEvent.change(screen.getByPlaceholderText('Create a strong password'), { target: { value: 'new-password-1' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm your password'), { target: { value: 'new-password-1' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Create Secure Vault' }))
-    await screen.findByRole('button', { name: 'Archive' })
+    fireEvent.change(screen.getByLabelText('Master password'), { target: { value: 'new-password-1' } })
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'new-password-1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create vault' }))
+    await screen.findByRole('button', { name: /^Archive/ })
     await createLens('Fresh')
 
     await waitFor(() => expect(storedNames('still-lenses')).toEqual(['Fresh']))
@@ -660,7 +673,7 @@ describe('creating a vault (B4)', () => {
 describe('PIN (B6)', () => {
   it('offers no PIN when creating a vault', async () => {
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
-    await screen.findByPlaceholderText('Create a strong password')
+    await screen.findByLabelText('Master password')
 
     expect(screen.queryByRole('button', { name: 'Add PIN' })).toBeNull()
   })
@@ -668,7 +681,7 @@ describe('PIN (B6)', () => {
   it('offers no PIN on the unlock screen, even for vaults saved with the PIN flag', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }], hasPin: true })
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
-    await screen.findByPlaceholderText('Enter your password')
+    await screen.findByPlaceholderText('Master password')
 
     expect(screen.queryByRole('button', { name: 'Use PIN instead' })).toBeNull()
   })

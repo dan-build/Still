@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { moveOldCopy, openVaultStorage, type Startup } from '@/platform/storage/startup'
 import { vaultFile } from '@/platform/tauri/vaultFile'
+import { Button } from '@/shared/ui/Button'
 import StillHome from './App'
+import LockLayout from './lock/LockLayout'
 
 /** Opens the vault storage (the file, or a one-time move into it), then shows the app. */
 export default function StillApp() {
@@ -70,21 +72,24 @@ function Message({
   children?: React.ReactNode
   action?: { label: string; busy: boolean; onClick: () => void }
 }) {
+  // "Opening Still…" shows the mark; every other message is a problem.
+  const problem = Boolean(children)
   return (
-    <div className="min-h-screen flex items-center justify-center bg-still-bg">
-      <div className="w-full max-w-[440px] px-6 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight text-[#151515] mb-4">{title}</h1>
-        {children && <p className="text-[15px] text-still-muted leading-relaxed">{children}</p>}
-        {action && (
-          <button
-            onClick={action.onClick}
-            disabled={action.busy}
-            className="mt-8 w-full py-3.5 rounded-2xl bg-[#151515] text-white text-[15px] disabled:opacity-50"
-          >
-            {action.busy ? 'Working…' : action.label}
-          </button>
-        )}
-      </div>
-    </div>
+    <LockLayout
+      title={title}
+      warning={problem}
+      width={400}
+      actions={
+        action && (
+          <div className="flex justify-center">
+            <Button size="md" onClick={action.onClick} disabled={action.busy}>
+              {action.busy ? 'Working…' : action.label}
+            </Button>
+          </div>
+        )
+      }
+    >
+      {children && <p>{children}</p>}
+    </LockLayout>
   )
 }

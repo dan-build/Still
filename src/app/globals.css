@@ -3,119 +3,245 @@
 @source '../../src';
 @source '../../index.html';
 
-@theme {
-  --color-still-bg: #f8f9fa;
-  --color-still-surface: #ffffff;
-  --color-still-text: #1a2530;
-  --color-still-muted: #606f7b;
-  --color-still-accent: #2b5a8f;
-  --color-still-success: #3e7b61;
-  --color-still-highlight: #dce5ee;
+/*
+  Geist and Geist Mono (OFL), bundled from Fontsource: Vite copies the woff2
+  files into dist/, so the CSP's font-src 'self' allows them and nothing is
+  fetched at runtime. Only the weights the design uses.
+*/
+@import '@fontsource/geist-sans/400.css';
+@import '@fontsource/geist-sans/500.css';
+@import '@fontsource/geist-sans/600.css';
+@import '@fontsource/geist-mono/400.css';
+@import '@fontsource/geist-mono/500.css';
 
-  /* Tailwind 4 redrew its palette; keep the reds Still has always used. */
-  --color-red-50: #fef2f2;
-  --color-red-600: #dc2626;
-  --color-red-700: #b91c1c;
+/*
+  Design tokens (the approved design mockup, 2026-10-05). One set of names,
+  with light and dark values; the app follows the system setting. Every text
+  and icon pair was checked for WCAG AA contrast. Colours are plain values,
+  never color-mix(), which macOS 12's Safari 15 lacks.
+*/
+:root {
+  /* Native parts (scrollbars, carets, autofill) follow the theme too. */
+  color-scheme: light dark;
 
-  --transition-duration-300: 300ms;
+  /* Surfaces */
+  --bg: #ffffff;
+  --sidebar: #f4f5f5;
+  --raised: #ffffff;
+  --field: #ffffff;
+  --hover: #f5f6f6;
+  --selected: #e7e9ea;
+  --hairline: #eceeef;
 
-  --font-sans:
-    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* Greys carry the hierarchy: g1 primary text … g7 quiet borders. */
+  --g1: #14181a;
+  --g2: #2e3539;
+  --g3: #4b5358;
+  --g4: #626a70;
+  --g5: #7a8389;
+  --g6: #8d959a;
+  --g7: #dcdfe1;
 
-  --shadow-still: 0 4px 20px rgb(0 0 0 / 0.04);
-  --shadow-still-hover: 0 10px 40px rgb(0 0 0 / 0.06);
+  --danger: #bf2d24;
+  --danger-hover: #a6241c;
+  --on-danger: #ffffff;
+  --warning: #8a5a0b;
+  --success: #21744c;
+
+  /* Ink: a deep fill for buttons, and a tone for rings, icons and links. */
+  --accent: #3c4d8d;
+  --accent-fill: #3c4d8d;
+  --accent-fill-hover: #314078;
+  --on-accent: #ffffff;
+  --accent-text: #3c4d8d;
+  --accent-soft: rgb(60 77 141 / 0.1);
+  --accent-glow: rgb(60 77 141 / 0.3);
+  --danger-soft: rgb(191 45 36 / 0.1);
+
+  /* A neutral wash for hover backgrounds: it reads on every surface. */
+  --wash: rgb(127 127 127 / 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1112;
+    --sidebar: #141617;
+    --raised: #1a1c1e;
+    --field: #0b0c0d;
+    --hover: #181a1c;
+    --selected: #1f2224;
+    --hairline: #202325;
+
+    --g1: #eef0f1;
+    --g2: #c8cdd0;
+    --g3: #a2a9ad;
+    --g4: #848c91;
+    --g5: #737b80;
+    --g6: #656c71;
+    --g7: #2c3033;
+
+    --danger: #f2766d;
+    --danger-hover: #f58b83;
+    --on-danger: #170403;
+    --warning: #e2b25c;
+    --success: #6cc79a;
+
+    --accent: #a1b1e0;
+    --accent-fill: #435698;
+    --accent-fill-hover: #4b5fa7;
+    --on-accent: #ffffff;
+    --accent-text: #a1b1e0;
+    --accent-soft: rgb(161 177 224 / 0.14);
+    --accent-glow: rgb(161 177 224 / 0.42);
+    --danger-soft: rgb(242 118 109 / 0.16);
+  }
+}
+
+/* The tokens as Tailwind utilities (bg-raised, text-g3, rounded-6, …). */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-sidebar: var(--sidebar);
+  --color-raised: var(--raised);
+  --color-field: var(--field);
+  --color-hover: var(--hover);
+  --color-selected: var(--selected);
+  --color-hairline: var(--hairline);
+  --color-g1: var(--g1);
+  --color-g2: var(--g2);
+  --color-g3: var(--g3);
+  --color-g4: var(--g4);
+  --color-g5: var(--g5);
+  --color-g6: var(--g6);
+  --color-g7: var(--g7);
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-on-danger: var(--on-danger);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-accent: var(--accent);
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-fill-hover: var(--accent-fill-hover);
+  --color-on-accent: var(--on-accent);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+  --color-wash: var(--wash);
+}
+
+/* Hover only on a real pointer: no sticky hover after a tap. */
+@custom-variant hover {
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      @slot;
+    }
+  }
 }
 
 /*
-  Base styles. They sit in Tailwind's base layer, so any utility class on an
-  element still wins, as it did with Tailwind 3. Unlayered rules would beat
-  every utility in Tailwind 4.
+  The focus ring for the new UI: a gap in the background colour, then the
+  accent. A box-shadow, not an outline, because Safari before 16.4 draws
+  outlines with square corners. It keeps each control's own radius.
+*/
+@utility focus-ring {
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  }
+}
+
+@theme {
+  /* Four sizes. Single-line text sits at line-height 1 in a fixed-height box;
+     running text sets leading-[1.5]. */
+  --text-12: 12px;
+  --text-12--line-height: 1;
+  --text-13: 13px;
+  --text-13--line-height: 1;
+  --text-14: 14px;
+  --text-14--line-height: 1;
+  --text-16: 16px;
+  --text-16--line-height: 1;
+
+  /* Radii: small and concentric (outer = inner + padding). */
+  --radius-4: 4px;
+  --radius-6: 6px;
+  --radius-8: 8px;
+  --radius-12: 12px;
+
+  /* Motion: enters ease out; the icon swap uses its own curve. */
+  --ease-out-still: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-swap: cubic-bezier(0.2, 0, 0, 1);
+
+  --font-mono: 'Geist Mono', ui-monospace, Menlo, monospace;
+}
+
+@theme {
+  --font-sans: 'Geist Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/*
+  Base styles, in Tailwind's base layer so any utility class still wins
+  (unlayered rules would beat every utility in Tailwind 4).
 */
 @layer base {
-  /* Tailwind 3's defaults, which Tailwind 4 changed. */
-  *,
-  ::after,
-  ::before,
-  ::backdrop,
-  ::file-selector-button {
-    border-color: #e5e7eb;
-  }
-
-  button:not(:disabled),
-  [role='button']:not(:disabled) {
-    cursor: pointer;
-  }
-
-  :root {
-    --still-bg: #F8F9FA;
-    --still-surface: #FFFFFF;
-    --still-text: #1A2530;
-    --still-muted: #606F7B;
-    --still-accent: #2B5A8F;
-    --still-success: #3E7B61;
-    --still-highlight: #DCE5EE;
-  }
-
   body {
-    background-color: var(--still-bg);
-    color: var(--still-text);
+    background-color: var(--bg);
+    color: var(--g1);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  button,
-  input,
-  textarea,
-  select {
-    transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  input::placeholder,
-  textarea::placeholder {
-    color: #606F7B;
-    opacity: 0.6;
-  }
-
   ::selection {
-    background-color: var(--still-highlight);
-    color: var(--still-text);
-  }
-
-  button {
-    font-weight: 500;
-    letter-spacing: -0.01em;
-  }
-}
-
-@layer components {
-  .card {
-    box-shadow: 0 1px 3px rgb(0 0 0 / 0.04);
-    transition: box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .card:hover {
-    box-shadow: 0 10px 40px rgb(0 0 0 / 0.06);
-  }
-
-  .still-transition {
-    transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+    background-color: var(--accent-soft);
   }
 }
 
 /*
-  After Tailwind's utilities, as in Tailwind 3: it beats a single utility
-  class (so a focused control takes the 12px radius), but not a focus:
-  variant such as focus:outline-hidden, which is more specific.
+  The unlock glow breathes slowly behind the mark while Argon2id runs. Under
+  reduced motion it holds still at a middle brightness.
 */
-@layer utilities {
-  :focus-visible {
-    outline: 2px solid var(--still-accent);
-    outline-offset: 3px;
-    border-radius: 12px;
+@keyframes still-breathe {
+  from { opacity: 0.25; transform: scale(0.82); }
+  to { opacity: 0.85; transform: scale(1.08); }
+}
+.still-glow {
+  background: radial-gradient(closest-side, var(--accent-glow), transparent 100%);
+  opacity: 0.18;
+  transform: scale(0.85);
+}
+.still-glow[data-breathing='true'] {
+  animation: still-breathe 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .still-glow[data-breathing='true'] {
+    animation: none;
+    opacity: 0.55;
+    transform: none;
   }
 }
 
-@keyframes breathing {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.04); }
+/*
+  The icon swap (copy → check): both icons stacked, cross-fading with a scale
+  from .25 and a 4px blur. Reduced motion keeps only the fade.
+*/
+.swap-icon {
+  transition-property: opacity, transform, filter;
+  transition-duration: 300ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
+.swap-icon.swap-out {
+  opacity: 0;
+  transform: scale(0.25);
+  filter: blur(4px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .swap-icon.swap-out {
+    transform: none;
+    filter: none;
+  }
+}
+
+/* The toast's bar, shrinking over the clipboard's 30 seconds. */
+@keyframes still-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+

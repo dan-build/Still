@@ -5,8 +5,6 @@ import StillApp from './StillApp'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <div className="min-h-screen flex justify-center">
-      <StillApp />
-    </div>
+    <StillApp />
   </StrictMode>,
 )

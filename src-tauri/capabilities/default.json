@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window may call the vault commands and listen for events (auto-lock), and nothing else.",
+  "description": "The main window may call the vault commands, listen for events (auto-lock), and be dragged and zoomed by its title strip (the overlay title bar), and nothing else.",
   "windows": ["main"],
   "permissions": [
     "allow-vault-create",
@@ -16,6 +16,8 @@
     "allow-storage-write",
     "allow-storage-import-legacy",
     "core:event:allow-listen",
-    "core:event:allow-unlisten"
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize"
   ]
 }

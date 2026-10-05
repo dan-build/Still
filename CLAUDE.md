@@ -20,7 +20,8 @@ npm run tauri:build    # Desktop bundle; runs `npm run build` itself, packages .
 npm test                     # Vitest, about 1 minute (real Argon2id runs use 1 GiB each)
 npx vitest run src/app/App.persistence.test.tsx  # one file
 npx vitest run -t "golden fixture vault-v1-real" # tests whose name matches
-npm run check                # what CI will run: check:web (vitest, tsc -b, vite build) + check:rust (fmt, clippy -D warnings, cargo test)
+npm run lint                 # ESLint: TypeScript, rules of hooks, jsx-a11y (strict); no warnings allowed
+npm run check                # what CI will run: check:web (vitest, lint, tsc -b, vite build) + check:rust (fmt, clippy -D warnings, cargo test)
 ```
 
 Tests sit next to the code (`src/**/*.test.ts(x)`):
@@ -39,6 +40,7 @@ A known bug gets an `it.fails` test first, with a passing sibling that runs the 
 **Layout** (`@/` is `src/`):
 - `src/app/`: the shell (`main.tsx`, `App.tsx`, styles); `lock/` holds the unlock, create-password and recovery screens.
 - `src/features/<feature>/{model,ui}`: `vault/model` (the pure vault model), `lenses/ui`, `recycle-bin/ui`.
+- `src/shared/ui/`: the shared UI pieces. `Icon.tsx` holds Still's own icon set (16px grid, 1.5px stroke; no icon library) and the `Mark`.
 - `src/platform/`: `storage/` (the backend), `crypto/` (the `VaultCrypto` interface) and `tauri/` (the only code that calls `invoke`). Only platform code touches storage or crypto.
 - `src/test/`: test helpers, and `reference/` (the JS crypto, for tests only; never imported by the app).
 
@@ -86,7 +88,7 @@ Recycle-bin entries older than 7 days are purged when the vault is unlocked. New
 - `error.rs`: `WrongKey`, `Corrupt`, `PasswordHashFailed`, `EmptyPlaintext`, `NotUtf8`.
 - `session.rs`: `Unlocked` holds the app key and the Lens keys that opened, built without any lock held (Argon2id takes seconds). `create()` derives the key a second time and refuses unless the new blob opens to the same app key, because a wrong derivation there would lock the vault forever. `SecretText` carries passwords and values, zeroes itself on drop and never prints. `SessionError::code()` gives the same codes as the JS `VaultCrypto`.
 
-**The Tauri side** ([src-tauri/src](src-tauri/src)): `vault.rs` keeps a `Mutex<Option<Unlocked>>` registered in `setup`; locking drops it. `commands.rs` holds the eleven commands (`vault_create`, `vault_unlock`, `vault_lock`, `vault_touch`, `lens_new_key`, `item_encrypt`, `item_decrypt`, `item_copy`, `storage_load`, `storage_write`, `storage_import_legacy`); Argon2id runs in `spawn_blocking`, and every command counts as activity. `build.rs` declares them, so Tauri refuses anything [capabilities/default.json](src-tauri/capabilities/default.json) doesn't allow: exactly these eleven plus `core:event:allow-listen`/`allow-unlisten`, for the `main` window, with no `core:default`.
+**The Tauri side** ([src-tauri/src](src-tauri/src)): `vault.rs` keeps a `Mutex<Option<Unlocked>>` registered in `setup`; locking drops it. `commands.rs` holds the eleven commands (`vault_create`, `vault_unlock`, `vault_lock`, `vault_touch`, `lens_new_key`, `item_encrypt`, `item_decrypt`, `item_copy`, `storage_load`, `storage_write`, `storage_import_legacy`); Argon2id runs in `spawn_blocking`, and every command counts as activity. `build.rs` declares them, so Tauri refuses anything [capabilities/default.json](src-tauri/capabilities/default.json) doesn't allow: exactly these eleven plus `core:event:allow-listen`/`allow-unlisten`, and `core:window:allow-start-dragging`/`allow-internal-toggle-maximize` so the overlay title bar can move and zoom the window (`data-tauri-drag-region`), for the `main` window, with no `core:default`.
 - `clipboard.rs`: `item_copy` writes through `arboard` (used directly; the Tauri plugin wraps it), marked for clipboard history to skip. It clears after 30 s, on lock and on quit, only while the clipboard still holds that value, recognised by a keyed BLAKE2b fingerprint. Tests use a fake clipboard.
 - `autolock.rs`: locks after 5 minutes idle (wall clock, so sleep counts) or when the wall clock runs ahead of the monotonic one (the computer slept). Debug builds accept `STILL_IDLE_SECONDS` (5 at least) for manual checks; release builds ignore it.
 - `store.rs`: the vault file, as described under Persistence. Its tests use temporary folders and import the real exported vault.
@@ -104,8 +106,14 @@ Other notes:
 
 ## Conventions
 
-- Components are styled with inline Tailwind classes, theme colours (`still-*`, defined in the `@theme` block of [globals.css](src/app/globals.css)) and hard-coded hex colours (such as `#151515`), in a minimal, calm look.
-- **Styles: Tailwind 4 must work on macOS 12's Safari 15.4.** `@tailwindcss/vite` builds the CSS, and Vite runs Lightning CSS with a Safari 15.4 target, in dev and release, which adds fallbacks for newer CSS. In `globals.css`, our own element rules live in `@layer base`, so utility classes beat them as in Tailwind 3 (unlayered rules would beat every utility), and `:focus-visible` sits in `@layer utilities`, after the generated ones. The reds, the default border colour and the button cursor are pinned to Tailwind 3's values. Only `src/` and `index.html` are scanned for classes.
+- **The design system** (approved on a mockup, 2026-10-05) lives in [globals.css](src/app/globals.css) and [src/shared/ui](src/shared/ui). Style components with Tailwind classes on its tokens only, never hard-coded colours:
+  - colours: surfaces `bg`, `sidebar`, `raised`, `field`, `hover`, `selected`, `hairline`; greys `g1` (primary text) to `g7`, which alone carry the hierarchy; `danger`, `warning`, `success`; the accent, Ink (`accent-fill` for buttons with `on-accent` text, `accent` for rings, selected icons and the glow, `accent-text`, `accent-soft`); `wash` for hover backgrounds. Each has light and dark values, and the app follows the system. Every text and icon pair passes WCAG AA; check new pairs.
+  - type: Geist and Geist Mono (Fontsource, bundled), sizes `text-12/13/14/16` only, weights 400/500/600.
+  - radii `rounded-4/6/8/12`; spacing on a 4px grid.
+  - icons: only `Icon` (Still's own set, 16px, 1.5px stroke); no icon library.
+  - motion: none on frequent actions; colour changes over 150ms; name the transitioned properties (never `transition: all`); Tailwind 4's `scale-*` sets the `scale` property, so transition `scale`, not `transform`. Respect reduced motion (keep fades, drop movement).
+  - controls: use the shared pieces (Button, IconButton, TextField, SegmentedControl, Menu, Dialog, Toaster, Kbd). Focus shows through the `focus-ring` utility, a box-shadow, because Safari before 16.4 draws outlines with square corners. `hover:` applies only on a real pointer.
+- **Styles: Tailwind 4 must work on macOS 12's Safari 15.4.** `@tailwindcss/vite` builds the CSS, and Vite runs Lightning CSS with a Safari 15.4 target, in dev and release, which adds fallbacks for newer CSS. Avoid what it can't fix: `color-mix()` (opacity modifiers like `bg-black/50` on token colours; use a token or an rgb() value), Tailwind's gradient utilities (they interpolate `in oklab`; write the gradient in an arbitrary property), `@starting-style` (use a `data-mounted` attribute set a frame after mounting) and CSS nesting. In `globals.css`, our own element rules live in `@layer base`, so utility classes beat them (unlayered rules would beat every utility). Only `src/` and `index.html` are scanned for classes. Fonts must never be inlined as `data:` URLs (`font-src 'self'` blocks them); `vite.config.ts` and `check-dist` make sure.
 - UI tests replace crypto with [src/test/fakeCrypto.ts](src/test/fakeCrypto.ts), which makes real v1 blob shapes and throws libsodium's real error messages. In happy-dom, spy on `localStorage` itself, not `Storage.prototype` (that spy sees nothing), and restore it with `mockRestore()`, because `vi.restoreAllMocks()` doesn't.
 - The `@/*` path alias maps to `src/`. Use it for imports across folders; keep imports within a folder relative.
 - Domain terms: a **Lens** is an encrypted collection. An **Item** is a `password`, `key`, or `note` stored in a Lens. The UI calls the recycle bin "Archive", and deleting a Lens is called "forget".

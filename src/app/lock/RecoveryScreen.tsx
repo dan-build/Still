@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { Button } from '@/shared/ui/Button'
+import LockLayout from './LockLayout'
 
 interface RecoveryScreenProps {
   onSetAside: () => Promise<void>
@@ -23,59 +25,58 @@ export default function RecoveryScreen({ onSetAside }: RecoveryScreenProps) {
     }
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-still-bg px-6">
-      <div className="w-full max-w-[460px]">
-        {!confirming ? (
-          <div>
-            <h1 className="text-[28px] font-medium tracking-tight text-center">Still found data it can't open</h1>
-            <div className="text-[#151515]/70 mt-5 text-[15px] leading-relaxed space-y-3">
-              <p>
-                Your saved Lenses are still on this Mac, but the key that unlocks them is missing, so Still can't open
-                them. Creating a new vault now would leave them unreadable for good, so Still won't do that on its own.
-              </p>
-              <p>If you have a backup of Still's data, restore it and open Still again.</p>
-              <p>
-                Otherwise, you can set the old data aside and start a new, empty vault. Nothing is deleted: the old data
-                stays on this Mac under a different name.
-              </p>
-            </div>
-            <button
-              onClick={() => setConfirming(true)}
-              className="mt-8 w-full py-4 bg-[#151515] text-white text-sm font-medium rounded-[14px] transition-all active:scale-[0.985]"
-            >
+  if (!confirming) {
+    return (
+      <LockLayout
+        warning
+        width={400}
+        title="Still found data it can't open"
+        actions={
+          <div className="flex justify-center">
+            <Button size="md" onClick={() => setConfirming(true)}>
               Set the old data aside…
-            </button>
+            </Button>
           </div>
-        ) : (
-          <div>
-            <h1 className="text-[28px] font-medium tracking-tight text-center">Set the old data aside?</h1>
-            <div className="text-[#151515]/70 mt-5 text-[15px] leading-relaxed space-y-3">
-              <p>Still will keep a copy of everything it found, then start a new, empty vault.</p>
-              <p>
-                The old Lenses stay unreadable unless the missing key is restored. They won't appear in the new vault.
-              </p>
-            </div>
-            {error && <div className="text-red-600 text-sm text-center pt-4">{error}</div>}
-            <div className="flex gap-3 mt-8">
-              <button
-                onClick={() => setConfirming(false)}
-                disabled={isWorking}
-                className="flex-1 py-3.5 text-sm font-medium text-[#151515]/70 hover:bg-white rounded-[14px] transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={setAside}
-                disabled={isWorking}
-                className="flex-1 py-3.5 bg-[#151515] text-white text-sm font-medium rounded-[14px] disabled:opacity-50 transition-all active:scale-[0.985]"
-              >
-                {isWorking ? 'Setting aside…' : 'Set aside and start fresh'}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+        }
+      >
+        <p>
+          Your saved Lenses are still on this Mac, but the key that unlocks them is missing, so Still can't open them.
+          Creating a new vault now would leave them unreadable for good, so Still won't do that on its own.
+        </p>
+        <p>If you have a backup of Still's data, restore it and open Still again.</p>
+        <p>
+          Otherwise, you can set the old data aside and start a new, empty vault. Nothing is deleted: the old data stays on
+          this Mac under a different name.
+        </p>
+      </LockLayout>
+    )
+  }
+
+  return (
+    <LockLayout
+      warning
+      width={400}
+      title="Set the old data aside?"
+      footer={
+        error ? (
+          <span role="alert" className="text-danger">
+            {error}
+          </span>
+        ) : null
+      }
+      actions={
+        <div className="flex justify-center gap-2">
+          <Button variant="ghost" size="md" onClick={() => setConfirming(false)} disabled={isWorking}>
+            Cancel
+          </Button>
+          <Button variant="primary" size="md" onClick={setAside} disabled={isWorking}>
+            {isWorking ? 'Setting aside…' : 'Set aside and start fresh'}
+          </Button>
+        </div>
+      }
+    >
+      <p>Still will keep a copy of everything it found, then start a new, empty vault.</p>
+      <p>The old Lenses stay unreadable unless the missing key is restored. They won't appear in the new vault.</p>
+    </LockLayout>
   )
 }
