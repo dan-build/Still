@@ -74,6 +74,8 @@ export default function UnlockScreen({ onUnlock }: UnlockScreenProps) {
           type="password"
           autoComplete="current-password"
           spellCheck={false}
+          // The lock screen's only task is typing the password.
+          // eslint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
           placeholder="Master password"
           value={input}

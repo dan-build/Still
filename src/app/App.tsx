@@ -65,6 +65,8 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
     const status = backend().status()
     setIsFirstLaunch(status === 'empty')
     setIsOrphaned(status === 'orphaned')
+    // Once, when the app starts: backend() is the same object for its life.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // One toast at a time. Errors stay up longer; the copy toast stays until
@@ -195,6 +197,9 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
       window.removeEventListener('keydown', shortcut)
       stopListening()
     }
+    // Per unlock: lock and showToast only use state setters and refs, so the
+    // first render's copies stay correct.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUnlocked])
 
   return (

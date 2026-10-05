@@ -79,6 +79,7 @@ export function Menu({ label, items, align = 'end' }: MenuProps) {
           id={id}
           role="menu"
           aria-label={label}
+          tabIndex={-1}
           onKeyDown={onKeyDown}
           className={[
             'absolute top-full z-30 mt-1 min-w-[180px] rounded-8 bg-raised p-1',

@@ -20,7 +20,8 @@ npm run tauri:build    # Desktop bundle; runs `npm run build` itself, packages .
 npm test                     # Vitest, about 1 minute (real Argon2id runs use 1 GiB each)
 npx vitest run src/app/App.persistence.test.tsx  # one file
 npx vitest run -t "golden fixture vault-v1-real" # tests whose name matches
-npm run check                # what CI will run: check:web (vitest, tsc -b, vite build) + check:rust (fmt, clippy -D warnings, cargo test)
+npm run lint                 # ESLint: TypeScript, rules of hooks, jsx-a11y (strict); no warnings allowed
+npm run check                # what CI will run: check:web (vitest, lint, tsc -b, vite build) + check:rust (fmt, clippy -D warnings, cargo test)
 ```
 
 Tests sit next to the code (`src/**/*.test.ts(x)`):

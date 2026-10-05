@@ -22,6 +22,8 @@ interface LensViewProps {
 }
 
 /** The selected Lens: its secrets as rows, with Add secret and the Lens's actions. */
+// App keys this view by Lens, so another Lens starts fresh: nothing revealed
+// carries over.
 export default function LensView({ lens, onAddItem, onRevealItem, onCopyItem, onDeleteItem, onToast, onForget }: LensViewProps) {
   const [revealed, setRevealed] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<string | null>(null)
@@ -34,11 +36,6 @@ export default function LensView({ lens, onAddItem, onRevealItem, onCopyItem, on
   const [deleteOpen, setDeleteOpen] = useState(false)
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
-  // Another Lens: nothing revealed carries over.
-  useEffect(() => {
-    setRevealed({})
-    setCopied(null)
-  }, [lens.id])
   useEffect(() => () => clearTimeout(copiedTimer.current), [])
 
   const toggleReveal = async (item: ItemView) => {

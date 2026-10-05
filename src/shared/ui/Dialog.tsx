@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 
 /** How long the exit transition runs before the dialog leaves the page. */
@@ -53,13 +53,13 @@ export function Dialog({
   const panel = useRef<HTMLDivElement>(null)
   const scrim = useRef<HTMLDivElement>(null)
   const returnFocus = useRef<HTMLElement | null>(null)
-  const latest = useRef({ onClose, dismissible })
-  latest.current = { onClose, dismissible }
 
-  // Mount, then show on the next frame; hide, then unmount after the exit.
+  // Opening puts it on the page at once (state adjusted during render, as
+  // React recommends over an effect); it shows on the next frame, and after
+  // closing it leaves the page once its exit has played.
+  if (open && !present) setPresent(true)
   useEffect(() => {
     if (open) {
-      setPresent(true)
       let second = 0
       const first = requestAnimationFrame(() => {
         second = requestAnimationFrame(() => setMounted(true))
@@ -69,8 +69,10 @@ export function Dialog({
         cancelAnimationFrame(second)
       }
     }
-    setMounted(false)
-    const timer = setTimeout(() => setPresent(false), DIALOG_EXIT_MS)
+    const timer = setTimeout(() => {
+      setPresent(false)
+      setMounted(false)
+    }, DIALOG_EXIT_MS)
     return () => clearTimeout(timer)
   }, [open])
 
@@ -109,37 +111,44 @@ export function Dialog({
     }
   }, [open, present])
 
-  if (!present) return null
+  // While open: Escape closes, and Tab stays inside the dialog.
+  useEffect(() => {
+    if (!open || !present) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        if (dismissible) onClose()
+        return
+      }
+      if (e.key !== 'Tab' || !panel.current) return
+      const items = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)]
+      if (items.length === 0) {
+        e.preventDefault()
+        return
+      }
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [open, present, dismissible, onClose])
 
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.stopPropagation()
-      if (latest.current.dismissible) latest.current.onClose()
-      return
-    }
-    if (e.key !== 'Tab' || !panel.current) return
-    // Keep Tab inside the dialog.
-    const items = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)]
-    if (items.length === 0) {
-      e.preventDefault()
-      return
-    }
-    const first = items[0]
-    const last = items[items.length - 1]
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault()
-      last.focus()
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault()
-      first.focus()
-    }
-  }
+  if (!present) return null
 
   const shown = open && mounted
   return createPortal(
     <div
       ref={scrim}
-     
+      // The backdrop: a click on it closes the dialog (Escape does the same
+      // from the keyboard), so it's presentation, not a control.
+      role="presentation"
       data-mounted={shown}
       // While leaving, it's already gone for assistive technology.
       aria-hidden={open ? undefined : true}
@@ -150,9 +159,8 @@ export function Dialog({
         shown ? 'opacity-100 duration-200' : 'opacity-0 duration-150',
       ].join(' ')}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && latest.current.dismissible) latest.current.onClose()
+        if (e.target === e.currentTarget && dismissible) onClose()
       }}
-      onKeyDown={onKeyDown}
     >
       <div
         ref={panel}

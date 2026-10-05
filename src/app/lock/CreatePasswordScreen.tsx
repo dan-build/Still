@@ -59,6 +59,8 @@ export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenP
             revealable
             autoComplete="new-password"
             spellCheck={false}
+            // The screen's only task is this field, as in any app's first run.
+            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
             value={password}
             disabled={isLoading}

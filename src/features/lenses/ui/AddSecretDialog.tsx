@@ -61,7 +61,7 @@ export default function AddSecretDialog({ open, onClose, onAdd, onFailed }: AddS
     onClose()
   }
 
-  // ⌘↵ adds from anywhere in the form, including the multi-line value.
+  // ⌘↵ adds from either field, including the multi-line value.
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
@@ -93,12 +93,13 @@ export default function AddSecretDialog({ open, onClose, onAdd, onFailed }: AddS
         </>
       }
     >
-      <form id="add-secret" onSubmit={submit} onKeyDown={onKeyDown} className="flex flex-col gap-4">
+      <form id="add-secret" onSubmit={submit} className="flex flex-col gap-4">
         <SegmentedControl label="Type" options={TYPES} value={type} onChange={setType} />
         <TextField
           ref={labelField}
           label="Label"
           placeholder="What is this for?"
+          onKeyDown={onKeyDown}
           value={label}
           onChange={(e) => setLabel(e.target.value)}
         />
@@ -114,6 +115,7 @@ export default function AddSecretDialog({ open, onClose, onAdd, onFailed }: AddS
           autoCorrect="off"
           autoCapitalize="off"
           placeholder="Paste or type the secret here…"
+          onKeyDown={onKeyDown}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           error={onlyBlank ? "A secret can't be only spaces or line breaks." : undefined}
