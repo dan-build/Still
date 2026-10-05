@@ -47,6 +47,15 @@ describe('TextField', () => {
     render(<TextField label="Note" multiline rows={3} />)
     expect(screen.getByLabelText('Note').tagName).toBe('TEXTAREA')
   })
+
+  it('masks a revealable multi-line value, keeping it a textarea', () => {
+    render(<TextField label="Value" multiline revealable defaultValue={'line one\nline two'} />)
+    const area = screen.getByLabelText('Value') as HTMLTextAreaElement
+    expect(area.value).toBe('line one\nline two')
+    expect(area.className).toContain('[-webkit-text-security:disc]')
+    fireEvent.click(screen.getByRole('button', { name: 'Show value' }))
+    expect(area.className).not.toContain('[-webkit-text-security:disc]')
+  })
 })
 
 describe('SegmentedControl', () => {

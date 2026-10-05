@@ -34,7 +34,16 @@ type InputProps = Common &
     /** A password-style field with a show/hide toggle. */
     revealable?: boolean
   }
-type AreaProps = Common & TextareaHTMLAttributes<HTMLTextAreaElement> & { multiline: true }
+type AreaProps = Common &
+  TextareaHTMLAttributes<HTMLTextAreaElement> & {
+    multiline: true
+    /**
+     * Mask the text as dots with a show/hide toggle. A textarea keeps line
+     * breaks and edge spaces exactly as typed, which a password input would
+     * strip; WebKit's text-security draws the dots.
+     */
+    revealable?: boolean
+  }
 
 const BOX = 'flex rounded-6 bg-field transition-[box-shadow] duration-150'
 // One or the other, never both: two focus-within shadows would be decided
@@ -56,21 +65,21 @@ export const TextField = forwardRef<HTMLInputElement | HTMLTextAreaElement, Inpu
   const text = `${large ? 'text-14 px-3' : 'text-13 px-2.5'} ${mono ? 'font-mono' : ''}`
 
   let control: ReactNode
-  let reveal: ReactNode = null
+  const revealable = rest.revealable
   if (rest.multiline) {
-    const { multiline: _multiline, ...area } = rest as AreaProps
+    const { multiline: _multiline, revealable: _revealable, ...area } = rest as AreaProps
     control = (
       <textarea
         ref={ref as Ref<HTMLTextAreaElement>}
         id={id}
         aria-invalid={isInvalid || undefined}
         aria-describedby={describedBy}
-        className={`${CONTROL} ${text} resize-none py-2 leading-[1.5]`}
+        className={`${CONTROL} ${text} resize-none py-2 leading-[1.5] ${revealable && !shown ? '[-webkit-text-security:disc]' : ''}`}
         {...area}
       />
     )
   } else {
-    const { multiline: _multiline, revealable, type, ...input } = rest as InputProps
+    const { multiline: _multiline, revealable: _revealable, type, ...input } = rest as InputProps
     control = (
       <input
         ref={ref as Ref<HTMLInputElement>}
@@ -82,19 +91,17 @@ export const TextField = forwardRef<HTMLInputElement | HTMLTextAreaElement, Inpu
         {...input}
       />
     )
-    if (revealable) {
-      reveal = (
-        <IconButton
-          icon={shown ? 'eye-off' : 'eye'}
-          label={`Show ${label.toLowerCase()}`}
-          aria-pressed={shown}
-          size="sm"
-          className="mr-1 self-center"
-          onClick={() => setShown((s) => !s)}
-        />
-      )
-    }
   }
+  const reveal = revealable ? (
+    <IconButton
+      icon={shown ? 'eye-off' : 'eye'}
+      label={`Show ${label.toLowerCase()}`}
+      aria-pressed={shown}
+      size="sm"
+      className={rest.multiline ? 'mt-1 mr-1' : 'mr-1 self-center'}
+      onClick={() => setShown((s) => !s)}
+    />
+  ) : null
 
   return (
     <div data-ui="" className={`flex flex-col gap-2 ${className ?? ''}`}>
