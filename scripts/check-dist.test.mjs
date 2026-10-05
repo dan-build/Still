@@ -19,11 +19,14 @@ describe('check-dist', () => {
     const dir = mkdtempSync(join(tmpdir(), 'still-dist-'))
     writeFileSync(join(dir, 'a.js'), 'const x = eval("1")')
     writeFileSync(join(dir, 'b.css'), '.a{color:color-mix(in oklab,red 10%,transparent)}')
+    writeFileSync(join(dir, 'c.css'), "@font-face{font-family:x;src:url(data:font/woff2;base64,AAAA) format('woff2')}")
+    writeFileSync(join(dir, 'd.css'), "@font-face{font-family:x;src:url(/assets/x.woff2) format('woff2')}")
     writeFileSync(join(dir, 'ok.js'), 'console.log(1)')
     // Paths use the platform's separator (\ on Windows).
     expect(problems(dir).map((p) => p.replace(dir + sep, ''))).toEqual([
       'a.js: contains eval(',
       expect.stringMatching(/^b\.css: color-mix\(\) without a fallback/),
+      'c.css: a font inlined as a data: URL',
     ])
   })
 })

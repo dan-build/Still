@@ -3,6 +3,147 @@
 @source '../../src';
 @source '../../index.html';
 
+/*
+  Geist and Geist Mono (OFL), bundled from Fontsource: Vite copies the woff2
+  files into dist/, so the CSP's font-src 'self' allows them and nothing is
+  fetched at runtime. Only the weights the design uses.
+*/
+@import '@fontsource/geist-sans/400.css';
+@import '@fontsource/geist-sans/500.css';
+@import '@fontsource/geist-sans/600.css';
+@import '@fontsource/geist-mono/400.css';
+@import '@fontsource/geist-mono/500.css';
+
+/*
+  Design tokens (the approved design mockup, 2026-10-05). One set of names,
+  with light and dark values; the app follows the system setting. Every text
+  and icon pair was checked for WCAG AA contrast. Colours are plain values,
+  never color-mix(), which macOS 12's Safari 15 lacks. (color-scheme stays
+  light until the screens move onto these tokens.)
+*/
+:root {
+  /* Surfaces */
+  --bg: #ffffff;
+  --sidebar: #f4f5f5;
+  --raised: #ffffff;
+  --field: #ffffff;
+  --hover: #f5f6f6;
+  --selected: #e7e9ea;
+  --hairline: #eceeef;
+
+  /* Greys carry the hierarchy: g1 primary text … g7 quiet borders. */
+  --g1: #14181a;
+  --g2: #2e3539;
+  --g3: #4b5358;
+  --g4: #626a70;
+  --g5: #7a8389;
+  --g6: #8d959a;
+  --g7: #dcdfe1;
+
+  --danger: #bf2d24;
+  --danger-hover: #a6241c;
+  --on-danger: #ffffff;
+  --warning: #8a5a0b;
+  --success: #21744c;
+
+  /* Ink: a deep fill for buttons, and a tone for rings, icons and links. */
+  --accent: #3c4d8d;
+  --accent-fill: #3c4d8d;
+  --accent-fill-hover: #314078;
+  --on-accent: #ffffff;
+  --accent-text: #3c4d8d;
+  --accent-soft: rgb(60 77 141 / 0.1);
+  --accent-glow: rgb(60 77 141 / 0.3);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1112;
+    --sidebar: #141617;
+    --raised: #1a1c1e;
+    --field: #0b0c0d;
+    --hover: #181a1c;
+    --selected: #1f2224;
+    --hairline: #202325;
+
+    --g1: #eef0f1;
+    --g2: #c8cdd0;
+    --g3: #a2a9ad;
+    --g4: #848c91;
+    --g5: #737b80;
+    --g6: #656c71;
+    --g7: #2c3033;
+
+    --danger: #f2766d;
+    --danger-hover: #f58b83;
+    --on-danger: #170403;
+    --warning: #e2b25c;
+    --success: #6cc79a;
+
+    --accent: #a1b1e0;
+    --accent-fill: #435698;
+    --accent-fill-hover: #4b5fa7;
+    --on-accent: #ffffff;
+    --accent-text: #a1b1e0;
+    --accent-soft: rgb(161 177 224 / 0.14);
+    --accent-glow: rgb(161 177 224 / 0.42);
+  }
+}
+
+/* The tokens as Tailwind utilities (bg-raised, text-g3, rounded-6, …). */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-sidebar: var(--sidebar);
+  --color-raised: var(--raised);
+  --color-field: var(--field);
+  --color-hover: var(--hover);
+  --color-selected: var(--selected);
+  --color-hairline: var(--hairline);
+  --color-g1: var(--g1);
+  --color-g2: var(--g2);
+  --color-g3: var(--g3);
+  --color-g4: var(--g4);
+  --color-g5: var(--g5);
+  --color-g6: var(--g6);
+  --color-g7: var(--g7);
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-on-danger: var(--on-danger);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-accent: var(--accent);
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-fill-hover: var(--accent-fill-hover);
+  --color-on-accent: var(--on-accent);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+}
+
+@theme {
+  /* Four sizes. Single-line text sits at line-height 1 in a fixed-height box;
+     running text sets leading-[1.5]. */
+  --text-12: 12px;
+  --text-12--line-height: 1;
+  --text-13: 13px;
+  --text-13--line-height: 1;
+  --text-14: 14px;
+  --text-14--line-height: 1;
+  --text-16: 16px;
+  --text-16--line-height: 1;
+
+  /* Radii: small and concentric (outer = inner + padding). */
+  --radius-4: 4px;
+  --radius-6: 6px;
+  --radius-8: 8px;
+  --radius-12: 12px;
+
+  /* Motion: enters ease out; the icon swap uses its own curve. */
+  --ease-out-still: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-swap: cubic-bezier(0.2, 0, 0, 1);
+
+  --font-mono: 'Geist Mono', ui-monospace, Menlo, monospace;
+}
+
 @theme {
   --color-still-bg: #f8f9fa;
   --color-still-surface: #ffffff;
@@ -19,8 +160,7 @@
 
   --transition-duration-300: 300ms;
 
-  --font-sans:
-    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Geist Sans', -apple-system, BlinkMacSystemFont, sans-serif;
 
   --shadow-still: 0 4px 20px rgb(0 0 0 / 0.04);
   --shadow-still-hover: 0 10px 40px rgb(0 0 0 / 0.06);

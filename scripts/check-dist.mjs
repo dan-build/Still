@@ -6,6 +6,8 @@
 // - Stylesheets: no color-mix() outside an @supports block. macOS 12's
 //   Safari 15 lacks color-mix; Lightning CSS (vite.config.ts) gives every
 //   use a fallback, and this keeps it that way.
+// - No inlined fonts. The CSP's font-src is 'self', which blocks data: URLs,
+//   so a font Vite inlined would silently fall back to the system font.
 // Run after `vite build`.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
@@ -50,7 +52,9 @@ export function problems(dir) {
   return files(dir).flatMap((path) => {
     if (path.endsWith('.wasm')) return [`${path}: a WebAssembly file`]
     if (path.endsWith('.css')) {
-      return unguardedColorMix(readFileSync(path, 'utf8')).map((at) => `${path}: color-mix() without a fallback, near "${at}"`)
+      const css = readFileSync(path, 'utf8')
+      const inlined = /url\(\s*['"]?data:(font|application\/(font|x-font))/.test(css) ? [`${path}: a font inlined as a data: URL`] : []
+      return [...inlined, ...unguardedColorMix(css).map((at) => `${path}: color-mix() without a fallback, near "${at}"`)]
     }
     if (!/\.(js|mjs|html)$/.test(path)) return []
     const text = readFileSync(path, 'utf8')
@@ -64,5 +68,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.error('dist/ contains code that must not ship:\n' + found.map((f) => `  ${f}`).join('\n'))
     process.exit(1)
   }
-  console.log('dist/ is clean: no WebAssembly, libsodium, eval, new Function, or unguarded color-mix().')
+  console.log('dist/ is clean: no WebAssembly, libsodium, eval, new Function, unguarded color-mix() or inlined fonts.')
 }

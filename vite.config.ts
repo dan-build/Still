@@ -26,6 +26,9 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     cssMinify: 'lightningcss',
+    // Never inline fonts as data: URLs: the CSP's font-src 'self' blocks
+    // them (scripts/check-dist.mjs checks). Other small assets may inline.
+    assetsInlineLimit: (file) => (/\.(woff2?|ttf|otf)$/.test(file) ? false : undefined),
     rolldownOptions: {
       // Strip console.* calls from release builds.
       output: { minify: { compress: { dropConsole: true } } },
