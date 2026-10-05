@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **A new app icon** that matches the app: Still's horizon mark on a dark tile, in the Dock, Finder and the app switcher. At the smallest sizes it uses a simpler version of the mark, so it stays clear.
+
 ## [0.3.0] - 2026-10-05
 
 ### Changed
