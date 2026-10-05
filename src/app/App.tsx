@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import LensView from '@/features/lenses/ui/LensView'
 import NewLensDialog from '@/features/lenses/ui/NewLensDialog'
-import RecycleBinModal from '@/features/recycle-bin/ui/RecycleBinModal'
+import ArchiveView from '@/features/recycle-bin/ui/ArchiveView'
 import { onAutoLocked, reportActivity } from '@/platform/tauri/session'
 import { createTauriVaultCrypto } from '@/platform/tauri/vaultCrypto'
 import { createVaultBackend, type LensView as Lens, type VaultBackend, type VaultStorage, type VaultView } from '@/platform/storage/backend'
@@ -33,7 +33,6 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
   const [view, setView] = useState<VaultView>({ lenses: [], bin: [], unreadable: 0 })
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [selection, setSelection] = useState<Selection | null>(null)
-  const [isRecycleOpen, setIsRecycleOpen] = useState(false)
   const [toast, setToast] = useState<(ToastMessage & { id: number }) | null>(null)
   // Notices about where the vault lives stay until dismissed, unlike toasts.
   const [shownNotice, setShownNotice] = useState(notice)
@@ -56,6 +55,7 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
   // The selected Lens, or the first (newest) one when none is chosen.
   const chosen = selection?.kind === 'lens' ? lenses.find((l) => l.id === selection.id) : undefined
   const currentLens: Lens | null = chosen ?? (selection?.kind === 'archive' ? null : (lenses[0] ?? null))
+  const showArchive = selection?.kind === 'archive'
   const sidebarSelection: Selection | null = currentLens ? { kind: 'lens', id: currentLens.id } : selection
 
   useEffect(() => {
@@ -113,18 +113,18 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
       return
     }
     refresh()
-    showToast({ message: 'Restored' })
+    showToast({ message: `${recycledLens.name} restored` })
   }
 
-  const permanentDelete = async (id: string) => {
+  const deleteForever = async (lens: Lens) => {
     try {
-      await backend().deleteLensForever(id)
+      await backend().deleteLensForever(lens.id)
     } catch {
       showToast(SAVE_FAILED)
       return
     }
     refresh()
-    showToast({ message: 'Permanently deleted' })
+    showToast({ message: `${lens.name} deleted for good` })
   }
 
   const handleCreatePassword = async (password: string) => {
@@ -161,7 +161,6 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
     setIsUnlocked(false)
     setSelection(null)
     setIsCreateOpen(false)
-    setIsRecycleOpen(false)
     setView({ lenses: [], bin: [], unreadable: 0 })
     // A copy toast would outlive what it describes; Rust clears the clipboard on lock.
     setToast((current) => (current?.countdown ? null : current))
@@ -214,7 +213,7 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
             lenses={lenses}
             selected={sidebarSelection}
             archiveCount={recycleBin.length}
-            onSelect={(next) => (next.kind === 'archive' ? setIsRecycleOpen(true) : setSelection(next))}
+            onSelect={setSelection}
             onNewLens={() => setIsCreateOpen(true)}
             onLock={lock}
           />
@@ -227,7 +226,9 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
                   : `${view.unreadable} Lenses couldn't be opened. They're kept safe and unchanged.`}
               </div>
             )}
-            {currentLens ? (
+            {showArchive ? (
+              <ArchiveView bin={recycleBin} onRestore={restoreFromRecycleBin} onDeleteForever={deleteForever} />
+            ) : currentLens ? (
               <LensView
                 key={currentLens.id}
                 lens={currentLens}
@@ -261,14 +262,6 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
           </main>
 
           <NewLensDialog open={isCreateOpen} onClose={() => setIsCreateOpen(false)} onCreate={createLens} />
-
-          <RecycleBinModal
-            isOpen={isRecycleOpen}
-            onClose={() => setIsRecycleOpen(false)}
-            recycleBin={recycleBin}
-            onRestore={restoreFromRecycleBin}
-            onPermanentDelete={permanentDelete}
-          />
         </div>
       )}
 

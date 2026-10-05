@@ -114,7 +114,7 @@ async function forgetOpenLens() {
 
 async function openArchive() {
   fireEvent.click(screen.getByRole('button', { name: /^Archive/ }))
-  await screen.findByText('Recycle Bin')
+  await screen.findByRole('heading', { name: 'Archive', level: 1 })
 }
 
 async function createLens(name: string) {
@@ -478,7 +478,8 @@ describe('the recycle bin (B1)', () => {
     })
     await unlock()
     await openArchive()
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Delete forever' }))[0])
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Gone now' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete forever' }))
 
     await waitFor(() => expect(storedNames('still-recycle-bin')).toEqual(['Stays']))
   })
@@ -487,9 +488,12 @@ describe('the recycle bin (B1)', () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Keep' }], bin: [{ id: 'b1', name: 'Gone', deletedAt: new Date().toISOString() }] })
     await unlock()
     await openArchive()
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Gone now' }))
+    // Deleting for good can't be undone, so it asks first.
+    expect(storedNames('still-recycle-bin')).toEqual(['Gone'])
     fireEvent.click(await screen.findByRole('button', { name: 'Delete forever' }))
 
-    await screen.findByText('Recycle Bin is empty')
+    await screen.findByText('Archive is empty')
     await waitFor(() => expect(stored('still-recycle-bin')).toEqual([]))
   })
 
@@ -500,7 +504,7 @@ describe('the recycle bin (B1)', () => {
     })
     await unlock()
     await openArchive()
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Restore' }))[0])
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore Back' }))
 
     await waitFor(() => expect(storedNames('still-lenses').sort()).toEqual(['Back', 'Keep']))
     await waitFor(() => expect(storedNames('still-recycle-bin')).toEqual(['Stays']))
@@ -510,7 +514,7 @@ describe('the recycle bin (B1)', () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Keep' }], bin: [{ id: 'b1', name: 'Back', deletedAt: new Date().toISOString() }] })
     await unlock()
     await openArchive()
-    fireEvent.click(await screen.findByRole('button', { name: 'Restore' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore Back' }))
 
     await waitFor(() => expect(storedNames('still-lenses').sort()).toEqual(['Back', 'Keep']))
     await waitFor(() => expect(stored('still-recycle-bin')).toEqual([]))
@@ -532,7 +536,7 @@ describe('the recycle bin (B1)', () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Keep' }], bin: [{ id: 'b1', name: 'Old', deletedAt: new Date(Date.now() - 8 * DAY).toISOString() }] })
     await unlock()
     await openArchive()
-    await screen.findByText('Recycle Bin is empty')
+    await screen.findByText('Archive is empty')
 
     await waitFor(() => expect(stored('still-recycle-bin')).toEqual([]))
   })
