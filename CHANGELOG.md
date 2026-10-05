@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **A new design.** Still has its own calm, consistent look, in light and dark: it follows your Mac's appearance setting. It's set in the Geist typeface, bundled with the app, and uses its own set of icons. The accent colour, a quiet indigo, was chosen to stay distinct for people with colour blindness.
+- **A sidebar layout.** Your Lenses are listed on the left with their counts, Archive and Lock are at the bottom, and the selected Lens's secrets fill the window. Archive is now a view in the sidebar, showing how many days each forgotten Lens has left.
+- **The window's title bar is part of the app,** as in other Mac apps: drag the top strip to move the window, and double-click it to zoom.
+- **Deleting a secret, or a Lens in the Archive, now asks first,** because it can't be undone.
+- **⌘L locks Still.**
+- **Creating a vault tells you about a problem as you type,** such as passwords that don't match, and Return submits it.
+- **Copying a secret says which one,** and the message stays while the clipboard's 30 seconds count down.
+- **Hidden values always show ten dots,** so a secret's length never shows.
+
+### Fixed
+
+- **Still works fully with the keyboard and screen readers.** Dialogs keep focus inside and give it back when they close, every button has a name, errors are announced, and fields are labelled. When you've turned on Reduce motion, Still keeps its fades but drops movement.
+
 ## [0.2.0] - 2026-10-04
 
 ### Added
