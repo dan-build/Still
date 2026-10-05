@@ -284,6 +284,30 @@
   }
 }
 
+/*
+  The unlock glow breathes slowly behind the mark while Argon2id runs. Under
+  reduced motion it holds still at a middle brightness.
+*/
+@keyframes still-breathe {
+  from { opacity: 0.25; transform: scale(0.82); }
+  to { opacity: 0.85; transform: scale(1.08); }
+}
+.still-glow {
+  background: radial-gradient(closest-side, var(--accent-glow), transparent 100%);
+  opacity: 0.18;
+  transform: scale(0.85);
+}
+.still-glow[data-breathing='true'] {
+  animation: still-breathe 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .still-glow[data-breathing='true'] {
+    animation: none;
+    opacity: 0.55;
+    transform: none;
+  }
+}
+
 /* The toast's bar, shrinking over the clipboard's 30 seconds. */
 @keyframes still-countdown {
   from { transform: scaleX(1); }

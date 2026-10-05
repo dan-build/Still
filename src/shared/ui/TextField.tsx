@@ -18,6 +18,8 @@ interface Common {
   hint?: ReactNode
   /** An error shown under the field in place of the hint, linked and announced. */
   error?: ReactNode
+  /** Marks the field invalid when its error is shown elsewhere (pass aria-describedby to link it). */
+  invalid?: boolean
   /** Geist Mono, for secret values. */
   mono?: boolean
   /** 36px with 14px text (the unlock screen) instead of 32px with 13px. */
@@ -34,11 +36,11 @@ type InputProps = Common &
   }
 type AreaProps = Common & TextareaHTMLAttributes<HTMLTextAreaElement> & { multiline: true }
 
-const BOX =
-  'flex rounded-6 bg-field transition-[box-shadow] duration-150 ' +
-  'shadow-[inset_0_0_0_1px_var(--g6)] focus-within:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)]'
-const INVALID =
-  'shadow-[inset_0_0_0_1px_var(--danger),0_0_0_3px_var(--danger-soft)] focus-within:shadow-[inset_0_0_0_1px_var(--danger),0_0_0_3px_var(--danger-soft)]'
+const BOX = 'flex rounded-6 bg-field transition-[box-shadow] duration-150'
+// One or the other, never both: two focus-within shadows would be decided
+// by CSS order, and an invalid field must stay red while focused.
+const VALID = 'shadow-[inset_0_0_0_1px_var(--g6)] focus-within:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)]'
+const INVALID = 'shadow-[inset_0_0_0_1px_var(--danger),0_0_0_3px_var(--danger-soft)]'
 const CONTROL = 'min-w-0 flex-1 bg-transparent text-g1 outline-none placeholder:text-g4 disabled:opacity-55'
 
 /**
@@ -46,8 +48,9 @@ const CONTROL = 'min-w-0 flex-1 bg-transparent text-g1 outline-none placeholder:
  * (for, aria-describedby, aria-invalid), so screen readers announce them.
  */
 export const TextField = forwardRef<HTMLInputElement | HTMLTextAreaElement, InputProps | AreaProps>(function TextField(props, ref) {
-  const { label, labelHidden, hint, error, mono, large, trailing, className, ...rest } = props
+  const { label, labelHidden, hint, error, invalid, mono, large, trailing, className, ...rest } = props
   const id = useId()
+  const isInvalid = Boolean(error) || Boolean(invalid)
   const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined
   const [shown, setShown] = useState(false)
   const text = `${large ? 'text-14 px-3' : 'text-13 px-2.5'} ${mono ? 'font-mono' : ''}`
@@ -60,7 +63,7 @@ export const TextField = forwardRef<HTMLInputElement | HTMLTextAreaElement, Inpu
       <textarea
         ref={ref as Ref<HTMLTextAreaElement>}
         id={id}
-        aria-invalid={error ? true : undefined}
+        aria-invalid={isInvalid || undefined}
         aria-describedby={describedBy}
         className={`${CONTROL} ${text} resize-none py-2 leading-[1.5]`}
         {...area}
@@ -73,7 +76,7 @@ export const TextField = forwardRef<HTMLInputElement | HTMLTextAreaElement, Inpu
         ref={ref as Ref<HTMLInputElement>}
         id={id}
         type={revealable ? (shown ? 'text' : 'password') : type}
-        aria-invalid={error ? true : undefined}
+        aria-invalid={isInvalid || undefined}
         aria-describedby={describedBy}
         className={`${CONTROL} ${text} h-full`}
         {...input}
@@ -98,7 +101,7 @@ export const TextField = forwardRef<HTMLInputElement | HTMLTextAreaElement, Inpu
       <label htmlFor={id} className={labelHidden ? 'sr-only' : 'text-12 font-medium text-g3'}>
         {label}
       </label>
-      <div className={`${BOX} ${error ? INVALID : ''} ${rest.multiline ? 'items-start' : `items-center ${large ? 'h-9' : 'h-8'}`}`}>
+      <div className={`${BOX} ${isInvalid ? INVALID : VALID} ${rest.multiline ? 'items-start' : `items-center ${large ? 'h-9' : 'h-8'}`}`}>
         {control}
         {reveal}
         {trailing}

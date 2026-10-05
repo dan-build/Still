@@ -91,7 +91,7 @@ const storedItems = (lensName: string) => (stored('still-lenses') ?? []).find((l
 // ---- UI steps ---------------------------------------------------------------
 
 async function enterPassword(password = PASSWORD) {
-  fireEvent.change(await screen.findByPlaceholderText('Enter your password'), { target: { value: password } })
+  fireEvent.change(await screen.findByPlaceholderText('Master password'), { target: { value: password } })
   fireEvent.click(screen.getByRole('button', { name: 'Unlock' }))
 }
 
@@ -175,7 +175,7 @@ describe('unlock', () => {
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
     await enterPassword('not-the-password')
 
-    await screen.findByText('Incorrect password')
+    await screen.findByText('Incorrect password. Try again.')
     expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull()
   })
 
@@ -200,7 +200,7 @@ describe('after the vault moved into its file', () => {
     try {
       seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
       render(createElement(StillHome, { storage: localStorageVault(localStorage), notice: 'moved' }))
-      await screen.findByPlaceholderText('Enter your password')
+      await screen.findByPlaceholderText('Master password')
       const notice = () => screen.queryByText(/Your vault now lives in its own file\./)
       expect(notice()).not.toBeNull()
       act(() => vi.advanceTimersByTime(60_000))
@@ -225,7 +225,7 @@ describe('auto-lock', () => {
       await openLens('Alpha')
       act(() => autoLock.fire!(reason))
 
-      await screen.findByPlaceholderText('Enter your password')
+      await screen.findByPlaceholderText('Master password')
       expect(screen.getByRole('status').textContent).toContain(message)
       expect(screen.queryByText('Alpha')).toBeNull()
     })
@@ -234,7 +234,7 @@ describe('auto-lock', () => {
   it('reports activity at most every 15 seconds, and only while unlocked', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
-    await screen.findByPlaceholderText('Enter your password')
+    await screen.findByPlaceholderText('Master password')
     autoLock.activity = 0
     fireEvent.keyDown(window, { key: 'a' })
     expect(autoLock.activity).toBe(0)
@@ -256,7 +256,7 @@ describe('lock', () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     lockCalls.count = 0
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
-    await screen.findByPlaceholderText('Enter your password')
+    await screen.findByPlaceholderText('Master password')
     expect(lockCalls.count).toBeGreaterThan(0)
   })
 
@@ -265,7 +265,7 @@ describe('lock', () => {
     await unlock()
     fireEvent.click(screen.getByRole('button', { name: 'Lock' }))
 
-    await screen.findByPlaceholderText('Enter your password')
+    await screen.findByPlaceholderText('Master password')
     expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull()
   })
 
@@ -566,19 +566,21 @@ describe('Lenses that cannot be decrypted (B2)', () => {
 describe('creating a vault (B4)', () => {
   async function createVault(password: string) {
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
-    fireEvent.change(await screen.findByPlaceholderText('Create a strong password'), { target: { value: password } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm your password'), { target: { value: password } })
-    fireEvent.click(screen.getByRole('button', { name: 'Create Secure Vault' }))
+    fireEvent.change(await screen.findByLabelText('Master password'), { target: { value: password } })
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: password } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create vault' }))
     await screen.findByRole('button', { name: 'Archive' })
   }
 
   it('refuses a new master password made only of spaces', async () => {
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
-    fireEvent.change(await screen.findByPlaceholderText('Create a strong password'), { target: { value: '          ' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm your password'), { target: { value: '          ' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Create Secure Vault' }))
-
-    await screen.findByText("Password can't be only spaces")
+    fireEvent.change(await screen.findByLabelText('Master password'), { target: { value: '          ' } })
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: '          ' } })
+    // Said as soon as it's typed, and the button stays disabled.
+    await screen.findByText("A password can't be only spaces.")
+    const create = screen.getByRole('button', { name: 'Create vault' }) as HTMLButtonElement
+    expect(create.disabled).toBe(true)
+    fireEvent.click(create)
     expect(localStorage.getItem('still-encrypted-master-key')).toBeNull()
   })
 
@@ -600,7 +602,7 @@ describe('creating a vault (B4)', () => {
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
 
     await screen.findByText("Still found data it can't open")
-    expect(screen.queryByPlaceholderText('Create a strong password')).toBeNull()
+    expect(screen.queryByLabelText('Master password')).toBeNull()
     expect(snapshot()).toEqual(before)
   })
 
@@ -617,7 +619,7 @@ describe('creating a vault (B4)', () => {
     localStorage.setItem('still-recycle-bin', '[]')
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
 
-    await screen.findByPlaceholderText('Create a strong password')
+    await screen.findByLabelText('Master password')
   })
 
   it('changes nothing if the user cancels setting the data aside', async () => {
@@ -640,15 +642,15 @@ describe('creating a vault (B4)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Set the old data aside…' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Set aside and start fresh' }))
 
-    await screen.findByPlaceholderText('Create a strong password')
+    await screen.findByLabelText('Master password')
     const keptLenses = Object.keys(localStorage).find((key) => /^still-set-aside-.*-still-lenses$/.test(key))!
     expect(localStorage.getItem(keptLenses)).toBe(orphan)
     expect(Object.keys(localStorage).some((key) => /^still-set-aside-.*-still-has-pin$/.test(key))).toBe(true)
     expect(localStorage.getItem('still-lenses')).toBeNull()
 
-    fireEvent.change(screen.getByPlaceholderText('Create a strong password'), { target: { value: 'new-password-1' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm your password'), { target: { value: 'new-password-1' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Create Secure Vault' }))
+    fireEvent.change(screen.getByLabelText('Master password'), { target: { value: 'new-password-1' } })
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'new-password-1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create vault' }))
     await screen.findByRole('button', { name: 'Archive' })
     await createLens('Fresh')
 
@@ -660,7 +662,7 @@ describe('creating a vault (B4)', () => {
 describe('PIN (B6)', () => {
   it('offers no PIN when creating a vault', async () => {
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
-    await screen.findByPlaceholderText('Create a strong password')
+    await screen.findByLabelText('Master password')
 
     expect(screen.queryByRole('button', { name: 'Add PIN' })).toBeNull()
   })
@@ -668,7 +670,7 @@ describe('PIN (B6)', () => {
   it('offers no PIN on the unlock screen, even for vaults saved with the PIN flag', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }], hasPin: true })
     render(createElement(StillHome, { storage: localStorageVault(localStorage) }))
-    await screen.findByPlaceholderText('Enter your password')
+    await screen.findByPlaceholderText('Master password')
 
     expect(screen.queryByRole('button', { name: 'Use PIN instead' })).toBeNull()
   })
