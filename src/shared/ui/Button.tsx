@@ -5,7 +5,7 @@ type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
 
 const BASE =
   'focus-ring inline-flex items-center justify-center gap-1.5 rounded-6 text-13 font-medium whitespace-nowrap select-none ' +
-  'transition-[background-color,color,box-shadow,transform] duration-150 ' +
+  'transition-[background-color,color,box-shadow,scale] duration-150 ' +
   'active:scale-[0.97] motion-reduce:active:scale-100 ' +
   'disabled:opacity-45 disabled:active:scale-100'
 

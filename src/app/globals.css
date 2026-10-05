@@ -284,6 +284,12 @@
   }
 }
 
+/* The toast's bar, shrinking over the clipboard's 30 seconds. */
+@keyframes still-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
 @keyframes breathing {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.04); }
