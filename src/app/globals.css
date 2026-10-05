@@ -54,6 +54,10 @@
   --accent-text: #3c4d8d;
   --accent-soft: rgb(60 77 141 / 0.1);
   --accent-glow: rgb(60 77 141 / 0.3);
+  --danger-soft: rgb(191 45 36 / 0.1);
+
+  /* A neutral wash for hover backgrounds: it reads on every surface. */
+  --wash: rgb(127 127 127 / 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -87,6 +91,7 @@
     --accent-text: #a1b1e0;
     --accent-soft: rgb(161 177 224 / 0.14);
     --accent-glow: rgb(161 177 224 / 0.42);
+    --danger-soft: rgb(242 118 109 / 0.16);
   }
 }
 
@@ -117,6 +122,28 @@
   --color-on-accent: var(--on-accent);
   --color-accent-text: var(--accent-text);
   --color-accent-soft: var(--accent-soft);
+  --color-wash: var(--wash);
+}
+
+/* Hover only on a real pointer: no sticky hover after a tap. */
+@custom-variant hover {
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      @slot;
+    }
+  }
+}
+
+/*
+  The focus ring for the new UI: a gap in the background colour, then the
+  accent. A box-shadow, not an outline, because Safari before 16.4 draws
+  outlines with square corners. It keeps each control's own radius.
+*/
+@utility focus-ring {
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  }
 }
 
 @theme {
@@ -248,7 +275,9 @@
   variant such as focus:outline-hidden, which is more specific.
 */
 @layer utilities {
-  :focus-visible {
+  /* The old screens' focus style. The new UI pieces carry data-ui and draw
+     their own ring (focus-ring, below); this rule goes with the old screens. */
+  :focus-visible:not([data-ui], [data-ui] *) {
     outline: 2px solid var(--still-accent);
     outline-offset: 3px;
     border-radius: 12px;
