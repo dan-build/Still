@@ -246,12 +246,15 @@ describe('auto-lock', () => {
     cleanup()
 
     await unlock()
+    // The listeners attach in an effect after the unlocked screen renders,
+    // together with the auto-lock subscription; wait for it, or a slow
+    // machine sends the keys before anyone listens.
+    await waitFor(() => expect(autoLock.fire).toBeDefined())
     autoLock.activity = 0
     fireEvent.keyDown(window, { key: 'a' })
     fireEvent.pointerDown(window)
     fireEvent.keyDown(window, { key: 'b' })
     expect(autoLock.activity).toBe(1)
-    expect(autoLock.fire).toBeDefined()
   })
 })
 

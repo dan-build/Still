@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-05
+
 ### Changed
 
 - **A new design.** Still has its own calm, consistent look, in light and dark: it follows your Mac's appearance setting. It's set in the Geist typeface, bundled with the app, and uses its own set of icons. The accent colour, a quiet indigo, was chosen to stay distinct for people with colour blindness.
@@ -86,7 +88,8 @@ First public pre-release, for macOS.
 - An Archive (recycle bin) that keeps forgotten Lenses for 7 days.
 - Offline by design: no accounts, servers or telemetry.
 
-[Unreleased]: https://github.com/dan-build/Still/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/dan-build/Still/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/dan-build/Still/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dan-build/Still/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/dan-build/Still/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/dan-build/Still/releases/tag/v0.1.0
