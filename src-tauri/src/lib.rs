@@ -134,8 +134,9 @@ mod tests {
     }
 
     // Only the main window may call anything, and only the vault commands,
-    // plus listening for events (auto-lock tells the page when it locked):
-    // no core:default, no emitting, no plugins.
+    // plus listening for events (auto-lock tells the page when it locked) and
+    // moving the window by its overlay title strip (drag, and double-click to
+    // zoom): no core:default, no emitting, no plugins, no other window calls.
     #[test]
     fn capability_allows_only_the_vault_commands_in_main() {
         let capability: Value =
@@ -148,6 +149,8 @@ mod tests {
         allowed.extend([
             "core:event:allow-listen".into(),
             "core:event:allow-unlisten".into(),
+            "core:window:allow-start-dragging".into(),
+            "core:window:allow-internal-toggle-maximize".into(),
         ]);
         assert_eq!(capability["permissions"], serde_json::json!(allowed));
         let build_rs = include_str!("../build.rs");

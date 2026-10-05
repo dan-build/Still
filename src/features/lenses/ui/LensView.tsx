@@ -93,12 +93,13 @@ export default function LensView({ lens, onAddItem, onRevealItem, onCopyItem, on
   const count = lens.items.length
   return (
     <section aria-labelledby="lens-title" className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-hairline pr-4 pl-6">
-        <h1 id="lens-title" className="truncate text-14 font-semibold tracking-[-0.005em]">
+      {/* Part of the title strip: it drags the window; the text lets presses through. */}
+      <header data-tauri-drag-region className="flex h-[52px] shrink-0 items-center gap-2 border-b border-hairline pr-4 pl-6">
+        <h1 id="lens-title" className="pointer-events-none truncate text-14 font-semibold tracking-[-0.005em]">
           {lens.name}
         </h1>
-        <span className="shrink-0 text-13 text-g4 tabular-nums">{count === 0 ? 'Empty' : `${count} ${count === 1 ? 'secret' : 'secrets'}`}</span>
-        <span className="flex-1" />
+        <span className="pointer-events-none shrink-0 text-13 text-g4 tabular-nums">{count === 0 ? 'Empty' : `${count} ${count === 1 ? 'secret' : 'secrets'}`}</span>
+        <span className="pointer-events-none flex-1" />
         <Menu label="Lens actions" items={[{ label: 'Forget Lens', icon: 'trash', danger: true, onSelect: () => setForgetting(true) }]} />
         <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
           Add secret

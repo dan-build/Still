@@ -32,11 +32,12 @@ export default function ArchiveView({ bin, onRestore, onDeleteForever, now = new
 
   return (
     <section aria-labelledby="archive-title" className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-hairline pr-4 pl-6">
-        <h1 id="archive-title" className="text-14 font-semibold">
+      {/* Part of the title strip: it drags the window; the text lets presses through. */}
+      <header data-tauri-drag-region className="flex h-[52px] shrink-0 items-center gap-2 border-b border-hairline pr-4 pl-6">
+        <h1 id="archive-title" className="pointer-events-none text-14 font-semibold">
           Archive
         </h1>
-        <span className="text-13 text-g4 tabular-nums">{bin.length === 1 ? '1 Lens' : `${bin.length} Lenses`}</span>
+        <span className="pointer-events-none text-13 text-g4 tabular-nums">{bin.length === 1 ? '1 Lens' : `${bin.length} Lenses`}</span>
       </header>
 
       {bin.length === 0 ? (

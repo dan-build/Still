@@ -18,7 +18,8 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 
 /**
  * The sidebar: the mark, the Lenses with their counts, and Archive and Lock
- * at the bottom. The top 52px leave room for the window's traffic lights.
+ * at the bottom. The top 52px are the overlay title bar: they hold the
+ * window's traffic lights and drag the window.
  */
 export default function Sidebar({ lenses, selected, archiveCount, onSelect, onNewLens, onLock }: SidebarProps) {
   return (
@@ -28,8 +29,9 @@ export default function Sidebar({ lenses, selected, archiveCount, onSelect, onNe
       // gradients interpolate in oklab, which Safari 15 can't parse.
       className="flex w-56 shrink-0 flex-col border-r border-hairline bg-sidebar px-2 pb-2 [background-image:linear-gradient(180deg,#f6f7f7,var(--sidebar)_60%)] dark:[background-image:linear-gradient(180deg,#16181a,var(--sidebar)_60%)]"
     >
-      <div className="flex h-[52px] shrink-0 items-center justify-end px-2 text-g5">
-        <Mark size={16} stroke={1.5} />
+      {/* The window's title strip: the traffic lights sit here, and it drags the window. */}
+      <div data-tauri-drag-region className="flex h-[52px] shrink-0 items-center justify-end px-2 text-g5">
+        <Mark size={16} stroke={1.5} className="pointer-events-none" />
       </div>
       <nav aria-label="Lenses" className="flex min-h-0 flex-1 flex-col">
         <div className="mt-1 flex h-7 items-center justify-between pr-0.5 pl-2">
