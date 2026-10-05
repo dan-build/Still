@@ -4,7 +4,7 @@
 
 No account, no sync, no telemetry. Still never connects to the internet.
 
-> **Early pre-release (v0.3.0).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
+> **Early pre-release (v0.3.1).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
 
 ![Still in dark mode: the sidebar lists the Lenses, and the selected Lens shows its secrets, one revealed](docs/screenshot.png)
 
@@ -53,7 +53,7 @@ Anyone who can read your Mac's files can see those, but not the secret values.
 
 **If you used v0.1.0:** it removed spaces and line breaks at the start or end of a secret before saving. Still can't detect or restore those characters. If a saved secret doesn't work and the real one starts or ends with a space or line break, delete it and add it again.
 
-Still open in **v0.3.0**:
+Still open in **v0.3.1**:
 
 - **Lens names, labels, types and dates aren't encrypted yet.** See [What's encrypted](#whats-encrypted).
 - **Clipboard-history apps may still record a copied secret.** Still asks them not to, and most respect that, but not all do.
@@ -61,7 +61,7 @@ Still open in **v0.3.0**:
 
 ## Download and install
 
-Still is a macOS app. The current release, v0.3.0, is a pre-release. It's a universal build that runs natively on both Intel and Apple Silicon Macs. It needs **Safari 15.4 or newer**, because macOS draws Still's window with Safari's engine: any Mac on macOS 10.15 or later with Safari updates installed is fine.
+Still is a macOS app. The current release, v0.3.1, is a pre-release. It's a universal build that runs natively on both Intel and Apple Silicon Macs. It needs **Safari 15.4 or newer**, because macOS draws Still's window with Safari's engine: any Mac on macOS 10.15 or later with Safari updates installed is fine.
 
 1. From the [Releases page](https://github.com/dan-build/Still/releases), download the `.dmg` and `SHA256SUMS.txt`.
 2. Optional but recommended: check the download. In Terminal, run `cd ~/Downloads && shasum -a 256 -c SHA256SUMS.txt`. It should print the `.dmg`'s name followed by `OK`.

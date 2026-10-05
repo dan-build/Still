@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-05
+
+### Changed
+
+- **A new app icon** that matches the app: Still's horizon mark on a dark tile, in the Dock, Finder and the app switcher. At the smallest sizes it uses a simpler version of the mark, so it stays clear.
+
 ## [0.3.0] - 2026-10-05
 
 ### Changed
@@ -88,7 +94,8 @@ First public pre-release, for macOS.
 - An Archive (recycle bin) that keeps forgotten Lenses for 7 days.
 - Offline by design: no accounts, servers or telemetry.
 
-[Unreleased]: https://github.com/dan-build/Still/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/dan-build/Still/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/dan-build/Still/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/dan-build/Still/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dan-build/Still/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/dan-build/Still/compare/v0.1.0...v0.1.1
