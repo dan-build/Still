@@ -208,7 +208,7 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
           <UnlockScreen onUnlock={handleUnlock} />
         )
       ) : (
-        <div data-ui="" className="flex h-screen w-full overflow-hidden bg-bg text-13 text-g1">
+        <div className="flex h-screen w-full overflow-hidden bg-bg text-13 text-g1">
           <Sidebar
             lenses={lenses}
             selected={sidebarSelection}
@@ -267,7 +267,7 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
 
       {shownNotice && (
         <div
-          data-ui=""
+         
           role="status"
           className="fixed top-3 left-1/2 z-40 flex w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-2.5 rounded-8 bg-sidebar py-2 pr-2 pl-3 text-13 leading-[1.45] text-g2 shadow-[inset_0_0_0_1px_var(--hairline)]"
         >

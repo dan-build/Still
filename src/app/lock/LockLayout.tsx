@@ -23,7 +23,7 @@ interface LockLayoutProps {
  */
 export default function LockLayout({ title, children, actions, footer, breathing, warning, width = 300 }: LockLayoutProps) {
   return (
-    <main data-ui="" className="relative flex min-h-screen w-full items-center justify-center bg-bg px-6 text-g1">
+    <main className="relative flex min-h-screen w-full items-center justify-center bg-bg px-6 text-g1">
       {/* The title strip, under the traffic lights: it drags the window. */}
       <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-[52px]" />
       <div className="-mt-6 flex flex-col items-center text-center" style={{ width, maxWidth: '100%' }}>

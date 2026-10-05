@@ -104,7 +104,7 @@ export const TextField = forwardRef<HTMLInputElement | HTMLTextAreaElement, Inpu
   ) : null
 
   return (
-    <div data-ui="" className={`flex flex-col gap-2 ${className ?? ''}`}>
+    <div className={`flex flex-col gap-2 ${className ?? ''}`}>
       <label htmlFor={id} className={labelHidden ? 'sr-only' : 'text-12 font-medium text-g3'}>
         {label}
       </label>

@@ -35,7 +35,7 @@ export function SegmentedControl<T extends string>({ label, options, value, onCh
   }
 
   return (
-    <div data-ui="" className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2">
       <span id={`${id}-label`} className="text-12 font-medium text-g3">
         {label}
       </span>

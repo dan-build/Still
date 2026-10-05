@@ -139,7 +139,7 @@ export function Dialog({
   return createPortal(
     <div
       ref={scrim}
-      data-ui=""
+     
       data-mounted={shown}
       // While leaving, it's already gone for assistive technology.
       aria-hidden={open ? undefined : true}

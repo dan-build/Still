@@ -37,7 +37,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       type={type}
-      data-ui=""
+     
       className={[BASE, sizing, VARIANTS[variant], block ? 'w-full' : '', className ?? ''].join(' ')}
       {...rest}
     >
@@ -69,7 +69,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       ref={ref}
       type={type}
       aria-label={label}
-      data-ui=""
+     
       className={[
         'focus-ring inline-flex shrink-0 items-center justify-center rounded-6 text-g5',
         'transition-[background-color,color] duration-150 hover:bg-wash hover:text-g1',

@@ -25,7 +25,7 @@ export interface ToastMessage {
 export function Toaster({ toast }: { toast: (ToastMessage & { id: number }) | null }) {
   const error = toast?.tone === 'error'
   return createPortal(
-    <div data-ui="" data-toaster="" className="pointer-events-none fixed inset-x-0 bottom-5 z-[60] flex justify-center">
+    <div data-toaster="" className="pointer-events-none fixed inset-x-0 bottom-5 z-[60] flex justify-center">
       <div role="status" aria-live="polite">
         {toast && !error && <Toast key={toast.id} {...toast} />}
       </div>

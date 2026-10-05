@@ -174,115 +174,23 @@
 }
 
 @theme {
-  --color-still-bg: #f8f9fa;
-  --color-still-surface: #ffffff;
-  --color-still-text: #1a2530;
-  --color-still-muted: #606f7b;
-  --color-still-accent: #2b5a8f;
-  --color-still-success: #3e7b61;
-  --color-still-highlight: #dce5ee;
-
-  /* Tailwind 4 redrew its palette; keep the reds Still has always used. */
-  --color-red-50: #fef2f2;
-  --color-red-600: #dc2626;
-  --color-red-700: #b91c1c;
-
-  --transition-duration-300: 300ms;
-
   --font-sans: 'Geist Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-
-  --shadow-still: 0 4px 20px rgb(0 0 0 / 0.04);
-  --shadow-still-hover: 0 10px 40px rgb(0 0 0 / 0.06);
 }
 
 /*
-  Base styles. They sit in Tailwind's base layer, so any utility class on an
-  element still wins, as it did with Tailwind 3. Unlayered rules would beat
-  every utility in Tailwind 4.
+  Base styles, in Tailwind's base layer so any utility class still wins
+  (unlayered rules would beat every utility in Tailwind 4).
 */
 @layer base {
-  /* Tailwind 3's defaults, which Tailwind 4 changed. */
-  *,
-  ::after,
-  ::before,
-  ::backdrop,
-  ::file-selector-button {
-    border-color: #e5e7eb;
-  }
-
-  button:not(:disabled),
-  [role='button']:not(:disabled) {
-    cursor: pointer;
-  }
-
-  :root {
-    --still-bg: #F8F9FA;
-    --still-surface: #FFFFFF;
-    --still-text: #1A2530;
-    --still-muted: #606F7B;
-    --still-accent: #2B5A8F;
-    --still-success: #3E7B61;
-    --still-highlight: #DCE5EE;
-  }
-
   body {
-    background-color: var(--still-bg);
-    color: var(--still-text);
+    background-color: var(--bg);
+    color: var(--g1);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  button,
-  input,
-  textarea,
-  select {
-    transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  input::placeholder,
-  textarea::placeholder {
-    color: #606F7B;
-    opacity: 0.6;
-  }
-
   ::selection {
-    background-color: var(--still-highlight);
-    color: var(--still-text);
-  }
-
-  button {
-    font-weight: 500;
-    letter-spacing: -0.01em;
-  }
-}
-
-@layer components {
-  .card {
-    box-shadow: 0 1px 3px rgb(0 0 0 / 0.04);
-    transition: box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .card:hover {
-    box-shadow: 0 10px 40px rgb(0 0 0 / 0.06);
-  }
-
-  .still-transition {
-    transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-}
-
-/*
-  After Tailwind's utilities, as in Tailwind 3: it beats a single utility
-  class (so a focused control takes the 12px radius), but not a focus:
-  variant such as focus:outline-hidden, which is more specific.
-*/
-@layer utilities {
-  /* The old screens' focus style. The new UI pieces carry data-ui and draw
-     their own ring (focus-ring, below); this rule goes with the old screens. */
-  :focus-visible:not([data-ui], [data-ui] *) {
-    outline: 2px solid var(--still-accent);
-    outline-offset: 3px;
-    border-radius: 12px;
+    background-color: var(--accent-soft);
   }
 }
 
@@ -337,7 +245,3 @@
   to { transform: scaleX(0); }
 }
 
-@keyframes breathing {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.04); }
-}

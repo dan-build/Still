@@ -61,7 +61,7 @@ export function Menu({ label, items, align = 'end' }: MenuProps) {
   }
 
   return (
-    <div ref={root} data-ui="" className="relative">
+    <div ref={root} className="relative">
       <button
         ref={trigger}
         type="button"
