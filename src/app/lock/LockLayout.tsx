@@ -23,7 +23,7 @@ interface LockLayoutProps {
  */
 export default function LockLayout({ title, children, actions, footer, breathing, warning, width = 300 }: LockLayoutProps) {
   return (
-    <main data-ui="" className="flex min-h-screen w-full items-center justify-center bg-bg px-6 text-g1 [color-scheme:light_dark]">
+    <main data-ui="" className="flex min-h-screen w-full items-center justify-center bg-bg px-6 text-g1">
       <div className="-mt-6 flex flex-col items-center text-center" style={{ width, maxWidth: '100%' }}>
         <div className="relative mb-6 flex size-12 items-center justify-center">
           {warning ? (

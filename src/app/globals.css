@@ -18,10 +18,12 @@
   Design tokens (the approved design mockup, 2026-10-05). One set of names,
   with light and dark values; the app follows the system setting. Every text
   and icon pair was checked for WCAG AA contrast. Colours are plain values,
-  never color-mix(), which macOS 12's Safari 15 lacks. (color-scheme stays
-  light until the screens move onto these tokens.)
+  never color-mix(), which macOS 12's Safari 15 lacks.
 */
 :root {
+  /* Native parts (scrollbars, carets, autofill) follow the theme too. */
+  color-scheme: light dark;
+
   /* Surfaces */
   --bg: #ffffff;
   --sidebar: #f4f5f5;
