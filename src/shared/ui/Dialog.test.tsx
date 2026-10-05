@@ -70,12 +70,18 @@ describe('Dialog', () => {
     expect(document.activeElement).toBe(opener)
   })
 
-  it('makes the rest of the page unreachable while open', () => {
-    const { container } = render(<Page />)
+  it('makes the rest of the page unreachable while open, except toasts', () => {
+    const { container } = render(
+      <>
+        <Page />
+        <Toaster toast={null} />
+      </>,
+    )
     openIt()
     expect(container.getAttribute('aria-hidden')).toBe('true')
     expect(container.hasAttribute('inert')).toBe(true)
     expect(screen.queryByRole('button', { name: 'Forget Lens' })).toBeNull()
+    expect(screen.getByRole('alert')).toBeTruthy()
 
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
     expect(container.getAttribute('aria-hidden')).toBeNull()

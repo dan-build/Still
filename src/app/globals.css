@@ -308,6 +308,27 @@
   }
 }
 
+/*
+  The icon swap (copy → check): both icons stacked, cross-fading with a scale
+  from .25 and a 4px blur. Reduced motion keeps only the fade.
+*/
+.swap-icon {
+  transition-property: opacity, transform, filter;
+  transition-duration: 300ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.swap-icon.swap-out {
+  opacity: 0;
+  transform: scale(0.25);
+  filter: blur(4px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .swap-icon.swap-out {
+    transform: none;
+    filter: none;
+  }
+}
+
 /* The toast's bar, shrinking over the clipboard's 30 seconds. */
 @keyframes still-countdown {
   from { transform: scaleX(1); }

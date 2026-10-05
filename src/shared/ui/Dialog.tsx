@@ -79,8 +79,10 @@ export function Dialog({
   useLayoutEffect(() => {
     if (!open || !present) return
     returnFocus.current = document.activeElement as HTMLElement | null
+    // Toasts stay reachable: an error during a dialog must be announced.
     const others = [...document.body.children].filter(
-      (el): el is HTMLElement => el instanceof HTMLElement && el !== scrim.current && !el.hasAttribute('aria-hidden'),
+      (el): el is HTMLElement =>
+        el instanceof HTMLElement && el !== scrim.current && !el.hasAttribute('aria-hidden') && !el.hasAttribute('data-toaster'),
     )
     for (const el of others) {
       el.setAttribute('aria-hidden', 'true')

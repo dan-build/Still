@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from './Icon'
 
 export interface ToastMessage {
@@ -16,16 +17,21 @@ export interface ToastMessage {
  * The live regions for toasts, always on the page so screen readers announce
  * what appears in them: a polite status for info, an alert for errors. Shows
  * one toast at a time at the bottom centre; the caller decides how long.
+ *
+ * It renders straight into <body>, above dialogs, and an open Dialog leaves
+ * it reachable (data-toaster): an error while a dialog stays open, such as a
+ * failed save, must still be seen and announced.
  */
 export function Toaster({ toast }: { toast: (ToastMessage & { id: number }) | null }) {
   const error = toast?.tone === 'error'
-  return (
-    <div data-ui="" className="pointer-events-none fixed inset-x-0 bottom-5 z-40 flex justify-center">
+  return createPortal(
+    <div data-ui="" data-toaster="" className="pointer-events-none fixed inset-x-0 bottom-5 z-[60] flex justify-center">
       <div role="status" aria-live="polite">
         {toast && !error && <Toast key={toast.id} {...toast} />}
       </div>
       <div role="alert">{toast && error && <Toast key={toast.id} {...toast} />}</div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
