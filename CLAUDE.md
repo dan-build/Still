@@ -39,6 +39,7 @@ A known bug gets an `it.fails` test first, with a passing sibling that runs the 
 **Layout** (`@/` is `src/`):
 - `src/app/`: the shell (`main.tsx`, `App.tsx`, styles); `lock/` holds the unlock, create-password and recovery screens.
 - `src/features/<feature>/{model,ui}`: `vault/model` (the pure vault model), `lenses/ui`, `recycle-bin/ui`.
+- `src/shared/ui/`: the shared UI pieces. `Icon.tsx` holds Still's own icon set (16px grid, 1.5px stroke; no icon library) and the `Mark`.
 - `src/platform/`: `storage/` (the backend), `crypto/` (the `VaultCrypto` interface) and `tauri/` (the only code that calls `invoke`). Only platform code touches storage or crypto.
 - `src/test/`: test helpers, and `reference/` (the JS crypto, for tests only; never imported by the app).
 
