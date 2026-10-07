@@ -426,6 +426,22 @@ describe('secrets', () => {
     expect(storedItems('Alpha').map((i) => i.id)).toEqual(['l1-item'])
   })
 
+  it('renames a Lens from its menu and saves it', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    const before = stored('still-lenses')[0]
+    fireEvent.click(screen.getByRole('button', { name: 'Lens actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename Lens' }))
+    const name = (await screen.findByLabelText('Name')) as HTMLInputElement
+    expect(name.value).toBe('Alpha')
+    fireEvent.change(name, { target: { value: '  Banking  ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await screen.findByRole('heading', { name: 'Banking', level: 1 })
+    expect(stored('still-lenses')[0]).toEqual({ ...before, name: 'Banking' })
+  })
+
   it('deletes a secret and saves the change', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     await unlock()

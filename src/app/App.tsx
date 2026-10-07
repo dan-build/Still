@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import LensView from '@/features/lenses/ui/LensView'
-import NewLensDialog from '@/features/lenses/ui/NewLensDialog'
+import LensNameDialog from '@/features/lenses/ui/LensNameDialog'
 import ArchiveView from '@/features/recycle-bin/ui/ArchiveView'
 import { onAutoLocked, reportActivity } from '@/platform/tauri/session'
 import { createTauriVaultCrypto } from '@/platform/tauri/vaultCrypto'
@@ -253,6 +253,16 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
                 }}
                 onToast={showToast}
                 onForget={() => forgetLens(currentLens)}
+                onRename={async (name) => {
+                  try {
+                    await backend().renameLens(currentLens.id, name)
+                  } catch {
+                    showToast(SAVE_FAILED)
+                    return false
+                  }
+                  refresh()
+                  return true
+                }}
               />
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 pb-10 text-center">
@@ -270,7 +280,7 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
             )}
           </main>
 
-          <NewLensDialog open={isCreateOpen} onClose={() => setIsCreateOpen(false)} onCreate={createLens} />
+          <LensNameDialog open={isCreateOpen} onClose={() => setIsCreateOpen(false)} onSubmit={createLens} />
         </div>
       )}
 

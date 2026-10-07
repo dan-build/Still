@@ -5,6 +5,7 @@ import { Dialog } from '@/shared/ui/Dialog'
 import { Icon } from '@/shared/ui/Icon'
 import { Menu } from '@/shared/ui/Menu'
 import type { ToastMessage } from '@/shared/ui/Toast'
+import LensNameDialog from './LensNameDialog'
 import SecretDialog from './SecretDialog'
 import SecretRow from './SecretRow'
 
@@ -20,17 +21,20 @@ interface LensViewProps {
   onDeleteItem: (itemId: string) => Promise<void>
   onToast: (toast: ToastMessage) => void
   onForget: () => void
+  /** Renames the Lens; resolves false if it couldn't be saved. */
+  onRename: (name: string) => Promise<boolean>
 }
 
 /** The selected Lens: its secrets as rows, with Add secret and the Lens's actions. */
 // App keys this view by Lens, so another Lens starts fresh: nothing revealed
 // carries over.
-export default function LensView({ lens, onAddItem, onUpdateItem, onRevealItem, onCopyItem, onDeleteItem, onToast, onForget }: LensViewProps) {
+export default function LensView({ lens, onAddItem, onUpdateItem, onRevealItem, onCopyItem, onDeleteItem, onToast, onForget, onRename }: LensViewProps) {
   const [revealed, setRevealed] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [forgetting, setForgetting] = useState(false)
+  const [renaming, setRenaming] = useState(false)
   // The secret being deleted stays set while its dialog plays its exit, so
   // the title doesn't go blank; deleteOpen says whether it's open.
   const [deleting, setDeleting] = useState<ItemView | null>(null)
@@ -101,7 +105,13 @@ export default function LensView({ lens, onAddItem, onUpdateItem, onRevealItem, 
         </h1>
         <span className="pointer-events-none shrink-0 text-13 text-g4 tabular-nums">{count === 0 ? 'Empty' : `${count} ${count === 1 ? 'secret' : 'secrets'}`}</span>
         <span className="pointer-events-none flex-1" />
-        <Menu label="Lens actions" items={[{ label: 'Forget Lens', icon: 'trash', danger: true, onSelect: () => setForgetting(true) }]} />
+        <Menu
+          label="Lens actions"
+          items={[
+            { label: 'Rename Lens', icon: 'edit', onSelect: () => setRenaming(true) },
+            { label: 'Forget Lens', icon: 'trash', danger: true, onSelect: () => setForgetting(true) },
+          ]}
+        />
         <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
           Add secret
         </Button>
@@ -174,6 +184,17 @@ export default function LensView({ lens, onAddItem, onUpdateItem, onRevealItem, 
           onFailed={() => onToast({ message: "Couldn't save the secret. Nothing was changed.", tone: 'error' })}
         />
       )}
+
+      <LensNameDialog
+        open={renaming}
+        renaming={lens.name}
+        onClose={() => setRenaming(false)}
+        onSubmit={async (name) => {
+          const saved = await onRename(name)
+          if (saved) setRenaming(false)
+          return saved
+        }}
+      />
 
       <Dialog
         open={forgetting}
