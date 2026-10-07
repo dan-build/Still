@@ -10,8 +10,8 @@ describe('Icon', () => {
   it('has exactly the approved set', () => {
     expect([...ICON_NAMES].sort()).toEqual(
       [
-        'archive', 'arrow-right', 'back', 'check', 'close', 'copy', 'eye', 'eye-off', 'key', 'lens',
-        'lock', 'more', 'note', 'password', 'plus', 'restore', 'trash', 'unlock', 'warning',
+        'archive', 'arrow-right', 'back', 'check', 'close', 'copy', 'edit', 'eye', 'eye-off', 'key', 'lens',
+        'lock', 'more', 'note', 'password', 'plus', 'restore', 'search', 'trash', 'unlock', 'warning',
       ].sort(),
     )
   })

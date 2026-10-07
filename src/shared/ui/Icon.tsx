@@ -117,6 +117,19 @@ const ICONS = {
       {dot(8, 11)}
     </>
   ),
+  // Edit: a pencil on the diagonal, its cap round like the set's ends.
+  edit: () => (
+    <>
+      <path d="M3.25 10.25L10.5 3a1.77 1.77 0 0 1 2.5 2.5L5.75 12.75H3.25Z" />
+      <path d="M9.25 4.25l2.5 2.5" />
+    </>
+  ),
+  search: () => (
+    <>
+      <circle cx="7" cy="7" r="4.75" />
+      <path d="M10.5 10.5l3.25 3.25" />
+    </>
+  ),
   // A Lens: a round glass with a highlight on it.
   lens: () => (
     <>
