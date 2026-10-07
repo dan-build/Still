@@ -13,15 +13,16 @@ interface SecretRowProps {
   busy: boolean
   onReveal: () => void
   onCopy: () => void
+  onEdit: () => void
   onDelete: () => void
 }
 
 /**
- * One secret: its type, label and value, with Reveal, Copy and Delete. The
+ * One secret: its type, label and value, with Reveal, Copy, Edit and Delete. The
  * actions show on hover or keyboard focus, and stay while the value is
  * revealed. A hidden value is always ten dots, so its length never shows.
  */
-export default function SecretRow({ item, revealed, copied, busy, onReveal, onCopy, onDelete }: SecretRowProps) {
+export default function SecretRow({ item, revealed, copied, busy, onReveal, onCopy, onEdit, onDelete }: SecretRowProps) {
   const isRevealed = revealed !== undefined
   const tall = isRevealed && item.type === 'note'
   return (
@@ -84,6 +85,7 @@ export default function SecretRow({ item, revealed, copied, busy, onReveal, onCo
             </span>
           </span>
         </button>
+        <IconButton icon="edit" label={`Edit ${item.label}`} onClick={onEdit} />
         <IconButton icon="trash" label={`Delete ${item.label}`} danger onClick={onDelete} />
       </span>
     </li>

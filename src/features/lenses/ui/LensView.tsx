@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ItemView, LensView as Lens, NewItem } from '@/platform/storage/backend'
+import type { ItemEdit, ItemView, LensView as Lens, NewItem } from '@/platform/storage/backend'
 import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Dialog'
 import { Icon } from '@/shared/ui/Icon'
 import { Menu } from '@/shared/ui/Menu'
 import type { ToastMessage } from '@/shared/ui/Toast'
-import AddSecretDialog from './AddSecretDialog'
+import SecretDialog from './SecretDialog'
 import SecretRow from './SecretRow'
 
 /** How long the copy icon shows its check. */
@@ -14,6 +14,7 @@ const COPIED_MS = 2000
 interface LensViewProps {
   lens: Lens
   onAddItem: (item: NewItem) => Promise<void>
+  onUpdateItem: (itemId: string, edit: ItemEdit) => Promise<void>
   onRevealItem: (itemId: string) => Promise<string>
   onCopyItem: (itemId: string) => Promise<void>
   onDeleteItem: (itemId: string) => Promise<void>
@@ -24,7 +25,7 @@ interface LensViewProps {
 /** The selected Lens: its secrets as rows, with Add secret and the Lens's actions. */
 // App keys this view by Lens, so another Lens starts fresh: nothing revealed
 // carries over.
-export default function LensView({ lens, onAddItem, onRevealItem, onCopyItem, onDeleteItem, onToast, onForget }: LensViewProps) {
+export default function LensView({ lens, onAddItem, onUpdateItem, onRevealItem, onCopyItem, onDeleteItem, onToast, onForget }: LensViewProps) {
   const [revealed, setRevealed] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
@@ -34,6 +35,9 @@ export default function LensView({ lens, onAddItem, onRevealItem, onCopyItem, on
   // the title doesn't go blank; deleteOpen says whether it's open.
   const [deleting, setDeleting] = useState<ItemView | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  // The same pattern for editing: the target stays while the dialog leaves.
+  const [editing, setEditing] = useState<ItemView | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => () => clearTimeout(copiedTimer.current), [])
@@ -128,6 +132,10 @@ export default function LensView({ lens, onAddItem, onRevealItem, onCopyItem, on
                 busy={busy === item.id}
                 onReveal={() => toggleReveal(item)}
                 onCopy={() => copy(item)}
+                onEdit={() => {
+                  setEditing(item)
+                  setEditOpen(true)
+                }}
                 onDelete={() => {
                   setDeleting(item)
                   setDeleteOpen(true)
@@ -138,15 +146,34 @@ export default function LensView({ lens, onAddItem, onRevealItem, onCopyItem, on
         </div>
       )}
 
-      <AddSecretDialog
+      <SecretDialog
         open={adding}
         onClose={() => setAdding(false)}
-        onAdd={async (item) => {
-          await onAddItem(item)
+        onSave={async ({ label, type, value }) => {
+          await onAddItem({ label, type, value: value ?? '' })
           onToast({ message: 'Secret added' })
         }}
         onFailed={() => onToast({ message: "Couldn't save the secret. Nothing was changed.", tone: 'error' })}
       />
+
+      {editing && (
+        <SecretDialog
+          key={editing.id}
+          open={editOpen}
+          editing={editing}
+          onClose={() => setEditOpen(false)}
+          onSave={async (edit) => {
+            await onUpdateItem(editing.id, edit)
+            // A changed value is hidden again until revealed.
+            if (edit.value !== undefined) {
+              const { [editing.id]: _, ...rest } = revealed
+              setRevealed(rest)
+            }
+            onToast({ message: 'Secret saved' })
+          }}
+          onFailed={() => onToast({ message: "Couldn't save the secret. Nothing was changed.", tone: 'error' })}
+        />
+      )}
 
       <Dialog
         open={forgetting}

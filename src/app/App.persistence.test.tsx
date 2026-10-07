@@ -397,6 +397,35 @@ describe('secrets', () => {
     expect(shown.className).toContain('whitespace-pre-wrap')
   })
 
+  it('edits a secret\'s label and type, keeping its stored value untouched', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    const blobBefore = storedItems('Alpha')[0].encryptedValue
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Alpha secret' }))
+
+    const label = (await screen.findByLabelText('Label')) as HTMLInputElement
+    expect(label.value).toBe('Alpha secret')
+    expect((screen.getByLabelText('New value') as HTMLTextAreaElement).value).toBe('')
+    fireEvent.change(label, { target: { value: 'Renamed' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'API key' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(storedItems('Alpha')[0]).toMatchObject({ id: 'l1-item', label: 'Renamed', type: 'key', encryptedValue: blobBefore }))
+  })
+
+  it('replaces a secret\'s value when a new one is typed', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Alpha secret' }))
+    fireEvent.change(await screen.findByLabelText('New value'), { target: { value: '  new value\n' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(fakePlaintext(storedItems('Alpha')[0].encryptedValue)).toBe('  new value\n'))
+    expect(storedItems('Alpha').map((i) => i.id)).toEqual(['l1-item'])
+  })
+
   it('deletes a secret and saves the change', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     await unlock()

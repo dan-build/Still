@@ -241,6 +241,10 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
                   await backend().addItem(currentLens.id, item)
                   refresh()
                 }}
+                onUpdateItem={async (itemId, edit) => {
+                  await backend().updateItem(currentLens.id, itemId, edit)
+                  refresh()
+                }}
                 onRevealItem={(itemId) => backend().revealItem(currentLens.id, itemId)}
                 onCopyItem={(itemId) => backend().copyItem(currentLens.id, itemId)}
                 onDeleteItem={async (itemId) => {
