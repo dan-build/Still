@@ -456,6 +456,40 @@ describe('secrets', () => {
   })
 })
 
+describe('search', () => {
+  it('finds secrets across Lenses by label, and works from the results', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }, { id: 'l2', name: 'Beta' }] })
+    await unlock()
+    fireEvent.change(screen.getByLabelText('Search secrets'), { target: { value: 'beta SEC' } })
+
+    await screen.findByRole('heading', { name: 'Search', level: 1 })
+    expect(screen.getByText('1 secret in 1 Lens')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Reveal Alpha secret' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal Beta secret' }))
+    await screen.findByText('value-of-l2')
+  })
+
+  it('says what it searches when nothing matches, and Escape clears it', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    const field = screen.getByLabelText('Search secrets')
+    fireEvent.change(field, { target: { value: 'value-of' } })
+    // Values are never searched, even the right one.
+    await screen.findByText('Nothing matches “value-of”')
+    expect(screen.getByText(/Values stay encrypted, so they aren’t searched\./)).toBeTruthy()
+
+    fireEvent.keyDown(field, { key: 'Escape' })
+    await screen.findByRole('heading', { name: 'Alpha', level: 1 })
+  })
+
+  it('moves to the search field on ⌘F', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    fireEvent.keyDown(window, { key: 'f', metaKey: true })
+    expect(document.activeElement).toBe(screen.getByLabelText('Search secrets'))
+  })
+})
+
 describe('failed saves (B5)', () => {
   function failWritesTo(failing: string) {
     const original = localStorage.setItem.bind(localStorage)
