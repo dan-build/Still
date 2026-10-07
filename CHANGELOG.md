@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-07
+
 ### Added
 
 - **Edit a secret.** The pencil on a secret's row changes its label, type or value. The value field starts empty: leave it empty to keep the current secret, so editing a label never puts the secret on screen.
@@ -100,7 +102,8 @@ First public pre-release, for macOS.
 - An Archive (recycle bin) that keeps forgotten Lenses for 7 days.
 - Offline by design: no accounts, servers or telemetry.
 
-[Unreleased]: https://github.com/dan-build/Still/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/dan-build/Still/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/dan-build/Still/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/dan-build/Still/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/dan-build/Still/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dan-build/Still/compare/v0.1.1...v0.2.0
