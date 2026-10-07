@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import LensView from '@/features/lenses/ui/LensView'
-import NewLensDialog from '@/features/lenses/ui/NewLensDialog'
+import SearchView from '@/features/lenses/ui/SearchView'
+import type { SecretOps } from '@/features/lenses/ui/SecretList'
+import LensNameDialog from '@/features/lenses/ui/LensNameDialog'
 import ArchiveView from '@/features/recycle-bin/ui/ArchiveView'
 import { onAutoLocked, reportActivity } from '@/platform/tauri/session'
 import { createTauriVaultCrypto } from '@/platform/tauri/vaultCrypto'
@@ -33,6 +35,9 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
   const [view, setView] = useState<VaultView>({ lenses: [], bin: [], unreadable: 0 })
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [selection, setSelection] = useState<Selection | null>(null)
+  // The sidebar search; while it has text, the main area shows the results.
+  const [query, setQuery] = useState('')
+  const searchField = useRef<HTMLInputElement>(null)
   const [toast, setToast] = useState<(ToastMessage & { id: number }) | null>(null)
   // Notices about where the vault lives stay until dismissed, unlike toasts.
   const [shownNotice, setShownNotice] = useState(notice)
@@ -55,8 +60,23 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
   // The selected Lens, or the first (newest) one when none is chosen.
   const chosen = selection?.kind === 'lens' ? lenses.find((l) => l.id === selection.id) : undefined
   const currentLens: Lens | null = chosen ?? (selection?.kind === 'archive' ? null : (lenses[0] ?? null))
-  const showArchive = selection?.kind === 'archive'
-  const sidebarSelection: Selection | null = currentLens ? { kind: 'lens', id: currentLens.id } : selection
+  const searching = query.trim() !== ''
+  const showArchive = !searching && selection?.kind === 'archive'
+  const sidebarSelection: Selection | null = searching ? null : currentLens ? { kind: 'lens', id: currentLens.id } : selection
+
+  // Reveal, copy, edit and delete, for the Lens view and search alike.
+  const ops: SecretOps = {
+    reveal: (lensId, itemId) => backend().revealItem(lensId, itemId),
+    copy: (lensId, itemId) => backend().copyItem(lensId, itemId),
+    update: async (lensId, itemId, edit) => {
+      await backend().updateItem(lensId, itemId, edit)
+      refresh()
+    },
+    remove: async (lensId, itemId) => {
+      await backend().deleteItem(lensId, itemId)
+      refresh()
+    },
+  }
 
   useEffect(() => {
     // Rust keeps its keys across a page reload, but this page starts locked,
@@ -162,6 +182,7 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
     backend().lock().catch(() => showToast({ message: "Couldn't clear the keys from memory. Quit Still to be sure.", tone: 'error' }))
     setIsUnlocked(false)
     setSelection(null)
+    setQuery('')
     setIsCreateOpen(false)
     setView({ lenses: [], bin: [], unreadable: 0 })
     // A copy toast would outlive what it describes; Rust clears the clipboard on lock.
@@ -180,9 +201,16 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
       reportActivity()
     }
     const shortcut = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'l') {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
+      const key = e.key.toLowerCase()
+      if (key === 'l') {
         e.preventDefault()
         lock()
+      } else if (key === 'f') {
+        // ⌘F: to the sidebar search.
+        e.preventDefault()
+        searchField.current?.focus()
+        searchField.current?.select()
       }
     }
     const events = ['pointerdown', 'pointermove', 'keydown', 'wheel'] as const
@@ -218,7 +246,13 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
             lenses={lenses}
             selected={sidebarSelection}
             archiveCount={recycleBin.length}
-            onSelect={setSelection}
+            onSelect={(next) => {
+              setQuery('')
+              setSelection(next)
+            }}
+            query={query}
+            onQuery={setQuery}
+            searchRef={searchField}
             onNewLens={() => setIsCreateOpen(true)}
             onLock={lock}
           />
@@ -231,7 +265,9 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
                   : `${view.unreadable} Lenses couldn't be opened. They're kept safe and unchanged.`}
               </div>
             )}
-            {showArchive ? (
+            {searching ? (
+              <SearchView lenses={lenses} query={query} ops={ops} onClear={() => setQuery('')} onToast={showToast} />
+            ) : showArchive ? (
               <ArchiveView bin={recycleBin} onRestore={restoreFromRecycleBin} onDeleteForever={deleteForever} />
             ) : currentLens ? (
               <LensView
@@ -241,14 +277,19 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
                   await backend().addItem(currentLens.id, item)
                   refresh()
                 }}
-                onRevealItem={(itemId) => backend().revealItem(currentLens.id, itemId)}
-                onCopyItem={(itemId) => backend().copyItem(currentLens.id, itemId)}
-                onDeleteItem={async (itemId) => {
-                  await backend().deleteItem(currentLens.id, itemId)
-                  refresh()
-                }}
+                ops={ops}
                 onToast={showToast}
                 onForget={() => forgetLens(currentLens)}
+                onRename={async (name) => {
+                  try {
+                    await backend().renameLens(currentLens.id, name)
+                  } catch {
+                    showToast(SAVE_FAILED)
+                    return false
+                  }
+                  refresh()
+                  return true
+                }}
               />
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 pb-10 text-center">
@@ -266,7 +307,7 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
             )}
           </main>
 
-          <NewLensDialog open={isCreateOpen} onClose={() => setIsCreateOpen(false)} onCreate={createLens} />
+          <LensNameDialog open={isCreateOpen} onClose={() => setIsCreateOpen(false)} onSubmit={createLens} />
         </div>
       )}
 

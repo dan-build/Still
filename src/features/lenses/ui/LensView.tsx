@@ -1,91 +1,32 @@
-import { useEffect, useRef, useState } from 'react'
-import type { ItemView, LensView as Lens, NewItem } from '@/platform/storage/backend'
+import { useState } from 'react'
+import type { LensView as Lens, NewItem } from '@/platform/storage/backend'
 import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Dialog'
 import { Icon } from '@/shared/ui/Icon'
 import { Menu } from '@/shared/ui/Menu'
 import type { ToastMessage } from '@/shared/ui/Toast'
-import AddSecretDialog from './AddSecretDialog'
-import SecretRow from './SecretRow'
-
-/** How long the copy icon shows its check. */
-const COPIED_MS = 2000
+import LensNameDialog from './LensNameDialog'
+import SecretDialog from './SecretDialog'
+import SecretList, { type SecretOps } from './SecretList'
 
 interface LensViewProps {
   lens: Lens
   onAddItem: (item: NewItem) => Promise<void>
-  onRevealItem: (itemId: string) => Promise<string>
-  onCopyItem: (itemId: string) => Promise<void>
-  onDeleteItem: (itemId: string) => Promise<void>
+  /** Reveal, copy, edit and delete, by Lens and secret. */
+  ops: SecretOps
   onToast: (toast: ToastMessage) => void
   onForget: () => void
+  /** Renames the Lens; resolves false if it couldn't be saved. */
+  onRename: (name: string) => Promise<boolean>
 }
 
 /** The selected Lens: its secrets as rows, with Add secret and the Lens's actions. */
 // App keys this view by Lens, so another Lens starts fresh: nothing revealed
 // carries over.
-export default function LensView({ lens, onAddItem, onRevealItem, onCopyItem, onDeleteItem, onToast, onForget }: LensViewProps) {
-  const [revealed, setRevealed] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState<string | null>(null)
-  const [copied, setCopied] = useState<string | null>(null)
+export default function LensView({ lens, onAddItem, ops, onToast, onForget, onRename }: LensViewProps) {
   const [adding, setAdding] = useState(false)
   const [forgetting, setForgetting] = useState(false)
-  // The secret being deleted stays set while its dialog plays its exit, so
-  // the title doesn't go blank; deleteOpen says whether it's open.
-  const [deleting, setDeleting] = useState<ItemView | null>(null)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-
-  useEffect(() => () => clearTimeout(copiedTimer.current), [])
-
-  const toggleReveal = async (item: ItemView) => {
-    if (revealed[item.id] !== undefined) {
-      const { [item.id]: _, ...rest } = revealed
-      setRevealed(rest)
-      return
-    }
-    setBusy(item.id)
-    try {
-      const plaintext = await onRevealItem(item.id)
-      setRevealed((prev) => ({ ...prev, [item.id]: plaintext }))
-    } catch {
-      onToast({ message: "Couldn't reveal the secret.", tone: 'error' })
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const copy = async (item: ItemView) => {
-    setBusy(item.id)
-    try {
-      // Rust puts the value on the clipboard; it never comes back to this page.
-      await onCopyItem(item.id)
-    } catch {
-      onToast({ message: "Couldn't copy the secret.", tone: 'error' })
-      return
-    } finally {
-      setBusy(null)
-    }
-    clearTimeout(copiedTimer.current)
-    setCopied(item.id)
-    copiedTimer.current = setTimeout(() => setCopied(null), COPIED_MS)
-    onToast({ message: `${item.label} copied`, detail: 'Clears in 30 s', countdown: 30 })
-  }
-
-  const confirmDelete = async () => {
-    const item = deleting
-    if (!item) return
-    setDeleteOpen(false)
-    try {
-      await onDeleteItem(item.id)
-    } catch {
-      onToast({ message: "Couldn't delete the secret. Nothing was changed.", tone: 'error' })
-      return
-    }
-    const { [item.id]: _, ...rest } = revealed
-    setRevealed(rest)
-    onToast({ message: 'Secret deleted' })
-  }
+  const [renaming, setRenaming] = useState(false)
 
   const count = lens.items.length
   return (
@@ -97,7 +38,13 @@ export default function LensView({ lens, onAddItem, onRevealItem, onCopyItem, on
         </h1>
         <span className="pointer-events-none shrink-0 text-13 text-g4 tabular-nums">{count === 0 ? 'Empty' : `${count} ${count === 1 ? 'secret' : 'secrets'}`}</span>
         <span className="pointer-events-none flex-1" />
-        <Menu label="Lens actions" items={[{ label: 'Forget Lens', icon: 'trash', danger: true, onSelect: () => setForgetting(true) }]} />
+        <Menu
+          label="Lens actions"
+          items={[
+            { label: 'Rename Lens', icon: 'edit', onSelect: () => setRenaming(true) },
+            { label: 'Forget Lens', icon: 'trash', danger: true, onSelect: () => setForgetting(true) },
+          ]}
+        />
         <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
           Add secret
         </Button>
@@ -118,34 +65,29 @@ export default function LensView({ lens, onAddItem, onRevealItem, onCopyItem, on
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
-          <ul aria-label={`Secrets in ${lens.name}`}>
-            {lens.items.map((item) => (
-              <SecretRow
-                key={item.id}
-                item={item}
-                revealed={revealed[item.id]}
-                copied={copied === item.id}
-                busy={busy === item.id}
-                onReveal={() => toggleReveal(item)}
-                onCopy={() => copy(item)}
-                onDelete={() => {
-                  setDeleting(item)
-                  setDeleteOpen(true)
-                }}
-              />
-            ))}
-          </ul>
+          <SecretList groups={[{ lens, items: lens.items }]} label={`Secrets in ${lens.name}`} ops={ops} onToast={onToast} />
         </div>
       )}
 
-      <AddSecretDialog
+      <SecretDialog
         open={adding}
         onClose={() => setAdding(false)}
-        onAdd={async (item) => {
-          await onAddItem(item)
+        onSave={async ({ label, type, value }) => {
+          await onAddItem({ label, type, value: value ?? '' })
           onToast({ message: 'Secret added' })
         }}
         onFailed={() => onToast({ message: "Couldn't save the secret. Nothing was changed.", tone: 'error' })}
+      />
+
+      <LensNameDialog
+        open={renaming}
+        renaming={lens.name}
+        onClose={() => setRenaming(false)}
+        onSubmit={async (name) => {
+          const saved = await onRename(name)
+          if (saved) setRenaming(false)
+          return saved
+        }}
       />
 
       <Dialog
@@ -167,24 +109,6 @@ export default function LensView({ lens, onAddItem, onRevealItem, onCopyItem, on
               }}
             >
               Forget Lens
-            </Button>
-          </>
-        }
-      />
-
-      <Dialog
-        open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
-        width={380}
-        title={`Delete “${deleting?.label ?? ''}”?`}
-        description="This can’t be undone. The secret is deleted from this Lens right away."
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={confirmDelete}>
-              Delete secret
             </Button>
           </>
         }

@@ -397,6 +397,51 @@ describe('secrets', () => {
     expect(shown.className).toContain('whitespace-pre-wrap')
   })
 
+  it('edits a secret\'s label and type, keeping its stored value untouched', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    const blobBefore = storedItems('Alpha')[0].encryptedValue
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Alpha secret' }))
+
+    const label = (await screen.findByLabelText('Label')) as HTMLInputElement
+    expect(label.value).toBe('Alpha secret')
+    expect((screen.getByLabelText('New value') as HTMLTextAreaElement).value).toBe('')
+    fireEvent.change(label, { target: { value: 'Renamed' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'API key' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(storedItems('Alpha')[0]).toMatchObject({ id: 'l1-item', label: 'Renamed', type: 'key', encryptedValue: blobBefore }))
+  })
+
+  it('replaces a secret\'s value when a new one is typed', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Alpha secret' }))
+    fireEvent.change(await screen.findByLabelText('New value'), { target: { value: '  new value\n' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(fakePlaintext(storedItems('Alpha')[0].encryptedValue)).toBe('  new value\n'))
+    expect(storedItems('Alpha').map((i) => i.id)).toEqual(['l1-item'])
+  })
+
+  it('renames a Lens from its menu and saves it', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    await openLens('Alpha')
+    const before = stored('still-lenses')[0]
+    fireEvent.click(screen.getByRole('button', { name: 'Lens actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename Lens' }))
+    const name = (await screen.findByLabelText('Name')) as HTMLInputElement
+    expect(name.value).toBe('Alpha')
+    fireEvent.change(name, { target: { value: '  Banking  ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await screen.findByRole('heading', { name: 'Banking', level: 1 })
+    expect(stored('still-lenses')[0]).toEqual({ ...before, name: 'Banking' })
+  })
+
   it('deletes a secret and saves the change', async () => {
     seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
     await unlock()
@@ -408,6 +453,40 @@ describe('secrets', () => {
 
     await waitFor(() => expect(storedItems('Alpha')).toEqual([]))
     expect(storedNames('still-lenses')).toEqual(['Alpha'])
+  })
+})
+
+describe('search', () => {
+  it('finds secrets across Lenses by label, and works from the results', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }, { id: 'l2', name: 'Beta' }] })
+    await unlock()
+    fireEvent.change(screen.getByLabelText('Search secrets'), { target: { value: 'beta SEC' } })
+
+    await screen.findByRole('heading', { name: 'Search', level: 1 })
+    expect(screen.getByText('1 secret in 1 Lens')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Reveal Alpha secret' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal Beta secret' }))
+    await screen.findByText('value-of-l2')
+  })
+
+  it('says what it searches when nothing matches, and Escape clears it', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    const field = screen.getByLabelText('Search secrets')
+    fireEvent.change(field, { target: { value: 'value-of' } })
+    // Values are never searched, even the right one.
+    await screen.findByText('Nothing matches “value-of”')
+    expect(screen.getByText(/Values stay encrypted, so they aren’t searched\./)).toBeTruthy()
+
+    fireEvent.keyDown(field, { key: 'Escape' })
+    await screen.findByRole('heading', { name: 'Alpha', level: 1 })
+  })
+
+  it('moves to the search field on ⌘F', async () => {
+    seedVault({ lenses: [{ id: 'l1', name: 'Alpha' }] })
+    await unlock()
+    fireEvent.keyDown(window, { key: 'f', metaKey: true })
+    expect(document.activeElement).toBe(screen.getByLabelText('Search secrets'))
   })
 })
 

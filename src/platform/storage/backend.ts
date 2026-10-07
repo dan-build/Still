@@ -16,6 +16,7 @@ import {
   forgetLens as moveToBin,
   parseLensList,
   purgeExpired,
+  renameLens as renameLensIn,
   restoreLens as restoreFromBin,
   serializeLensList,
   setItems,
@@ -81,6 +82,13 @@ export interface NewItem {
   value: string
 }
 
+/** An edit to a secret. Without a value, the stored one is kept as it is. */
+export interface ItemEdit {
+  label: string
+  type: ItemType
+  value?: string
+}
+
 export interface VaultBackend {
   status(): VaultStatus
   /** Refuses (throws) while the status is 'orphaned', so existing data is never buried. */
@@ -96,7 +104,10 @@ export interface VaultBackend {
   view(): VaultView
   createLens(name: string): Promise<string>
   addItem(lensId: string, item: NewItem): Promise<void>
+  /** Changes a secret in place (same id and position); a new value is encrypted afresh. */
+  updateItem(lensId: string, itemId: string, edit: ItemEdit): Promise<void>
   deleteItem(lensId: string, itemId: string): Promise<void>
+  renameLens(lensId: string, name: string): Promise<void>
   revealItem(lensId: string, itemId: string): Promise<string>
   /** Puts the item's value on the clipboard without returning it. */
   copyItem(lensId: string, itemId: string): Promise<void>
@@ -330,6 +341,28 @@ export function createVaultBackend(
         const encryptedValue = await crypto.encryptItem(lensId, item.value)
         const items = [...lens.items, { id: newId(), label: item.label, type: item.type, encryptedValue }]
         await write(setItems(lists, lensId, items))
+      })
+    },
+
+    updateItem(lensId, itemId, edit) {
+      return change(async () => {
+        const lens = lists.lenses.find((l) => l.id === lensId)
+        const item = lens?.items.find((i) => i.id === itemId)
+        if (!lens || !item) throw new Error('Unknown item')
+        const label = edit.label.trim()
+        if (label === '') throw new Error('A secret needs a label')
+        // Only a new value is encrypted; otherwise the stored blob stays byte for byte.
+        const encryptedValue = edit.value === undefined ? item.encryptedValue : await crypto.encryptItem(lensId, edit.value)
+        const items = lens.items.map((i) => (i.id === itemId ? { ...i, label, type: edit.type, encryptedValue } : i))
+        await write(setItems(lists, lensId, items))
+      })
+    },
+
+    renameLens(lensId, name) {
+      return change(async () => {
+        if (!lists.lenses.some((l) => l.id === lensId)) throw new Error('Unknown Lens')
+        if (name.trim() === '') throw new Error('A Lens needs a name')
+        await write(renameLensIn(lists, lensId, name))
       })
     },
 

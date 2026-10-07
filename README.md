@@ -4,7 +4,7 @@
 
 No account, no sync, no telemetry. Still never connects to the internet.
 
-> **Early pre-release (v0.3.1).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
+> **Early pre-release (v0.4.0).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
 
 ![Still in dark mode: the sidebar lists the Lenses, and the selected Lens shows its secrets, one revealed](docs/screenshot.png)
 
@@ -12,7 +12,8 @@ No account, no sync, no telemetry. Still never connects to the internet.
 
 - **One master password.** It unlocks everything. The key is derived with Argon2id at libsodium's highest-cost ("sensitive") setting, which makes guessing the password slow and expensive.
 - **Lenses.** Separate collections for different parts of your life, such as work, personal or banking. Each Lens has its own encryption key.
-- **Three kinds of secret:** passwords, API keys or tokens, and multi-line secure notes. Reveal a secret, copy it, or delete it. A copied secret is cleared from the clipboard after 30 seconds.
+- **Three kinds of secret:** passwords, API keys or tokens, and multi-line secure notes. Reveal, copy, edit or delete a secret, and rename a Lens. A copied secret is cleared from the clipboard after 30 seconds.
+- **Search** every Lens by label or Lens name with ⌘F. Values stay encrypted and are never searched.
 - **A 7-day Archive.** A Lens you forget moves to the Archive for 7 days, where you can restore it or delete it for good.
 - **Lock and auto-lock.** One click, or ⌘L, returns Still to the password screen and wipes its keys from memory. Still also locks itself after 5 minutes without activity, and whenever your Mac goes to sleep.
 - **Light and dark,** following your Mac's appearance, and usable with the keyboard and screen readers.
@@ -53,7 +54,7 @@ Anyone who can read your Mac's files can see those, but not the secret values.
 
 **If you used v0.1.0:** it removed spaces and line breaks at the start or end of a secret before saving. Still can't detect or restore those characters. If a saved secret doesn't work and the real one starts or ends with a space or line break, delete it and add it again.
 
-Still open in **v0.3.1**:
+Still open in **v0.4.0**:
 
 - **Lens names, labels, types and dates aren't encrypted yet.** See [What's encrypted](#whats-encrypted).
 - **Clipboard-history apps may still record a copied secret.** Still asks them not to, and most respect that, but not all do.
@@ -61,7 +62,7 @@ Still open in **v0.3.1**:
 
 ## Download and install
 
-Still is a macOS app. The current release, v0.3.1, is a pre-release. It's a universal build that runs natively on both Intel and Apple Silicon Macs. It needs **Safari 15.4 or newer**, because macOS draws Still's window with Safari's engine: any Mac on macOS 10.15 or later with Safari updates installed is fine.
+Still is a macOS app. The current release, v0.4.0, is a pre-release. It's a universal build that runs natively on both Intel and Apple Silicon Macs. It needs **Safari 15.4 or newer**, because macOS draws Still's window with Safari's engine: any Mac on macOS 10.15 or later with Safari updates installed is fine.
 
 1. From the [Releases page](https://github.com/dan-build/Still/releases), download the `.dmg` and `SHA256SUMS.txt`.
 2. Optional but recommended: check the download. In Terminal, run `cd ~/Downloads && shasum -a 256 -c SHA256SUMS.txt`. It should print the `.dmg`'s name followed by `OK`.

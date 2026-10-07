@@ -14,31 +14,45 @@ const TYPES = [
   { value: 'note', label: 'Note', icon: 'note' },
 ] as const
 
-interface AddSecretDialogProps {
+interface SecretDialogProps {
   open: boolean
   onClose: () => void
+  /**
+   * The secret being edited. Without it the dialog adds a new one. When
+   * editing, the value starts empty and is only sent if a new one is typed,
+   * so the current secret is never decrypted into the page to edit a label.
+   * The caller keys the dialog by the secret, so its fields start fresh.
+   */
+  editing?: { label: string; type: ItemType }
   /** Saves the secret; throws if it couldn't be saved. */
-  onAdd: (item: NewItem) => Promise<void>
+  onSave: (secret: { label: string; type: ItemType; value?: string }) => Promise<void>
   /** Reports a save that failed. */
   onFailed: () => void
 }
 
-export default function AddSecretDialog({ open, onClose, onAdd, onFailed }: AddSecretDialogProps) {
-  const [type, setType] = useState<ItemType>('password')
-  const [label, setLabel] = useState('')
+/** Add secret, or Edit secret: one dialog, as on the approved mockup. */
+export default function SecretDialog({ open, onClose, editing, onSave, onFailed }: SecretDialogProps) {
+  const [type, setType] = useState<ItemType>(editing?.type ?? 'password')
+  const [label, setLabel] = useState(editing?.label ?? '')
   const [value, setValue] = useState('')
   const [saving, setSaving] = useState(false)
   const labelField = useRef<HTMLInputElement>(null)
 
   const onlyBlank = value !== '' && value.trim() === ''
   const edgeSpace = value.trim() !== '' && value !== value.trim()
-  const ready = label.trim() !== '' && value.trim() !== '' && !saving
+  // Adding needs a value; editing may keep the current one.
+  const ready = label.trim() !== '' && (editing ? !onlyBlank : value.trim() !== '') && !saving
+  const formId = editing ? 'edit-secret' : 'add-secret'
+
+  const reset = () => {
+    setLabel(editing?.label ?? '')
+    setValue('')
+    setType(editing?.type ?? 'password')
+  }
 
   const close = () => {
     if (saving) return
-    setLabel('')
-    setValue('')
-    setType('password')
+    reset()
     onClose()
   }
 
@@ -48,16 +62,15 @@ export default function AddSecretDialog({ open, onClose, onAdd, onFailed }: AddS
     setSaving(true)
     try {
       // The value is stored exactly as typed; only the label is trimmed.
-      await onAdd({ label: label.trim(), type, value })
+      // An empty value while editing keeps the current one.
+      await onSave({ label: label.trim(), type, value: editing && value === '' ? undefined : value })
     } catch {
       setSaving(false)
       onFailed()
       return
     }
     setSaving(false)
-    setLabel('')
-    setValue('')
-    setType('password')
+    reset()
     onClose()
   }
 
@@ -74,7 +87,7 @@ export default function AddSecretDialog({ open, onClose, onAdd, onFailed }: AddS
       open={open}
       onClose={close}
       dismissible={!saving}
-      title="Add secret"
+      title={editing ? 'Edit secret' : 'Add secret'}
       initialFocus={labelField}
       footerStart={
         <>
@@ -87,13 +100,13 @@ export default function AddSecretDialog({ open, onClose, onAdd, onFailed }: AddS
           <Button variant="ghost" onClick={close} disabled={saving}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="add-secret" disabled={!ready}>
-            {saving ? 'Adding…' : 'Add secret'}
+          <Button variant="primary" type="submit" form={formId} disabled={!ready}>
+            {editing ? (saving ? 'Saving…' : 'Save') : saving ? 'Adding…' : 'Add secret'}
           </Button>
         </>
       }
     >
-      <form id="add-secret" onSubmit={submit} className="flex flex-col gap-4">
+      <form id={formId} onSubmit={submit} className="flex flex-col gap-4">
         <SegmentedControl label="Type" options={TYPES} value={type} onChange={setType} />
         <TextField
           ref={labelField}
@@ -104,7 +117,7 @@ export default function AddSecretDialog({ open, onClose, onAdd, onFailed }: AddS
           onChange={(e) => setLabel(e.target.value)}
         />
         <TextField
-          label="Value"
+          label={editing ? 'New value' : 'Value'}
           multiline
           // Passwords and keys are masked as you type, notes are not.
           revealable={type !== 'note'}
@@ -114,7 +127,7 @@ export default function AddSecretDialog({ open, onClose, onAdd, onFailed }: AddS
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
-          placeholder="Paste or type the secret here…"
+          placeholder={editing ? 'Leave empty to keep the current value' : 'Paste or type the secret here…'}
           onKeyDown={onKeyDown}
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -131,6 +144,8 @@ export default function AddSecretDialog({ open, onClose, onAdd, onFailed }: AddS
                   Remove them
                 </button>
               </span>
+            ) : editing ? (
+              'The current value stays hidden. Type a new one only to replace it.'
             ) : (
               'Kept exactly as typed, including spaces.'
             )

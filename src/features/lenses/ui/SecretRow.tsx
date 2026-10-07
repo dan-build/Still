@@ -6,6 +6,8 @@ const TYPE_NAMES = { password: 'Password', key: 'API key', note: 'Note' } as con
 
 interface SecretRowProps {
   item: ItemView
+  /** Text to mark in the label (the search). */
+  highlight?: string
   /** The plaintext, while revealed. */
   revealed: string | undefined
   /** The value was just copied: the copy icon shows a check. */
@@ -13,15 +15,29 @@ interface SecretRowProps {
   busy: boolean
   onReveal: () => void
   onCopy: () => void
+  onEdit: () => void
   onDelete: () => void
 }
 
 /**
- * One secret: its type, label and value, with Reveal, Copy and Delete. The
+ * One secret: its type, label and value, with Reveal, Copy, Edit and Delete. The
  * actions show on hover or keyboard focus, and stay while the value is
  * revealed. A hidden value is always ten dots, so its length never shows.
  */
-export default function SecretRow({ item, revealed, copied, busy, onReveal, onCopy, onDelete }: SecretRowProps) {
+/** The label with the first match of the search marked. */
+function Label({ text, highlight }: { text: string; highlight?: string }) {
+  const at = highlight ? text.toLocaleLowerCase().indexOf(highlight.toLocaleLowerCase()) : -1
+  if (!highlight || at < 0) return <>{text}</>
+  return (
+    <>
+      {text.slice(0, at)}
+      <mark className="rounded-[3px] bg-accent-soft text-inherit">{text.slice(at, at + highlight.length)}</mark>
+      {text.slice(at + highlight.length)}
+    </>
+  )
+}
+
+export default function SecretRow({ item, highlight, revealed, copied, busy, onReveal, onCopy, onEdit, onDelete }: SecretRowProps) {
   const isRevealed = revealed !== undefined
   const tall = isRevealed && item.type === 'note'
   return (
@@ -36,7 +52,9 @@ export default function SecretRow({ item, revealed, copied, busy, onReveal, onCo
       <span className={`flex text-g5 ${tall ? 'mt-[13px]' : ''}`}>
         <Icon name={item.type === 'key' ? 'key' : item.type} label={TYPE_NAMES[item.type]} />
       </span>
-      <span className={`w-[220px] shrink-0 truncate text-13 font-medium ${tall ? 'mt-3 leading-[1.5]' : ''}`}>{item.label}</span>
+      <span className={`w-[220px] shrink-0 truncate text-13 font-medium ${tall ? 'mt-3 leading-[1.5]' : ''}`}>
+        <Label text={item.label} highlight={highlight} />
+      </span>
       <span
         data-testid="secret-value"
         className={[
@@ -84,6 +102,7 @@ export default function SecretRow({ item, revealed, copied, busy, onReveal, onCo
             </span>
           </span>
         </button>
+        <IconButton icon="edit" label={`Edit ${item.label}`} onClick={onEdit} />
         <IconButton icon="trash" label={`Delete ${item.label}`} danger onClick={onDelete} />
       </span>
     </li>
