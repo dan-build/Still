@@ -179,6 +179,62 @@ describe('Lenses and items', () => {
     expect(storedList(storage, STORAGE_KEYS.lenses).map((l) => l.encryptedMasterKey)).toEqual(wrappedBefore)
   })
 
+  it('edits a secret in place: new label, type and value, same id and position', async () => {
+    const { storage, backend } = await freshVault()
+    const lensId = await backend.createLens('A')
+    for (const label of ['one', 'two', 'three']) await backend.addItem(lensId, { label, type: 'password', value: label })
+    const [, two] = backend.view().lenses[0].items
+    const blobBefore = storedList(storage, STORAGE_KEYS.lenses)[0].items[1].encryptedValue
+
+    await backend.updateItem(lensId, two.id, { label: '  Two  ', type: 'key', value: '  new\nvalue ' })
+
+    const items = backend.view().lenses[0].items
+    expect(items.map((i) => i.label)).toEqual(['one', 'Two', 'three'])
+    expect(items[1]).toEqual({ id: two.id, label: 'Two', type: 'key' })
+    const stored = storedList(storage, STORAGE_KEYS.lenses)[0].items[1]
+    expect(stored.encryptedValue).not.toBe(blobBefore)
+    expect(stored.encryptedValue).not.toContain('new')
+    // The value is kept exactly as typed.
+    expect(await backend.revealItem(lensId, two.id)).toBe('  new\nvalue ')
+  })
+
+  it('keeps the stored value, byte for byte, when an edit leaves it out', async () => {
+    const { storage, backend } = await freshVault()
+    const lensId = await backend.createLens('A')
+    await backend.addItem(lensId, { label: 'L', type: 'password', value: 'secret' })
+    const id = backend.view().lenses[0].items[0].id
+    const blobBefore = storedList(storage, STORAGE_KEYS.lenses)[0].items[0].encryptedValue
+
+    await backend.updateItem(lensId, id, { label: 'Renamed', type: 'note' })
+
+    expect(storedList(storage, STORAGE_KEYS.lenses)[0].items[0]).toEqual({ id, label: 'Renamed', type: 'note', encryptedValue: blobBefore })
+    expect(await backend.revealItem(lensId, id)).toBe('secret')
+  })
+
+  it('renames a Lens and saves it, keeping its key and secrets', async () => {
+    const { storage, backend } = await freshVault()
+    const lensId = await backend.createLens('Work')
+    await backend.addItem(lensId, { label: 'L', type: 'password', value: 'v' })
+    const before = storedList(storage, STORAGE_KEYS.lenses)[0]
+
+    await backend.renameLens(lensId, '  Office  ')
+
+    expect(backend.view().lenses[0].name).toBe('Office')
+    expect(storedList(storage, STORAGE_KEYS.lenses)[0]).toEqual({ ...before, name: 'Office' })
+  })
+
+  it('refuses an empty label or name, and unknown secrets or Lenses', async () => {
+    const { backend } = await freshVault()
+    const lensId = await backend.createLens('A')
+    await backend.addItem(lensId, { label: 'L', type: 'password', value: 'v' })
+    const id = backend.view().lenses[0].items[0].id
+    await expect(backend.updateItem(lensId, id, { label: '   ', type: 'password' })).rejects.toThrow()
+    await expect(backend.updateItem(lensId, 'nope', { label: 'X', type: 'password' })).rejects.toThrow()
+    await expect(backend.renameLens(lensId, '  ')).rejects.toThrow()
+    await expect(backend.renameLens('nope', 'X')).rejects.toThrow()
+    expect(backend.view().lenses[0]).toMatchObject({ name: 'A', items: [{ label: 'L' }] })
+  })
+
   it('runs changes one at a time, so concurrent changes are all saved', async () => {
     const { storage, backend } = await freshVault()
     const lensId = await backend.createLens('A')
@@ -308,6 +364,8 @@ describe('lock (S1)', () => {
     await expect(backend.createLens('C')).rejects.toThrow(VaultLockedError)
     await expect(backend.addItem(a, { label: 'M', type: 'note', value: 'w' })).rejects.toThrow(VaultLockedError)
     await expect(backend.deleteItem(a, itemId)).rejects.toThrow(VaultLockedError)
+    await expect(backend.updateItem(a, itemId, { label: 'X', type: 'key', value: 'w' })).rejects.toThrow(VaultLockedError)
+    await expect(backend.renameLens(a, 'X')).rejects.toThrow(VaultLockedError)
     await expect(backend.revealItem(a, itemId)).rejects.toThrow(VaultLockedError)
     await expect(backend.copyItem(a, itemId)).rejects.toThrow(VaultLockedError)
     expect(storage.data).toEqual(before)
@@ -359,6 +417,21 @@ describe('failed writes (B5)', () => {
     storage.failWrites = false
     await backend.addItem(lensId, { label: 'L', type: 'password', value: 'v' })
     expect(backend.view().lenses[0].itemCount).toBe(1)
+  })
+
+  it('leave a secret and a Lens name as they were when an edit or rename fails to save', async () => {
+    const { storage, backend } = await freshVault()
+    const lensId = await backend.createLens('A')
+    await backend.addItem(lensId, { label: 'L', type: 'password', value: 'v' })
+    const id = backend.view().lenses[0].items[0].id
+    const before = storage.getItem(STORAGE_KEYS.lenses)
+    storage.failWrites = true
+    await expect(backend.updateItem(lensId, id, { label: 'X', type: 'key', value: 'w' })).rejects.toBeInstanceOf(VaultWriteError)
+    await expect(backend.renameLens(lensId, 'B')).rejects.toBeInstanceOf(VaultWriteError)
+    storage.failWrites = false
+    expect(storage.getItem(STORAGE_KEYS.lenses)).toBe(before)
+    expect(backend.view().lenses[0]).toMatchObject({ name: 'A', items: [{ id, label: 'L', type: 'password' }] })
+    expect(await backend.revealItem(lensId, id)).toBe('v')
   })
 
   it('save a Lens moving between lists in one write, so it is never missing from both', async () => {

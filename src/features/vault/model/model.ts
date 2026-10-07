@@ -30,6 +30,11 @@ export function addLens(state: VaultLists, lens: PersistedLens): VaultLists {
   return { ...state, lenses: [lens, ...state.lenses] }
 }
 
+/** Renames a Lens (trimmed); everything else stays exactly as stored. */
+export function renameLens(state: VaultLists, lensId: string, name: string): VaultLists {
+  return { ...state, lenses: state.lenses.map((lens) => (lens.id === lensId ? { ...lens, name: name.trim() } : lens)) }
+}
+
 export function setItems(state: VaultLists, lensId: string, items: PersistedItem[]): VaultLists {
   return {
     ...state,

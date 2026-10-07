@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import {
+import { renameLens,
   addLens,
   deleteLensForever,
   forgetLens,
@@ -56,6 +56,13 @@ describe('mutations', () => {
 
   it('adds a new Lens first', () => {
     expect(addLens(base, lens('new')).lenses.map((l) => l.id)).toEqual(['new', 'a', 'b'])
+  })
+
+  it('renames a Lens, trimmed, leaving everything else as stored', () => {
+    const next = renameLens(base, 'b', '  Banking  ')
+    expect(next.lenses.find((l) => l.id === 'b')).toEqual({ ...base.lenses[1], name: 'Banking' })
+    expect(next.lenses.find((l) => l.id === 'a')).toBe(base.lenses[0])
+    expect(next.bin).toBe(base.bin)
   })
 
   it('sets items and keeps itemCount in step', () => {
