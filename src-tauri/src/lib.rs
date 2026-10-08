@@ -3,6 +3,7 @@ use tauri::{Manager, RunEvent};
 mod autolock;
 mod clipboard;
 mod commands;
+mod startup;
 mod store;
 mod vault;
 mod watcher;
@@ -30,8 +31,8 @@ pub fn run() {
             commands::vault_lock,
             commands::vault_touch,
             commands::item_copy,
-            commands::storage_load,
-            commands::storage_import_legacy,
+            commands::startup_open,
+            commands::startup_use_old_copy,
             commands::vault_state,
             commands::vault_set_aside,
             commands::lens_create,

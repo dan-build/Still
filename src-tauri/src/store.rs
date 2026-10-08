@@ -61,16 +61,6 @@ pub enum StoreError {
     Io,
 }
 
-impl StoreError {
-    pub fn code(self) -> &'static str {
-        match self {
-            Self::Unreadable => "unreadable-data",
-            Self::Exists => "exists",
-            Self::VerifyFailed | Self::Io => "failed",
-        }
-    }
-}
-
 impl From<std::io::Error> for StoreError {
     fn from(_: std::io::Error) -> Self {
         Self::Io

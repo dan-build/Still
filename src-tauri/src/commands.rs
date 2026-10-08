@@ -6,7 +6,6 @@
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
-use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use still_core::session::{SecretText, SessionError, Unlocked};
 use still_core::vault::backend::{Status, UnlockFailure};
@@ -14,7 +13,8 @@ use tauri::State;
 
 use crate::autolock::AutoLock;
 use crate::clipboard::ClipboardGuard;
-use crate::store::{AppStore, Loaded, StoreError, Values};
+use crate::startup;
+use crate::store::{AppStore, Values};
 use crate::vault::{self, state, CommandError, Revealed, Vault};
 
 /// Every command, as named in build.rs and the capability.
@@ -25,8 +25,8 @@ pub const ALL: [&str; 18] = [
     "vault_lock",
     "vault_touch",
     "item_copy",
-    "storage_load",
-    "storage_import_legacy",
+    "startup_open",
+    "startup_use_old_copy",
     "vault_state",
     "vault_set_aside",
     "lens_create",
@@ -118,51 +118,30 @@ pub fn item_copy(
         .map_err(|_| CommandError("failed"))
 }
 
-/// A storage failure the UI may see: a fixed code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StorageError {
-    /// Another copy of Still holds the vault.
-    AlreadyOpen,
-    Store(StoreError),
-}
+// ---- start-up ----------------------------------------------------------------
 
-impl Serialize for StorageError {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(match self {
-            Self::AlreadyOpen => "already-open",
-            Self::Store(e) => e.code(),
-        })
-    }
-}
-
-/// Whether there is a vault file: "nothing", "values", "unreadable" or
-/// "already-open". Never the values themselves: those stay in Rust.
+/// Opens the vault file, or moves an older version's vault into it once (see
+/// startup.rs). The page sends what it found in localStorage: the values an
+/// older version kept, and the marker. It gets back {kind, notice?, movedAt?,
+/// marker?}, and writes `marker` to localStorage when there is one.
 #[tauri::command]
-pub fn storage_load(store: State<'_, Arc<AppStore>>) -> &'static str {
-    if store.already_open {
-        return "already-open";
-    }
-    match store.store().load() {
-        Loaded::Nothing => "nothing",
-        Loaded::Values(_) => "values",
-        Loaded::Unreadable => "unreadable",
-    }
-}
-
-/// Creates the vault file from the values an older version kept in
-/// localStorage. Refuses if a vault file already exists.
-#[tauri::command]
-pub fn storage_import_legacy(
+pub fn startup_open(
     store: State<'_, Arc<AppStore>>,
-    values: Values,
-) -> Result<(), StorageError> {
-    if store.already_open {
-        return Err(StorageError::AlreadyOpen);
-    }
-    store
-        .store()
-        .import_legacy(values)
-        .map_err(StorageError::Store)
+    legacy: Values,
+    marker: Option<String>,
+) -> Value {
+    startup::open(&store, legacy, marker.as_deref(), now_ms()).to_json()
+}
+
+/// The user's choice when the moved vault file has gone: bring back the
+/// older copy from localStorage.
+#[tauri::command]
+pub fn startup_use_old_copy(store: State<'_, Arc<AppStore>>, legacy: Values) -> Value {
+    startup::move_old_copy(&store, legacy, now_ms()).to_json()
+}
+
+fn now_ms() -> i64 {
+    (still_core::vault::backend::system_clock())()
 }
 
 // ---- the vault backend's commands --------------------------------------------
