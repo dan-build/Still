@@ -18,7 +18,7 @@ npm run tauri:build    # Desktop bundle; runs `npm run build` itself, packages .
 
 ```bash
 npm test                     # Vitest, about 1 minute (real Argon2id runs use 1 GiB each)
-npx vitest run src/app/App.persistence.test.tsx  # one file
+npx vitest run src/app/App.test.tsx  # one file
 npx vitest run -t "golden fixture vault-v1-real" # tests whose name matches
 npm run lint                 # ESLint: TypeScript, rules of hooks, jsx-a11y (strict); no warnings allowed
 npm run check                # what CI will run: check:web (vitest, lint, tsc -b, vite build) + check:rust (fmt, clippy -D warnings, cargo test)
@@ -26,46 +26,44 @@ npm run check                # what CI will run: check:web (vitest, lint, tsc -b
 
 Tests sit next to the code (`src/**/*.test.ts(x)`):
 - `test/reference/`: `crypto.ts`, the JS v1 implementation that v0.1.x shipped, kept as the reference. Its tests open the committed vaults in `fixtures/vault-v1*` (`vault-v1` generated, `vault-v1-real` exported from a release build, `vault-v1-rust` written by the Rust session), check the fixed-input vectors that every implementation must reproduce, and characterise its behaviour. `libsodiumVaultCrypto.ts` is the JS `VaultCrypto` the tests use.
-- `app/App.persistence.test.tsx`: drives the UI in happy-dom with fake crypto and checks the stored values (through `src/test/localStorageVault.ts`). `app/StillApp.test.tsx` covers the start-up screens.
-- `features/vault/model/*.test.ts` and `platform/storage/backend.test.ts`: the vault model, format checks and backend. The backend tests also open every golden vault with the real crypto.
-- `platform/tauri/vaultCrypto.test.ts`: the Tauri commands' names, arguments and error codes, with `invoke` mocked.
-- Rust: `crates/still-core/tests/` (golden vaults, vectors, the session) and `src-tauri/src/` (the session state, config and capability guards).
+- `app/App.test.tsx`: drives the UI in happy-dom against `src/test/fakeVaultApi.ts`, an in-memory stand-in for the vault commands, and checks what the UI asks of them and shows. `app/StillApp.test.tsx` covers the start-up screens.
+- `platform/tauri/vaultApi.test.ts`: the vault commands' names, arguments and error codes, with `invoke` mocked.
+- Rust: `crates/still-core/tests/`: golden vaults, vectors and the session; `behaviour_v1.rs` replays `fixtures/vault-behaviour-v1` (what the TypeScript backend did, step by step) against the Rust backend; `backend_v1.rs` opens every golden vault through the backend. `src-tauri/src/`: the vault file, the commands' state, config and capability guards.
 
-A known bug gets an `it.fails` test first, with a passing sibling that runs the same steps. When you fix it, flip it to `it` in the same commit. Stage 1 left none. Never regenerate or edit the fixtures to make a test pass.
+A known bug gets an `it.fails` test (or, in Rust, a test of the right behaviour that fails) first, with a passing sibling that runs the same steps. When you fix it, flip it in the same commit. None are open. Never regenerate or edit the fixtures to make a test pass.
 
 ## Architecture
 
-**Vite + Tauri.** [vite.config.ts](vite.config.ts) builds [index.html](index.html) and `src/` into `dist/`, which Tauri bundles ([src-tauri/tauri.conf.json](src-tauri/tauri.conf.json)). The app is fully static. The Rust side ([src-tauri/src/lib.rs](src-tauri/src/lib.rs)) holds the unlocked vault's keys, does all the crypto, copies to the clipboard and runs auto-lock, and keeps the vault file, behind eleven commands. `console.*` calls are stripped in production builds. Vitest settings live in `vite.config.ts` too.
+**Vite + Tauri.** [vite.config.ts](vite.config.ts) builds [index.html](index.html) and `src/` into `dist/`, which Tauri bundles ([src-tauri/tauri.conf.json](src-tauri/tauri.conf.json)). The app is fully static. The Rust side ([src-tauri/src/lib.rs](src-tauri/src/lib.rs)) runs the vault backend (every rule about stored vault data), holds the unlocked vault's keys, does all the crypto, copies to the clipboard, runs auto-lock and keeps the vault file, behind eighteen commands. `console.*` calls are stripped in production builds. Vitest settings live in `vite.config.ts` too.
 
 **Layout** (`@/` is `src/`):
 - `src/app/`: the shell (`main.tsx`, `App.tsx`, styles); `lock/` holds the unlock, create-password and recovery screens.
-- `src/features/<feature>/{model,ui}`: `vault/model` (the pure vault model), `lenses/ui`, `recycle-bin/ui`.
+- `src/features/<feature>/{model,ui}`: `vault/model/types.ts` (the vault as the page sees it), `lenses/{model,ui}`, `recycle-bin/ui`.
 - `src/shared/ui/`: the shared UI pieces. `Icon.tsx` holds Still's own icon set (16px grid, 1.5px stroke; no icon library) and the `Mark`.
-- `src/platform/`: `storage/` (the backend), `crypto/` (the `VaultCrypto` interface) and `tauri/` (the only code that calls `invoke`). Only platform code touches storage or crypto.
+- `src/platform/`: `tauri/` (the only code that calls `invoke`: the vault commands, the vault file at start-up, auto-lock) and `storage/startup.ts` (the one-time move from localStorage).
 - `src/test/`: test helpers, and `reference/` (the JS crypto, for tests only; never imported by the app).
 
 **CSP.** `tauri.conf.json` sets a strict `csp`: only the app's own files and Tauri's IPC, with `script-src 'self'`: no eval and no WebAssembly. Never bring wasm back into the page: `'wasm-unsafe-eval'` doesn't work on WebKit before Safari 16 (macOS 12), so it would need `'unsafe-eval'`. `scripts/check-dist.mjs` (in `check:web`) fails if the build contains WebAssembly, libsodium, `eval` or `new Function`, or CSS `color-mix()` outside `@supports`. On desktop, `devCsp` is not applied in `tauri dev` (the page loads straight from Vite), so check CSP changes in a `tauri build --debug` bundle, which has the Web Inspector. Inspector console input is exempt from the CSP, so test by injecting a script element rather than calling `eval`. `freezePrototype` is on. Rust tests in `src-tauri/src/lib.rs` allow-list every source, so never add a remote origin. TypeScript is split into `tsconfig.app.json` (no tests, no Node types), `tsconfig.test.json` and `tsconfig.node.json`, all with `noUnusedLocals`/`noUnusedParameters`.
 
-**The UI talks only to the vault backend.** [src/platform/storage/backend.ts](src/platform/storage/backend.ts) defines `VaultBackend`, and `createVaultBackend` implements it on a `VaultStorage` (the vault file) and a `VaultCrypto`.
-- The backend is the only code that touches stored vault data, and the only caller of the crypto. The UI gets a key-free `view()` of ids and metadata, and calls the backend for every change and reveal.
-- [`VaultCrypto`](src/platform/crypto/vaultCrypto.ts) works by key handle: it keeps the app key and Lens keys to itself, and callers pass blobs and Lens ids. Its errors are codes: `wrong-password`, `corrupt`, `failed`, `locked`, `unknown-lens`. The app uses [the Tauri one](src/platform/tauri/vaultCrypto.ts); the keys never reach the webview. Only the password, a value being saved, and a revealed value pass through it; copying goes straight from Rust to the clipboard.
-- The app tells Rust to lock when it starts, since Rust keeps its keys across a page reload. While unlocked it reports activity ([session.ts](src/platform/tauri/session.ts), at most every 15 s) and follows Rust's `vault-locked` event.
+**The page talks only to the vault backend, in Rust.** [crates/still-core/src/vault/backend.rs](crates/still-core/src/vault/backend.rs) holds every rule about stored vault data; [src/platform/tauri/vaultApi.ts](src/platform/tauri/vaultApi.ts) is the page's only door to it.
+- The page names Lenses and secrets by id. Each command returns the status and a key-free view (ids, names, labels, types, dates) or an error code. Keys, wrapped keys and encrypted values never reach the page; only the password, a value being saved, and a revealed value pass through it. Copying goes from the backend straight to the clipboard.
+- The backend is generic over `Storage` (the vault file, `src-tauri/src/vault.rs`'s `FileStorage`, which reads the file on every operation) and `Keys` (the session's `Unlocked`; tests use a fast password step). It runs one operation at a time behind a mutex, so Lock waits for a change under way. Create and unlock are split into prepare, the Argon2id step (run outside the mutex) and finish; a counter makes a Lock in between win.
+- Lists are `serde_json::Value`s (`preserve_order`, `float_roundtrip`), written back exactly as JavaScript's `JSON.stringify` wrote them. A list that couldn't be written back exactly (odd numbers, array-index keys, lone surrogates, deep nesting) is refused as unreadable. `vault/model.rs` holds pure list operations, `vault/time.rs` reads `deletedAt` as `new Date()` does for the ISO format, `vault/format.rs` the v1 shape checks.
+- The app tells Rust to lock when it starts, since Rust keeps its keys across a page reload, then asks for the status. While unlocked it reports activity ([session.ts](src/platform/tauri/session.ts), at most every 15 s) and follows Rust's `vault-locked` event.
 - [src/app/App.tsx](src/app/App.tsx) holds UI state only: the view, the selected Lens id, modals and toasts.
-- [src/features/vault/model/model.ts](src/features/vault/model/model.ts) holds pure list operations.
-- [src/features/vault/model/format.ts](src/features/vault/model/format.ts) holds v1 shape checks.
 
-Backend rules; the tests depend on them:
-- **Every change is written before it becomes visible,** as one all-or-nothing `VaultStorage.write`, and changes run one at a time. A Lens moving between lists is saved in both lists in that one write.
-- **A failed write changes nothing** and throws `VaultWriteError`. A change still being saved when Lock happens stays saved but hidden.
-- **Lenses are kept exactly as stored,** wrapped key included. Unlocking writes nothing, and a Lens whose key can't be unwrapped is kept unchanged but hidden (`view().unreadable`).
-- **A stored list that isn't valid JSON blocks unlocking** (`unreadable-data`), because any save would overwrite it.
-- **Vault data without its key is `'orphaned'`.** `create()` refuses to run, and the UI shows the recovery screen (`setAside()` copies everything to `still-set-aside-<time>-` keys first).
-- **`lock()` clears the lists at once, then has the crypto drop its keys,** and every change or write refuses while locked, since writing the cleared lists would wipe the vault.
+Backend rules; the tests (and `fixtures/vault-behaviour-v1`) depend on them:
+- **Every change is written before it becomes visible,** as one all-or-nothing `Storage::write`. A Lens moving between lists is saved in both lists in that one write.
+- **A failed write changes nothing** (`write-failed`).
+- **Lenses are kept exactly as stored,** wrapped key and unknown fields included. Unlocking writes nothing but the Archive purge, and a Lens whose key can't be unwrapped is kept unchanged but hidden (`view.unreadable`).
+- **A stored list that can't be read blocks unlocking** (`unreadable-data`), because any save would overwrite it.
+- **Vault data without its key is orphaned.** `create` refuses to run, and the UI shows the recovery screen (`set_aside` copies everything to `still-set-aside-<time>-` keys first, adding a number if that prefix is taken).
+- **Lock clears the lists and drops the keys at once,** and every change refuses while locked.
 
 **Key hierarchy** (in Rust in [crates/still-core](crates/still-core); the JS reference is [src/test/reference/crypto.ts](src/test/reference/crypto.ts)):
 1. Master password → Argon2id (`crypto_pwhash`, SENSITIVE limits, 16-byte salt) → a derived key that wraps a random 32-byte **app master key** (`encryptMasterKey` / `decryptMasterKey`).
 2. Each Lens has its own random 32-byte **lens key**, wrapped by the app master key (`encryptLensMasterKey`).
-3. Each item value is encrypted with a per-item subkey derived from the lens key: `crypto_kdf_derive_from_key` with context `StillSec` and a random uint32 subkey id (`encrypt` / `decrypt`, called only from the backend).
+3. Each item value is encrypted with a per-item subkey derived from the lens key: `crypto_kdf_derive_from_key` with context `StillSec` and a random uint32 subkey id (`encrypt` / `decrypt`).
 
 All ciphers are XChaCha20-Poly1305 IETF. Ciphertexts are base64 (ORIGINAL variant) with a leading version byte, currently `1`. Item ciphertexts also store the subkey id as a 4-byte little-endian value after the version byte. Changing any of these formats breaks existing vaults, so bump the version byte and keep the decrypt path for older versions.
 
@@ -81,14 +79,14 @@ Older versions kept the vault in localStorage, which belongs to one origin and o
 
 Recycle-bin entries older than 7 days are purged when the vault is unlocked. New ids are 128 random bits in hex. v0.1.0's ids were `Date.now().toString(36)`; they're kept as they are.
 
-**Rust crypto core.** [crates/still-core](crates/still-core) implements the v1 format byte for byte like the JS reference `crypto.ts`, on libsodium 1.0.22, the same release v0.1.x shipped.
+**Rust core.** [crates/still-core](crates/still-core) implements the v1 format byte for byte like the JS reference `crypto.ts`, on libsodium 1.0.22, the same release v0.1.x shipped, and the vault backend (`src/vault/`, described above).
 - `sodium.rs` is the only `unsafe` code. Argon2id runs one at a time per process (a 1 GiB lock), so tests need no guard of their own.
 - `format.rs` parses and writes blobs and never panics.
 - `crypto.rs` holds the operations and the `Key` type, which is zeroed on drop and prints as `Key(redacted)`.
 - `error.rs`: `WrongKey`, `Corrupt`, `PasswordHashFailed`, `EmptyPlaintext`, `NotUtf8`.
 - `session.rs`: `Unlocked` holds the app key and the Lens keys that opened, built without any lock held (Argon2id takes seconds). `create()` derives the key a second time and refuses unless the new blob opens to the same app key, because a wrong derivation there would lock the vault forever. `SecretText` carries passwords and values, zeroes itself on drop and never prints. `SessionError::code()` gives the same codes as the JS `VaultCrypto`.
 
-**The Tauri side** ([src-tauri/src](src-tauri/src)): `vault.rs` keeps a `Mutex<Option<Unlocked>>` registered in `setup`; locking drops it. `commands.rs` holds the eleven commands (`vault_create`, `vault_unlock`, `vault_lock`, `vault_touch`, `lens_new_key`, `item_encrypt`, `item_decrypt`, `item_copy`, `storage_load`, `storage_write`, `storage_import_legacy`); Argon2id runs in `spawn_blocking`, and every command counts as activity. `build.rs` declares them, so Tauri refuses anything [capabilities/default.json](src-tauri/capabilities/default.json) doesn't allow: exactly these eleven plus `core:event:allow-listen`/`allow-unlisten`, and `core:window:allow-start-dragging`/`allow-internal-toggle-maximize` so the overlay title bar can move and zoom the window (`data-tauri-drag-region`), for the `main` window, with no `core:default`.
+**The Tauri side** ([src-tauri/src](src-tauri/src)): `vault.rs` keeps the vault backend over the vault file in a `Mutex`, registered in `setup`; locking drops the keys. `commands.rs` holds the eighteen commands: `vault_state`, `vault_create`, `vault_unlock`, `vault_lock`, `vault_touch`, `vault_set_aside`, `lens_create`, `lens_rename`, `lens_forget`, `lens_restore`, `lens_delete`, `item_add`, `item_update`, `item_delete`, `item_reveal`, `item_copy`, and for start-up `storage_load` and `storage_import_legacy`. Argon2id runs in `spawn_blocking`, outside the mutex, and every command counts as activity. `build.rs` declares them, so Tauri refuses anything [capabilities/default.json](src-tauri/capabilities/default.json) doesn't allow: exactly these eighteen plus `core:event:allow-listen`/`allow-unlisten`, and `core:window:allow-start-dragging`/`allow-internal-toggle-maximize` so the overlay title bar can move and zoom the window (`data-tauri-drag-region`), for the `main` window, with no `core:default`.
 - `clipboard.rs`: `item_copy` writes through `arboard` (used directly; the Tauri plugin wraps it), marked for clipboard history to skip. It clears after 30 s, on lock and on quit, only while the clipboard still holds that value, recognised by a keyed BLAKE2b fingerprint. Tests use a fake clipboard.
 - `autolock.rs`: locks after 5 minutes idle (wall clock, so sleep counts) or when the wall clock runs ahead of the monotonic one (the computer slept). Debug builds accept `STILL_IDLE_SECONDS` (5 at least) for manual checks; release builds ignore it.
 - `store.rs`: the vault file, as described under Persistence. Its tests use temporary folders and import the real exported vault.
@@ -114,7 +112,7 @@ Other notes:
   - motion: none on frequent actions; colour changes over 150ms; name the transitioned properties (never `transition: all`); Tailwind 4's `scale-*` sets the `scale` property, so transition `scale`, not `transform`. Respect reduced motion (keep fades, drop movement).
   - controls: use the shared pieces (Button, IconButton, TextField, SegmentedControl, Menu, Dialog, Toaster, Kbd). Focus shows through the `focus-ring` utility, a box-shadow, because Safari before 16.4 draws outlines with square corners. `hover:` applies only on a real pointer.
 - **Styles: Tailwind 4 must work on macOS 12's Safari 15.4.** `@tailwindcss/vite` builds the CSS, and Vite runs Lightning CSS with a Safari 15.4 target, in dev and release, which adds fallbacks for newer CSS. Avoid what it can't fix: `color-mix()` (opacity modifiers like `bg-black/50` on token colours; use a token or an rgb() value), Tailwind's gradient utilities (they interpolate `in oklab`; write the gradient in an arbitrary property), `@starting-style` (use a `data-mounted` attribute set a frame after mounting) and CSS nesting. In `globals.css`, our own element rules live in `@layer base`, so utility classes beat them (unlayered rules would beat every utility). Only `src/` and `index.html` are scanned for classes. Fonts must never be inlined as `data:` URLs (`font-src 'self'` blocks them); `vite.config.ts` and `check-dist` make sure.
-- UI tests replace crypto with [src/test/fakeCrypto.ts](src/test/fakeCrypto.ts), which makes real v1 blob shapes and throws libsodium's real error messages. In happy-dom, spy on `localStorage` itself, not `Storage.prototype` (that spy sees nothing), and restore it with `mockRestore()`, because `vi.restoreAllMocks()` doesn't.
+- UI tests replace the vault commands with [src/test/fakeVaultApi.ts](src/test/fakeVaultApi.ts), which follows their contract (states, error codes, nothing while locked); the reference crypto tests use [src/test/fakeCrypto.ts](src/test/fakeCrypto.ts), which makes real v1 blob shapes and throws libsodium's real error messages. In happy-dom, spy on `localStorage` itself, not `Storage.prototype` (that spy sees nothing), and restore it with `mockRestore()`, because `vi.restoreAllMocks()` doesn't.
 - The `@/*` path alias maps to `src/`. Use it for imports across folders; keep imports within a folder relative.
 - Domain terms: a **Lens** is an encrypted collection. An **Item** is a `password`, `key`, or `note` stored in a Lens. The UI calls the recycle bin "Archive", and deleting a Lens is called "forget".
 
