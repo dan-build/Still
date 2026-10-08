@@ -254,3 +254,69 @@ fn keeps_both_copies_when_data_is_set_aside_twice_in_the_same_millisecond() {
     );
     assert_eq!(data.len(), 3);
 }
+
+// A second unlock while unlocked read the lists before its password step;
+// a change saved meanwhile must not be undone by it.
+#[test]
+fn never_installs_lists_older_than_a_change_saved_during_the_password_step() {
+    let (disk, lens, _) = small_vault();
+    let mut vault = backend::<FastKeys>(&disk);
+    vault.unlock(&secret("pw")).unwrap();
+    let plan = vault.prepare_unlock().unwrap();
+    let opened = plan.open::<FastKeys>(&secret("pw"));
+    let added = vault.create_lens("Added meanwhile").unwrap();
+    assert_eq!(
+        vault.finish_unlock(plan, opened),
+        Err(UnlockFailure::Failed)
+    );
+
+    // Still unlocked, with the new Lens, and the next change keeps it.
+    vault.create_lens("Next").unwrap();
+    let names: Vec<_> = vault
+        .view()
+        .lenses
+        .iter()
+        .map(|l| l["name"].clone())
+        .collect();
+    assert_eq!(names, ["Next", "Added meanwhile", "A"]);
+    let stored = disk.0.borrow().data["still-lenses"].clone();
+    assert!(stored.contains(&added) && stored.contains(&lens));
+}
+
+#[test]
+fn never_unlocks_a_vault_set_aside_during_the_password_step() {
+    let (disk, _, _) = small_vault();
+    let mut vault = backend::<FastKeys>(&disk);
+    let plan = vault.prepare_unlock().unwrap();
+    let opened = plan.open::<FastKeys>(&secret("pw"));
+    vault.set_aside().unwrap();
+    assert_eq!(
+        vault.finish_unlock(plan, opened),
+        Err(UnlockFailure::Failed)
+    );
+    assert_eq!(vault.status(), Status::Empty);
+}
+
+#[test]
+fn leaves_a_lens_stored_without_items_as_it_was_when_deleting_from_it() {
+    let (disk, _, _) = small_vault();
+    let mut vault = backend::<FastKeys>(&disk);
+    vault.unlock(&secret("pw")).unwrap();
+    vault.lock();
+    let lenses = disk.0.borrow().data["still-lenses"].clone();
+    let with_bare = lenses.replacen(
+        '[',
+        "[{\"id\":\"bare\",\"name\":\"Bare\",\"encryptedMasterKey\":\"x\"},",
+        1,
+    );
+    disk.0
+        .borrow_mut()
+        .data
+        .insert("still-lenses".into(), with_bare.clone());
+    vault.unlock(&secret("pw")).unwrap();
+    assert_eq!(
+        vault.delete_item("bare", "anything"),
+        Err(VaultError::UnknownItem)
+    );
+    assert_eq!(disk.0.borrow().data["still-lenses"], with_bare);
+}

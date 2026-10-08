@@ -274,8 +274,9 @@ pub struct Backend<S: Storage, K: Keys> {
     lists: Lists,
     /// Lens ids whose key opened. Others are kept but not shown.
     readable: HashSet<String>,
-    /// Changes on every create, unlock and lock, so a slow create or unlock
-    /// that was overtaken by one of those is thrown away.
+    /// Changes on every create, unlock, lock, saved change and set-aside, so
+    /// a slow create or unlock that something overtook is thrown away (it
+    /// would otherwise bring back lists or keys from before).
     generation: u64,
     clock: Clock,
 }
@@ -424,6 +425,8 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             SessionError::Corrupt => UnlockFailure::UnreadableData,
             _ => UnlockFailure::Failed,
         })?;
+        // Overtaken by a Lock, a saved change or a set-aside: these lists
+        // (and keys) may be out of date, so they're never installed.
         if plan.generation != self.generation {
             return Err(UnlockFailure::Failed);
         }
@@ -573,6 +576,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
                 .write(&writes)
                 .map_err(|_| VaultError::WriteFailed)?;
         }
+        self.generation += 1;
         if let Some(lenses) = change.lenses {
             self.lists.lenses = lenses;
         }
@@ -661,6 +665,11 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     pub fn delete_item(&mut self, lens_id: &str, item_id: &str) -> Result<(), VaultError> {
         self.keys()?;
         let lens = self.active_lens(lens_id).ok_or(VaultError::UnknownLens)?;
+        // A Lens stored without an items list (only an unreadable one can be)
+        // stays exactly as stored.
+        if !lens.get("items").is_some_and(Value::is_array) {
+            return Err(VaultError::UnknownItem);
+        }
         let items = items_of(lens)
             .iter()
             .filter(|i| id_of(i) != Some(item_id))
@@ -717,6 +726,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         self.storage
             .write(&changes)
             .map_err(|_| VaultError::StorageFailed)?;
+        self.generation += 1;
         Ok(prefix)
     }
 }
