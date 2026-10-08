@@ -1,19 +1,18 @@
 // @vitest-environment happy-dom
 //
 // The start-up screens. The start-up logic itself is tested in
-// platform/storage/startup.test.ts; here it's replaced, and so is the app.
+// src-tauri/src/startup.rs; here it's replaced, and so is the app.
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Startup } from '@/platform/storage/startup'
+import type { Startup } from '@/platform/tauri/startup'
 
 const startup = vi.hoisted(() => ({
   open: vi.fn<() => Promise<Startup>>(),
   move: vi.fn<() => Promise<Startup>>(),
 }))
-vi.mock('@/platform/storage/startup', () => ({ openVaultStorage: startup.open, moveOldCopy: startup.move }))
-vi.mock('@/platform/tauri/vaultFile', () => ({ vaultFile: {} }))
+vi.mock('@/platform/tauri/startup', () => ({ openVault: startup.open, restoreOldCopy: startup.move }))
 vi.mock('./App', () => ({
   default: ({ notice }: { notice?: string }) => createElement('p', null, `the app${notice ? ` (${notice})` : ''}`),
 }))

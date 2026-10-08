@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react'
-import { moveOldCopy, openVaultStorage, type Startup } from '@/platform/storage/startup'
-import { vaultFile } from '@/platform/tauri/vaultFile'
+import { openVault, restoreOldCopy, type Startup } from '@/platform/tauri/startup'
 import { Button } from '@/shared/ui/Button'
 import StillHome from './App'
 import LockLayout from './lock/LockLayout'
 
-/** Opens the vault storage (the file, or a one-time move into it), then shows the app. */
+/** Opens the vault file (or moves an older version's vault into it, once), then shows the app. */
 export default function StillApp() {
   const [startup, setStartup] = useState<Startup | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const open = () => openVaultStorage(vaultFile, window.localStorage).then(setStartup)
+  const open = () => openVault(window.localStorage).then(setStartup)
 
   useEffect(() => {
     open()
@@ -47,7 +46,7 @@ export default function StillApp() {
       return (
         <Message
           title="Your vault file is missing"
-          action={{ label: 'Use the older copy', busy, onClick: () => run(() => moveOldCopy(vaultFile, window.localStorage)) }}
+          action={{ label: 'Use the older copy', busy, onClick: () => run(() => restoreOldCopy(window.localStorage)) }}
         >
           Your vault moved into its own file on {new Date(startup.movedAt).toLocaleDateString()}, and that file has gone. Still kept the copy
           from before the move. It doesn't include anything changed since then. Restore the file from a backup if you have one, or use the
@@ -56,7 +55,7 @@ export default function StillApp() {
       )
     case 'failed':
       return (
-        <Message title="Still couldn't open its vault file" action={{ label: 'Try again', busy, onClick: () => run(() => openVaultStorage(vaultFile, window.localStorage)) }}>
+        <Message title="Still couldn't open its vault file" action={{ label: 'Try again', busy, onClick: () => run(() => openVault(window.localStorage)) }}>
           Nothing was changed.
         </Message>
       )
