@@ -3,6 +3,8 @@
 
 use serde_json::Value;
 
+pub mod vault;
+
 pub fn fixture(path: &str) -> Value {
     let file = format!("{}/../../fixtures/{path}", env!("CARGO_MANIFEST_DIR"));
     serde_json::from_str(&std::fs::read_to_string(&file).expect("fixture exists"))
