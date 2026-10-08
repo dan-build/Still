@@ -129,7 +129,7 @@ pub fn decrypt_lens_key(blob: &str, app_key: &Key) -> Result<Key, Error> {
 
 /// JavaScript's String.prototype.trim whitespace (WhiteSpace and
 /// LineTerminator), so blank values are refused exactly as in the app.
-fn is_js_whitespace(c: char) -> bool {
+pub fn is_js_whitespace(c: char) -> bool {
     matches!(
         c,
         '\u{0009}'

@@ -9,6 +9,10 @@ publish = false
 [dependencies]
 # Pinned exactly: see vendor/libsodium/README.md before changing it.
 libsodium-sys-stable = "=1.24.0"
+# Both features are load-bearing (see src/vault/json.rs): preserve_order keeps
+# stored Lenses' fields in order, and float_roundtrip reads every number
+# exactly, so it is written back as JavaScript wrote it. Never enable
+# arbitrary_precision: it would keep a number's text (1.50) where JavaScript
+# would rewrite it (1.5).
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 
-[dev-dependencies]
-serde_json = "1"
