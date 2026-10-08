@@ -15,7 +15,7 @@ use crate::error::Error;
 use crate::sodium;
 
 /// Why a session operation failed. `code()` is all the UI ever sees, the
-/// same codes as the JS VaultCrypto.
+/// same codes the page's VaultCrypto used before the vault moved to Rust.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionError {
     /// The password didn't open the master key.

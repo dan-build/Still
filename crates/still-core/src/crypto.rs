@@ -1,5 +1,5 @@
-//! The v1 vault operations, byte for byte the same as
-//! src/test/reference/crypto.ts:
+//! The v1 vault operations, byte for byte the same as the original
+//! crypto.ts (the JavaScript code v0.1.x shipped; removed, in the git history):
 //!
 //! 1. Master password → Argon2id (SENSITIVE) with a 16-byte salt → a key that
 //!    wraps the 32-byte app key.

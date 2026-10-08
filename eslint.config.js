@@ -1,7 +1,6 @@
 // Lint for the UI: TypeScript's recommended rules, React's rules of hooks,
 // and jsx-a11y's accessibility rules (labels, names, keyboard support).
-// Tests and the JS crypto reference are linted too, with test-friendly
-// exceptions below.
+// Tests are linted too, with test-friendly exceptions below.
 
 import js from '@eslint/js'
 import jsxA11y from 'eslint-plugin-jsx-a11y'

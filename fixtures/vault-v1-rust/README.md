@@ -5,6 +5,6 @@ A vault written once by the Rust session (`crates/still-core/src/session.rs`), t
 - `vault.json` holds the five localStorage keys and their string values, laid out exactly as the app stores them.
 - `expected.json` holds the password and every expected plaintext, keyed by Lens id and item id.
 
-The JS tests open it with the libsodium code of the earlier app. That proves a vault edited by the Rust app still opens in older builds, so going back to an older version is safe.
+Until the JS crypto was retired, the JS tests opened it with the libsodium code of the earlier app, which proved a vault written by Rust opens in older builds. The Rust tests now open it, and `vectors_v1.rs` checks that Rust writes the same bytes as the JS code did.
 
-**Never regenerate or edit these files to make a test pass.** If a test fails, compatibility between the Rust and JS implementations has broken.
+**Never regenerate or edit these files to make a test pass.** If a test fails, compatibility with existing vaults has broken.
