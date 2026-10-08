@@ -153,7 +153,7 @@ mod tests {
     /// Every stored blob in both committed vaults, as (kind, base64).
     fn fixture_blobs() -> Vec<(&'static str, String)> {
         let mut blobs = vec![];
-        for dir in ["vault-v1", "vault-v1-real"] {
+        for dir in ["vault-v1", "vault-v1-real", "vault-v1-rust"] {
             let vault = fixture(&format!("{dir}/vault.json"));
             blobs.push((
                 "key",

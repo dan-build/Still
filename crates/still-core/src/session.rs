@@ -120,13 +120,8 @@ impl Unlocked {
         password: &SecretText,
         lenses: &[WrappedLensKey<'_>],
     ) -> Result<(Self, Vec<bool>), SessionError> {
-        let app_key = decrypt_master_key(encrypted_master_key, password.expose(), salt).map_err(
-            |e| match e {
-                Error::WrongKey => SessionError::WrongPassword,
-                Error::Corrupt(_) => SessionError::Corrupt,
-                _ => SessionError::Failed,
-            },
-        )?;
+        let app_key = decrypt_master_key(encrypted_master_key, password.expose(), salt)
+            .map_err(unlock_error)?;
         let mut lens_keys = HashMap::new();
         let opened = lenses
             .iter()
@@ -170,6 +165,17 @@ impl Unlocked {
     }
 }
 
+/// Why opening the master key failed, as the UI hears it. Only a failed
+/// authentication is a wrong password: a failed Argon2id run (such as too
+/// little memory) must never make anyone think they forgot their password.
+fn unlock_error(e: Error) -> SessionError {
+    match e {
+        Error::WrongKey => SessionError::WrongPassword,
+        Error::Corrupt(_) => SessionError::Corrupt,
+        _ => SessionError::Failed,
+    }
+}
+
 /// Fails unless `blob` opens with `password` and `salt` to exactly `app_key`.
 fn verify_master_key(
     app_key: &Key,
@@ -195,6 +201,21 @@ mod tests {
 
     fn secret(text: &str) -> SecretText {
         SecretText::from(text.to_owned())
+    }
+
+    #[test]
+    fn reports_only_a_failed_authentication_as_a_wrong_password() {
+        use crate::format::FormatError;
+        assert_eq!(unlock_error(Error::WrongKey), SessionError::WrongPassword);
+        assert_eq!(
+            unlock_error(Error::PasswordHashFailed),
+            SessionError::Failed
+        );
+        assert_eq!(
+            unlock_error(Error::Corrupt(FormatError::NotBase64)),
+            SessionError::Corrupt
+        );
+        assert_eq!(unlock_error(Error::NotUtf8), SessionError::Failed);
     }
 
     // The check create() runs before handing out a new vault: only a blob that
