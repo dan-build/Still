@@ -41,4 +41,13 @@ describe('start-up, seen from the page', () => {
     expect(await openVault(legacy)).toEqual({ kind: 'failed' })
     expect(legacy.data.size).toBe(0)
   })
+
+  it('sends lone surrogates as U+FFFD, which Rust can take in', async () => {
+    invoke.mockResolvedValue({ kind: 'ready' })
+    await openVault(fakeWebStorage({ 'still-x': 'a\uD800b', 'still-\uDC00': 'pair \uD83D\uDD10 kept' }))
+    expect(invoke).toHaveBeenCalledWith('startup_open', {
+      legacy: { 'still-x': 'a\uFFFDb', 'still-\uFFFD': 'pair \uD83D\uDD10 kept' },
+      marker: null,
+    })
+  })
 })

@@ -98,9 +98,16 @@ pub fn fingerprint(values: &Values) -> String {
         .collect()
 }
 
-/// The marker as the page found it, if it is one (anything else counts as none).
+/// The marker as the page found it, read as earlier versions read it: a
+/// JSON object whose movedAt and fingerprint are strings (a repeated key
+/// keeps its last value). Anything else counts as no marker.
 fn read_marker(text: Option<&str>) -> Option<Moved> {
-    serde_json::from_str(text?).ok()
+    let value: Value = serde_json::from_str(text?).ok()?;
+    let field = |name: &str| Some(value.as_object()?.get(name)?.as_str()?.to_owned());
+    Some(Moved {
+        moved_at: field("movedAt")?,
+        fingerprint: field("fingerprint")?,
+    })
 }
 
 pub fn open(store: &AppStore, legacy: Values, marker: Option<&str>, now_ms: i64) -> Startup {
@@ -115,8 +122,8 @@ pub fn open(store: &AppStore, legacy: Values, marker: Option<&str>, now_ms: i64)
         (Loaded::Values(_), Some(marker)) if marker.fingerprint != fingerprint(&legacy) => {
             // Show once: the marker now matches the old copy as it is.
             let marker = Moved {
-                moved_at: marker.moved_at,
                 fingerprint: fingerprint(&legacy),
+                ..marker
             };
             Startup::Ready {
                 notice: Some("old-copy-changed"),
@@ -386,6 +393,7 @@ mod tests {
             "{oops",
             r#"{"movedAt":1,"fingerprint":"x"}"#,
             "[]",
+            r#"["t","f"]"#,
         ] {
             assert_eq!(read_marker(Some(text)), None, "{text}");
         }
@@ -395,6 +403,61 @@ mod tests {
                 moved_at: "t".into(),
                 fingerprint: "f".into()
             })
+        );
+    }
+
+    #[test]
+    fn keeps_the_last_value_of_a_repeated_marker_key_as_javascript_did() {
+        assert_eq!(
+            read_marker(Some(
+                r#"{"movedAt":"old","fingerprint":"f","movedAt":"new"}"#
+            )),
+            Some(Moved {
+                moved_at: "new".into(),
+                fingerprint: "f".into()
+            })
+        );
+    }
+
+    // What the page reads: the kind, and movedAt in camelCase.
+    #[test]
+    fn tells_the_page_each_outcome() {
+        let missing = Startup::FileMissing {
+            moved_at: "t".into(),
+        };
+        assert_eq!(
+            missing.to_json(),
+            json!({ "kind": "file-missing", "movedAt": "t" })
+        );
+        assert_eq!(
+            Startup::AlreadyOpen.to_json(),
+            json!({ "kind": "already-open" })
+        );
+        assert_eq!(
+            Startup::Unreadable.to_json(),
+            json!({ "kind": "unreadable" })
+        );
+        assert_eq!(Startup::Failed.to_json(), json!({ "kind": "failed" }));
+    }
+
+    // A move that fails sets no marker, so it is tried again next time.
+    #[cfg(unix)]
+    #[test]
+    fn sets_no_marker_when_the_move_fails() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        let dir = tmp.0.join("vault");
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let started = open(&store, real_vault(), None, NOW);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        assert_eq!(started, Startup::Failed);
+        assert!(started.to_json().get("marker").is_none());
+        assert_eq!(stored(&store), None);
+        assert_eq!(
+            open(&store, real_vault(), None, NOW).to_json()["notice"],
+            "moved"
         );
     }
 }

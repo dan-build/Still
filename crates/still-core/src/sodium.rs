@@ -299,7 +299,6 @@ mod tests {
         assert_eq!(version(), "1.0.22");
     }
 
-    // Reference values from Python's hashlib.blake2b(digest_size=32).
     // FIPS 180-2 test vectors.
     #[test]
     fn sha256_matches_the_standard_vectors() {
@@ -320,6 +319,7 @@ mod tests {
         );
     }
 
+    // Reference values from Python's hashlib.blake2b(digest_size=32).
     #[test]
     fn blake2b_256_matches_an_independent_implementation() {
         let hex = |b: [u8; 32]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();

@@ -16,6 +16,29 @@ export type Startup =
   | { kind: 'file-missing'; movedAt: string }
   | { kind: 'failed' }
 
+/**
+ * A lone UTF-16 surrogate becomes U+FFFD: Rust can't take one in (Still never
+ * wrote one), and one would otherwise stop Still from starting at all.
+ */
+function wellFormed(text: string): string {
+  // A loop, not a regex: lookbehind needs Safari 16.4, and the app runs on 15.4.
+  let out = ''
+  for (let i = 0; i < text.length; i++) {
+    const unit = text.charCodeAt(i)
+    const high = unit >= 0xd800 && unit <= 0xdbff
+    const nextIsLow = i + 1 < text.length && text.charCodeAt(i + 1) >= 0xdc00 && text.charCodeAt(i + 1) <= 0xdfff
+    if (high && nextIsLow) {
+      out += text[i] + text[i + 1]
+      i++
+    } else if (unit >= 0xd800 && unit <= 0xdfff) {
+      out += '\uFFFD'
+    } else {
+      out += text[i]
+    }
+  }
+  return out
+}
+
 /** Every value an older version stored (they all start with "still-"), except the marker. */
 function legacyValues(legacy: Storage): Record<string, string> {
   const values: Record<string, string> = {}
@@ -23,7 +46,7 @@ function legacyValues(legacy: Storage): Record<string, string> {
     const key = legacy.key(i)
     if (key === null || !key.startsWith('still-') || key === MOVED_MARKER) continue
     const value = legacy.getItem(key)
-    if (value !== null) values[key] = value
+    if (value !== null) values[wellFormed(key)] = wellFormed(value)
   }
   return values
 }
@@ -48,7 +71,8 @@ async function run(command: string, args: Record<string, unknown>, legacy: Stora
 
 /** Opens the vault file, moving an older version's vault into it the first time. */
 export function openVault(legacy: Storage): Promise<Startup> {
-  return run('startup_open', { legacy: legacyValues(legacy), marker: legacy.getItem(MOVED_MARKER) }, legacy)
+  const marker = legacy.getItem(MOVED_MARKER)
+  return run('startup_open', { legacy: legacyValues(legacy), marker: marker === null ? null : wellFormed(marker) }, legacy)
 }
 
 /** The user's choice when the moved vault file has gone: bring back the older copy. */
