@@ -10,9 +10,10 @@ mod watcher;
 pub fn run() {
     let app = tauri::Builder::default()
         .setup(|app| {
-            vault::init(app);
             let app_data = app.path().app_data_dir()?;
-            app.manage(store::AppStore::open(store::vault_dir(app_data)));
+            let store = std::sync::Arc::new(store::AppStore::open(store::vault_dir(app_data)));
+            vault::init(app, store.clone());
+            app.manage(store);
             app.manage(clipboard::ClipboardGuard::new(Box::new(
                 clipboard::Arboard::default(),
             )));
@@ -35,6 +36,17 @@ pub fn run() {
             commands::storage_load,
             commands::storage_write,
             commands::storage_import_legacy,
+            commands::vault_state,
+            commands::vault_set_aside,
+            commands::lens_create,
+            commands::lens_rename,
+            commands::lens_forget,
+            commands::lens_restore,
+            commands::lens_delete,
+            commands::item_add,
+            commands::item_update,
+            commands::item_delete,
+            commands::item_reveal,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

@@ -13,6 +13,17 @@ const COMMANDS: &[&str] = &[
     "storage_load",
     "storage_write",
     "storage_import_legacy",
+    "vault_state",
+    "vault_set_aside",
+    "lens_create",
+    "lens_rename",
+    "lens_forget",
+    "lens_restore",
+    "lens_delete",
+    "item_add",
+    "item_update",
+    "item_delete",
+    "item_reveal",
 ];
 
 fn main() {

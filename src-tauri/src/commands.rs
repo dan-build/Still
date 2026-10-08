@@ -4,20 +4,24 @@
 //! command counts as activity for auto-lock.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use serde::{Deserialize, Serialize, Serializer};
+use serde_json::{json, Value};
 use still_core::session::{SecretText, SessionError, Unlocked};
 use tauri::State;
 
 use crate::autolock::AutoLock;
 use crate::clipboard::ClipboardGuard;
 use crate::store::{AppStore, Loaded, StoreError, Values};
-use crate::vault::{self, CreatedVault, Revealed, VaultError, VaultSession};
+use crate::vault::{
+    self, state, CommandError, CreatedVault, Revealed, Vault, VaultError, VaultSession,
+};
 
 /// Every command, as named in build.rs and the capability.
 #[cfg(test)]
-pub const ALL: [&str; 11] = [
+pub const ALL: [&str; 22] = [
     "vault_create",
     "vault_unlock",
     "vault_lock",
@@ -29,6 +33,17 @@ pub const ALL: [&str; 11] = [
     "storage_load",
     "storage_write",
     "storage_import_legacy",
+    "vault_state",
+    "vault_set_aside",
+    "lens_create",
+    "lens_rename",
+    "lens_forget",
+    "lens_restore",
+    "lens_delete",
+    "item_add",
+    "item_update",
+    "item_delete",
+    "item_reveal",
 ];
 
 #[derive(Deserialize)]
@@ -174,7 +189,7 @@ pub struct StoredVault {
 
 /// The stored vault values, as they were in localStorage.
 #[tauri::command]
-pub fn storage_load(store: State<'_, AppStore>) -> StoredVault {
+pub fn storage_load(store: State<'_, Arc<AppStore>>) -> StoredVault {
     if store.already_open {
         return StoredVault {
             status: "already-open",
@@ -200,7 +215,7 @@ pub fn storage_load(store: State<'_, AppStore>) -> StoredVault {
 /// Sets (or, for null, removes) several values in one atomic write.
 #[tauri::command]
 pub fn storage_write(
-    store: State<'_, AppStore>,
+    store: State<'_, Arc<AppStore>>,
     changes: BTreeMap<String, Option<String>>,
 ) -> Result<(), StorageError> {
     if store.already_open {
@@ -213,7 +228,7 @@ pub fn storage_write(
 /// localStorage. Refuses if a vault file already exists.
 #[tauri::command]
 pub fn storage_import_legacy(
-    store: State<'_, AppStore>,
+    store: State<'_, Arc<AppStore>>,
     values: Values,
 ) -> Result<(), StorageError> {
     if store.already_open {
@@ -223,4 +238,137 @@ pub fn storage_import_legacy(
         .store()
         .import_legacy(values)
         .map_err(StorageError::Store)
+}
+
+// ---- the vault backend's commands --------------------------------------------
+//
+// Each returns the vault's state ({status, view}) after it ran, or a code.
+// The page names Lenses and secrets by id; values arrive only to be saved.
+
+/// The status and the view, as they are now.
+#[tauri::command]
+pub fn vault_state(vault: State<'_, Vault>) -> Value {
+    state(&vault.backend())
+}
+
+/// Copies every stored vault value under a new name, then removes the
+/// originals, so a new vault can be created. Returns the prefix used.
+#[tauri::command]
+pub fn vault_set_aside(vault: State<'_, Vault>) -> Result<String, CommandError> {
+    Ok(vault.backend().set_aside()?)
+}
+
+/// Runs a change to the vault and returns the new state.
+fn change(
+    vault: &Vault,
+    autolock: &AutoLock,
+    run: impl FnOnce(&mut vault::AppBackend) -> Result<(), still_core::vault::backend::VaultError>,
+) -> Result<Value, CommandError> {
+    autolock.touch(SystemTime::now());
+    let mut backend = vault.backend();
+    run(&mut backend)?;
+    Ok(state(&backend))
+}
+
+#[tauri::command]
+pub fn lens_create(
+    vault: State<'_, Vault>,
+    autolock: State<'_, AutoLock>,
+    name: String,
+) -> Result<Value, CommandError> {
+    autolock.touch(SystemTime::now());
+    let mut backend = vault.backend();
+    let id = backend.create_lens(&name)?;
+    Ok(json!({ "id": id, "state": state(&backend) }))
+}
+
+#[tauri::command]
+pub fn lens_rename(
+    vault: State<'_, Vault>,
+    autolock: State<'_, AutoLock>,
+    lens_id: String,
+    name: String,
+) -> Result<Value, CommandError> {
+    change(&vault, &autolock, |b| b.rename_lens(&lens_id, &name))
+}
+
+#[tauri::command]
+pub fn lens_forget(
+    vault: State<'_, Vault>,
+    autolock: State<'_, AutoLock>,
+    lens_id: String,
+) -> Result<Value, CommandError> {
+    change(&vault, &autolock, |b| b.forget_lens(&lens_id))
+}
+
+#[tauri::command]
+pub fn lens_restore(
+    vault: State<'_, Vault>,
+    autolock: State<'_, AutoLock>,
+    lens_id: String,
+) -> Result<Value, CommandError> {
+    change(&vault, &autolock, |b| b.restore_lens(&lens_id))
+}
+
+#[tauri::command]
+pub fn lens_delete(
+    vault: State<'_, Vault>,
+    autolock: State<'_, AutoLock>,
+    lens_id: String,
+) -> Result<Value, CommandError> {
+    change(&vault, &autolock, |b| b.delete_lens_forever(&lens_id))
+}
+
+#[tauri::command]
+pub fn item_add(
+    vault: State<'_, Vault>,
+    autolock: State<'_, AutoLock>,
+    lens_id: String,
+    label: String,
+    item_type: String,
+    value: String,
+) -> Result<Value, CommandError> {
+    let value = SecretText::from(value);
+    change(&vault, &autolock, |b| {
+        b.add_item(&lens_id, &label, &item_type, &value)
+    })
+}
+
+/// Without a value, the stored one is kept as it is.
+#[tauri::command]
+pub fn item_update(
+    vault: State<'_, Vault>,
+    autolock: State<'_, AutoLock>,
+    lens_id: String,
+    item_id: String,
+    label: String,
+    item_type: String,
+    value: Option<String>,
+) -> Result<Value, CommandError> {
+    let value = value.map(SecretText::from);
+    change(&vault, &autolock, |b| {
+        b.update_item(&lens_id, &item_id, &label, &item_type, value.as_ref())
+    })
+}
+
+#[tauri::command]
+pub fn item_delete(
+    vault: State<'_, Vault>,
+    autolock: State<'_, AutoLock>,
+    lens_id: String,
+    item_id: String,
+) -> Result<Value, CommandError> {
+    change(&vault, &autolock, |b| b.delete_item(&lens_id, &item_id))
+}
+
+/// The one command that sends a value to the page, to show it.
+#[tauri::command]
+pub fn item_reveal(
+    vault: State<'_, Vault>,
+    autolock: State<'_, AutoLock>,
+    lens_id: String,
+    item_id: String,
+) -> Result<Revealed, CommandError> {
+    autolock.touch(SystemTime::now());
+    Ok(Revealed(vault.backend().reveal_item(&lens_id, &item_id)?))
 }
