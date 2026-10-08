@@ -218,6 +218,20 @@ pub fn blake2b_256(data: &[u8], key: Option<&[u8; 32]>) -> [u8; 32] {
     out
 }
 
+/// SHA-256 of `data` (crypto_hash_sha256). Not for keys or passwords: it
+/// fingerprints the values an older version stored, to notice later changes.
+pub fn sha256(data: &[u8]) -> [u8; 32] {
+    let _ = init();
+    let mut out = [0u8; 32];
+    // SAFETY: `out` is writable for crypto_hash_sha256_BYTES = 32 bytes, and
+    // `data` is readable for its length.
+    let rc = unsafe {
+        ffi::crypto_hash_sha256(out.as_mut_ptr(), data.as_ptr(), data.len() as c_ulonglong)
+    };
+    debug_assert_eq!(rc, 0, "crypto_hash_sha256 always succeeds");
+    out
+}
+
 /// crypto_kdf_derive_from_key: a 32-byte subkey from `key`, `id` and an
 /// 8-byte context (keyed BLAKE2b in libsodium).
 pub fn kdf_derive(out: &mut [u8; 32], id: u64, context: &[u8; 8], key: &[u8; 32]) {
@@ -286,6 +300,26 @@ mod tests {
     }
 
     // Reference values from Python's hashlib.blake2b(digest_size=32).
+    // FIPS 180-2 test vectors.
+    #[test]
+    fn sha256_matches_the_standard_vectors() {
+        let hex = |bytes: [u8; 32]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        assert_eq!(
+            hex(sha256(b"")),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            hex(sha256(b"abc")),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(
+            hex(sha256(
+                b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+            )),
+            "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+        );
+    }
+
     #[test]
     fn blake2b_256_matches_an_independent_implementation() {
         let hex = |b: [u8; 32]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
