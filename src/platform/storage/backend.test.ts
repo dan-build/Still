@@ -557,6 +557,32 @@ describe('vault data without its key (B4)', () => {
     await expect(backend.setAside()).rejects.toThrow()
     expect(storage.getItem(STORAGE_KEYS.lenses)).toBe(orphanLens)
   })
+
+  // Sets data aside twice, at the given times; returns the stored values.
+  async function setAsideTwice(first: Date, second: Date) {
+    let now = first
+    const storage = new MemoryStorage({ [STORAGE_KEYS.lenses]: orphanLens, [STORAGE_KEYS.hasPin]: 'true' })
+    const backend = createVaultBackend(storage, vaultCrypto(), () => now)
+    await backend.setAside()
+    storage.setItem(STORAGE_KEYS.lenses, '[]')
+    storage.setItem(STORAGE_KEYS.hasPin, 'false')
+    now = second
+    await backend.setAside()
+    return Object.fromEntries(storage.data)
+  }
+
+  it('keeps both copies when data is set aside twice', async () => {
+    const values = await setAsideTwice(NOW, new Date(NOW.getTime() + 1))
+    expect(values[`still-set-aside-${NOW.toISOString()}-${STORAGE_KEYS.hasPin}`]).toBe('true')
+    expect(Object.keys(values)).toHaveLength(4)
+  })
+
+  // Known bug: both get the same prefix, and the second copy overwrites the first.
+  it.fails('keeps both copies when data is set aside twice in the same millisecond', async () => {
+    const values = await setAsideTwice(NOW, NOW)
+    expect(values[`still-set-aside-${NOW.toISOString()}-${STORAGE_KEYS.hasPin}`]).toBe('true')
+    expect(Object.keys(values)).toHaveLength(4)
+  })
 })
 
 describe('golden fixtures with the real crypto', () => {
