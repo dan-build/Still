@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { RECYCLE_DAYS } from '@/features/vault/model/model'
-import type { LensView as Lens } from '@/platform/storage/backend'
+import { RECYCLE_DAYS, type LensView as Lens } from '@/features/vault/model/types'
 import { Button, IconButton } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Dialog'
 import { Icon } from '@/shared/ui/Icon'

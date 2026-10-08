@@ -20,8 +20,6 @@ vi.mock('./App', () => ({
 
 import StillApp from './StillApp'
 
-const storage = { get: () => null, write: async () => {} }
-
 afterEach(() => {
   cleanup()
   startup.open.mockReset()
@@ -30,7 +28,7 @@ afterEach(() => {
 
 describe('start-up screens', () => {
   it('shows the app once the vault storage is open, with any notice', async () => {
-    startup.open.mockResolvedValue({ kind: 'ready', storage, notice: 'moved' })
+    startup.open.mockResolvedValue({ kind: 'ready', notice: 'moved' })
     render(createElement(StillApp))
     await screen.findByText('the app (moved)')
   })
@@ -51,7 +49,7 @@ describe('start-up screens', () => {
 
   it('uses the older copy for a missing file only when asked', async () => {
     startup.open.mockResolvedValue({ kind: 'file-missing', movedAt: '2026-10-05T10:00:00.000Z' })
-    startup.move.mockResolvedValue({ kind: 'ready', storage, notice: 'moved' })
+    startup.move.mockResolvedValue({ kind: 'ready', notice: 'moved' })
     render(createElement(StillApp))
     await screen.findByText('Your vault file is missing')
     expect(startup.move).not.toHaveBeenCalled()
@@ -62,7 +60,7 @@ describe('start-up screens', () => {
   })
 
   it('offers to try again when the file could not be opened', async () => {
-    startup.open.mockResolvedValueOnce({ kind: 'failed' }).mockResolvedValueOnce({ kind: 'ready', storage })
+    startup.open.mockResolvedValueOnce({ kind: 'failed' }).mockResolvedValueOnce({ kind: 'ready' })
     render(createElement(StillApp))
     fireEvent.click(await screen.findByRole('button', { name: 'Try again' }))
     await screen.findByText('the app')

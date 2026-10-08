@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ItemEdit, ItemView } from '@/platform/storage/backend'
+import type { ItemEdit, ItemView } from '@/features/vault/model/types'
 import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Dialog'
 import { Icon } from '@/shared/ui/Icon'

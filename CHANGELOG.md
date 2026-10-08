@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **The vault's rules now run in the app's Rust code.** Saving, the Archive and its 7-day purge, and the checks that keep unreadable data safe moved out of the web page. The page now sees only the names and labels it shows: no encrypted data, no wrapped keys, and a secret's value only while you reveal it. It can't write to the vault file or ask for any other value to be decrypted. Your vault file and its format are unchanged.
+
+### Fixed
+
+- **Setting old data aside twice within the same millisecond** no longer lets the second copy overwrite the first.
+
 ## [0.4.0] - 2026-10-07
 
 ### Added

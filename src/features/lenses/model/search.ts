@@ -1,4 +1,4 @@
-import type { ItemView, LensView } from '@/platform/storage/backend'
+import type { ItemView, LensView } from '@/features/vault/model/types'
 
 export interface SearchGroup {
   lens: LensView

@@ -442,18 +442,16 @@ mod tests {
 
         // The imported values open with the real password.
         let lenses: serde_json::Value = serde_json::from_str(&stored["still-lenses"]).unwrap();
-        let wrapped: Vec<(String, String)> = lenses
+        let wrapped: Vec<still_core::session::WrappedLensKey<'_>> = lenses
             .as_array()
             .unwrap()
             .iter()
-            .map(|l| {
-                (
-                    l["id"].as_str().unwrap().to_owned(),
-                    l["encryptedMasterKey"].as_str().unwrap().to_owned(),
-                )
+            .map(|l| still_core::session::WrappedLensKey {
+                id: l["id"].as_str().unwrap(),
+                encrypted_master_key: l["encryptedMasterKey"].as_str().unwrap(),
             })
             .collect();
-        let (_, opened) = crate::vault::open(
+        let (_, opened) = still_core::session::Unlocked::open(
             &stored["still-encrypted-master-key"],
             &stored["still-salt"],
             &still_core::session::SecretText::from("throwaway-vault-202".to_owned()),

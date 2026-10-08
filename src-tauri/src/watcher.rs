@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::autolock::AutoLock;
 use crate::clipboard::ClipboardGuard;
-use crate::vault::VaultSession;
+use crate::vault::Vault;
 
 const TICK: Duration = Duration::from_secs(1);
 
@@ -21,15 +21,14 @@ pub fn start(app: AppHandle) {
         .name("still-watcher".into())
         .spawn(move || loop {
             std::thread::sleep(TICK);
-            let session = app.state::<VaultSession>();
+            let vault = app.state::<Vault>();
             let clipboard = app.state::<ClipboardGuard>();
-            let reason = app.state::<AutoLock>().check(
-                Instant::now(),
-                SystemTime::now(),
-                session.is_unlocked(),
-            );
+            let unlocked = vault.backend().is_unlocked();
+            let reason = app
+                .state::<AutoLock>()
+                .check(Instant::now(), SystemTime::now(), unlocked);
             if let Some(reason) = reason {
-                session.lock();
+                vault.backend().lock();
                 clipboard.clear_now();
                 let _ = app.emit_to("main", LOCKED_EVENT, reason);
             }

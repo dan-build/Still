@@ -1,8 +1,8 @@
-// The vault's crypto, behind key handles. Whoever implements this keeps the
-// app key and every Lens key to itself; callers only ever see encrypted blobs
-// and refer to Lens keys by Lens id. The app's implementation calls Rust
-// (platform/tauri/vaultCrypto.ts); tests use the JS reference one
-// (test/reference/libsodiumVaultCrypto.ts).
+// The vault's crypto as the TypeScript backend used it before the vault moved
+// to Rust (crates/still-core/src/session.rs keeps the same contract), behind
+// key handles: whoever implements this keeps the app key and every Lens key to
+// itself; callers only ever see encrypted blobs and refer to Lens keys by Lens
+// id. Kept for the JS reference implementation (libsodiumVaultCrypto.ts).
 
 /**
  * wrong-password: the password didn't open the master key.
@@ -46,3 +46,6 @@ export interface VaultCrypto {
   /** Forgets and zeroes every key. */
   lock(): Promise<void>
 }
+
+/** libsodium's message when authentication fails, i.e. the key (here: the password) is wrong. */
+export const AUTH_FAILURE_MESSAGE = 'ciphertext cannot be decrypted using that key'

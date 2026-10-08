@@ -29,7 +29,7 @@ export default function StillApp() {
 
   switch (startup.kind) {
     case 'ready':
-      return <StillHome storage={startup.storage} notice={startup.notice} />
+      return <StillHome notice={startup.notice} />
     case 'already-open':
       return (
         <Message title="Still is already open">

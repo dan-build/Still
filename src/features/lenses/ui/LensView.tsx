@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { LensView as Lens, NewItem } from '@/platform/storage/backend'
+import type { LensView as Lens, NewItem } from '@/features/vault/model/types'
 import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Dialog'
 import { Icon } from '@/shared/ui/Icon'

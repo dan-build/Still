@@ -1,4 +1,4 @@
-import type { ItemView } from '@/platform/storage/backend'
+import type { ItemView } from '@/features/vault/model/types'
 import { IconButton } from '@/shared/ui/Button'
 import { Icon } from '@/shared/ui/Icon'
 

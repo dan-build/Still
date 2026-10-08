@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import type { NewItem } from '@/platform/storage/backend'
+import type { NewItem } from '@/features/vault/model/types'
 import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Dialog'
 import { Kbd } from '@/shared/ui/Kbd'

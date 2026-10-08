@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 //
-// The lock screens on their own. App.persistence.test.tsx drives them with
-// the real backend; these check the screens' own behaviour.
+// The lock screens on their own. App.test.tsx drives them inside the app;
+// these check the screens' own behaviour.
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'

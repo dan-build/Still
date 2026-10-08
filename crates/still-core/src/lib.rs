@@ -11,6 +11,7 @@ pub mod error;
 pub mod format;
 pub mod session;
 pub mod sodium;
+pub mod vault;
 
 pub use crypto::Key;
 pub use error::Error;
