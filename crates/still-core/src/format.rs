@@ -1,5 +1,5 @@
-//! The v1 stored format: parse and write blobs exactly as
-//! src/test/reference/crypto.ts lays them out. Pure and total: malformed
+//! The v1 stored format: parse and write blobs exactly as the original
+//! crypto.ts laid them out. Pure and total: malformed
 //! input is an error, never a panic.
 //!
 //! - Key blob (master key or Lens key), 73 bytes:
@@ -153,7 +153,7 @@ mod tests {
     /// Every stored blob in both committed vaults, as (kind, base64).
     fn fixture_blobs() -> Vec<(&'static str, String)> {
         let mut blobs = vec![];
-        for dir in ["vault-v1", "vault-v1-real"] {
+        for dir in ["vault-v1", "vault-v1-real", "vault-v1-rust"] {
             let vault = fixture(&format!("{dir}/vault.json"));
             blobs.push((
                 "key",

@@ -17,15 +17,14 @@ npm run tauri:build    # Desktop bundle; runs `npm run build` itself, packages .
 ```
 
 ```bash
-npm test                     # Vitest, about 1 minute (real Argon2id runs use 1 GiB each)
+npm test                     # Vitest, about 15 seconds (no crypto runs in the page's tests)
 npx vitest run src/app/App.test.tsx  # one file
-npx vitest run -t "golden fixture vault-v1-real" # tests whose name matches
+npx vitest run -t "copies a secret"  # tests whose name matches
 npm run lint                 # ESLint: TypeScript, rules of hooks, jsx-a11y (strict); no warnings allowed
 npm run check                # what CI will run: check:web (vitest, lint, tsc -b, vite build) + check:rust (fmt, clippy -D warnings, cargo test)
 ```
 
 Tests sit next to the code (`src/**/*.test.ts(x)`):
-- `test/reference/`: `crypto.ts`, the JS v1 implementation that v0.1.x shipped, kept as the reference. Its tests open the committed vaults in `fixtures/vault-v1*` (`vault-v1` generated, `vault-v1-real` exported from a release build, `vault-v1-rust` written by the Rust session), check the fixed-input vectors that every implementation must reproduce, and characterise its behaviour. `libsodiumVaultCrypto.ts` is the JS `VaultCrypto` the tests use.
 - `app/App.test.tsx`: drives the UI in happy-dom against `src/test/fakeVaultApi.ts`, an in-memory stand-in for the vault commands, and checks what the UI asks of them and shows. `app/StillApp.test.tsx` covers the start-up screens.
 - `platform/tauri/vaultApi.test.ts`: the vault commands' names, arguments and error codes, with `invoke` mocked.
 - Rust: `crates/still-core/tests/`: golden vaults, vectors and the session; `behaviour_v1.rs` replays `fixtures/vault-behaviour-v1` (what the TypeScript backend did, step by step) against the Rust backend; `backend_v1.rs` opens every golden vault through the backend. `src-tauri/src/`: the vault file, the commands' state, config and capability guards.
@@ -41,7 +40,7 @@ A known bug gets an `it.fails` test (or, in Rust, a test of the right behaviour 
 - `src/features/<feature>/{model,ui}`: `vault/model/types.ts` (the vault as the page sees it), `lenses/{model,ui}`, `recycle-bin/ui`.
 - `src/shared/ui/`: the shared UI pieces. `Icon.tsx` holds Still's own icon set (16px grid, 1.5px stroke; no icon library) and the `Mark`.
 - `src/platform/tauri/`: the only code that calls `invoke`: the vault commands (`vaultApi.ts`), start-up (`startup.ts`, which also reads the old localStorage copy and writes the marker) and auto-lock (`session.ts`).
-- `src/test/`: test helpers, and `reference/` (the JS crypto, for tests only; never imported by the app).
+- `src/test/`: test helpers.
 
 **CSP.** `tauri.conf.json` sets a strict `csp`: only the app's own files and Tauri's IPC, with `script-src 'self'`: no eval and no WebAssembly. Never bring wasm back into the page: `'wasm-unsafe-eval'` doesn't work on WebKit before Safari 16 (macOS 12), so it would need `'unsafe-eval'`. `scripts/check-dist.mjs` (in `check:web`) fails if the build contains WebAssembly, libsodium, `eval` or `new Function`, or CSS `color-mix()` outside `@supports`. On desktop, `devCsp` is not applied in `tauri dev` (the page loads straight from Vite), so check CSP changes in a `tauri build --debug` bundle, which has the Web Inspector. Inspector console input is exempt from the CSP, so test by injecting a script element rather than calling `eval`. `freezePrototype` is on. Rust tests in `src-tauri/src/lib.rs` allow-list every source, so never add a remote origin. TypeScript is split into `tsconfig.app.json` (no tests, no Node types), `tsconfig.test.json` and `tsconfig.node.json`, all with `noUnusedLocals`/`noUnusedParameters`.
 
@@ -60,7 +59,7 @@ Backend rules; the tests (and `fixtures/vault-behaviour-v1`) depend on them:
 - **Vault data without its key is orphaned.** `create` refuses to run, and the UI shows the recovery screen (`set_aside` copies everything to `still-set-aside-<time>-` keys first, adding a number if that prefix is taken).
 - **Lock clears the lists and drops the keys at once,** and every change refuses while locked.
 
-**Key hierarchy** (in Rust in [crates/still-core](crates/still-core); the JS reference is [src/test/reference/crypto.ts](src/test/reference/crypto.ts)):
+**Key hierarchy** (in Rust in [crates/still-core](crates/still-core); v0.1.x did it in JavaScript, in `crypto.ts`, which is in the git history):
 1. Master password → Argon2id (`crypto_pwhash`, SENSITIVE limits, 16-byte salt) → a derived key that wraps a random 32-byte **app master key** (`encryptMasterKey` / `decryptMasterKey`).
 2. Each Lens has its own random 32-byte **lens key**, wrapped by the app master key (`encryptLensMasterKey`).
 3. Each item value is encrypted with a per-item subkey derived from the lens key: `crypto_kdf_derive_from_key` with context `StillSec` and a random uint32 subkey id (`encrypt` / `decrypt`).
@@ -79,7 +78,7 @@ Older versions kept the vault in localStorage, which belongs to one origin and o
 
 Recycle-bin entries older than 7 days are purged when the vault is unlocked. New ids are 128 random bits in hex. v0.1.0's ids were `Date.now().toString(36)`; they're kept as they are.
 
-**Rust core.** [crates/still-core](crates/still-core) implements the v1 format byte for byte like the JS reference `crypto.ts`, on libsodium 1.0.22, the same release v0.1.x shipped, and the vault backend (`src/vault/`, described above).
+**Rust core.** [crates/still-core](crates/still-core) implements the v1 format byte for byte like the JavaScript `crypto.ts` that v0.1.x shipped, on libsodium 1.0.22, the same release v0.1.x shipped, and the vault backend (`src/vault/`, described above).
 - `sodium.rs` is the only `unsafe` code. Argon2id runs one at a time per process (a 1 GiB lock), so tests need no guard of their own.
 - `format.rs` parses and writes blobs and never panics.
 - `crypto.rs` holds the operations and the `Key` type, which is zeroed on drop and prints as `Key(redacted)`.
@@ -113,7 +112,7 @@ Other notes:
   - motion: none on frequent actions; colour changes over 150ms; name the transitioned properties (never `transition: all`); Tailwind 4's `scale-*` sets the `scale` property, so transition `scale`, not `transform`. Respect reduced motion (keep fades, drop movement).
   - controls: use the shared pieces (Button, IconButton, TextField, SegmentedControl, Menu, Dialog, Toaster, Kbd). Focus shows through the `focus-ring` utility, a box-shadow, because Safari before 16.4 draws outlines with square corners. `hover:` applies only on a real pointer.
 - **Styles: Tailwind 4 must work on macOS 12's Safari 15.4.** `@tailwindcss/vite` builds the CSS, and Vite runs Lightning CSS with a Safari 15.4 target, in dev and release, which adds fallbacks for newer CSS. Avoid what it can't fix: `color-mix()` (opacity modifiers like `bg-black/50` on token colours; use a token or an rgb() value), Tailwind's gradient utilities (they interpolate `in oklab`; write the gradient in an arbitrary property), `@starting-style` (use a `data-mounted` attribute set a frame after mounting) and CSS nesting. In `globals.css`, our own element rules live in `@layer base`, so utility classes beat them (unlayered rules would beat every utility). Only `src/` and `index.html` are scanned for classes. Fonts must never be inlined as `data:` URLs (`font-src 'self'` blocks them); `vite.config.ts` and `check-dist` make sure.
-- UI tests replace the vault commands with [src/test/fakeVaultApi.ts](src/test/fakeVaultApi.ts), which follows their contract (states, error codes, nothing while locked); the reference crypto tests use [src/test/fakeCrypto.ts](src/test/fakeCrypto.ts), which makes real v1 blob shapes and throws libsodium's real error messages. In happy-dom, spy on `localStorage` itself, not `Storage.prototype` (that spy sees nothing), and restore it with `mockRestore()`, because `vi.restoreAllMocks()` doesn't.
+- UI tests replace the vault commands with [src/test/fakeVaultApi.ts](src/test/fakeVaultApi.ts), which follows their contract (states, error codes, nothing while locked). In happy-dom, spy on `localStorage` itself, not `Storage.prototype` (that spy sees nothing), and restore it with `mockRestore()`, because `vi.restoreAllMocks()` doesn't.
 - The `@/*` path alias maps to `src/`. Use it for imports across folders; keep imports within a folder relative.
 - Domain terms: a **Lens** is an encrypted collection. An **Item** is a `password`, `key`, or `note` stored in a Lens. The UI calls the recycle bin "Archive", and deleting a Lens is called "forget".
 

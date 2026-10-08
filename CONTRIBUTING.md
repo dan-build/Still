@@ -23,7 +23,7 @@ Development builds keep their own vault, separate from any installed release bui
 - `src/app/`: the app shell and the lock screens.
 - `src/features/<feature>/{model,ui}`: pure logic in `model`, React views in `ui`. Tests sit next to the code.
 - `src/platform/tauri/`: the only code that calls Rust: the vault commands, start-up (which reads an older version's localStorage for Rust) and auto-lock.
-- `src/test/`: test helpers (`fakeVaultApi.ts` stands in for the vault commands), and `reference/`, the JS crypto that earlier versions shipped, kept to prove compatibility.
+- `src/test/`: test helpers (`fakeVaultApi.ts` stands in for the vault commands).
 - `src-tauri/`: the desktop shell, the vault file and the commands. `crates/still-core/`: the Rust core: the v1 crypto, and the vault backend (`src/vault/`), which holds every rule about stored vault data.
 
 ## Before you push

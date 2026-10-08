@@ -1,5 +1,5 @@
-//! The v1 vault operations, byte for byte the same as
-//! src/test/reference/crypto.ts:
+//! The v1 vault operations, byte for byte the same as the original
+//! crypto.ts (the JavaScript code v0.1.x shipped; removed, in the git history):
 //!
 //! 1. Master password → Argon2id (SENSITIVE) with a 16-byte salt → a key that
 //!    wraps the 32-byte app key.
@@ -207,6 +207,18 @@ pub fn derive_subkey(lens_key: &Key, subkey_id: u32) -> Key {
 mod tests {
     use super::*;
     use crate::format::FormatError;
+
+    // Every wrap uses a fresh nonce, and every new master key a fresh salt,
+    // so the same key never gives the same blob twice.
+    #[test]
+    fn wraps_with_fresh_randomness_every_time() {
+        let (lens, app) = (Key::random(), Key::random());
+        assert_ne!(encrypt_lens_key(&lens, &app), encrypt_lens_key(&lens, &app));
+        let (blob_a, salt_a) = encrypt_master_key(&app, "pw-123456").unwrap();
+        let (blob_b, salt_b) = encrypt_master_key(&app, "pw-123456").unwrap();
+        assert_ne!(salt_a, salt_b);
+        assert_ne!(blob_a, blob_b);
+    }
 
     #[test]
     fn items_round_trip_exactly_including_edge_whitespace_and_unicode() {
