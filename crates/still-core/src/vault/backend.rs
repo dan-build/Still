@@ -297,6 +297,11 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         &self.storage
     }
 
+    /// Whether keys are held; unlike `status`, this never reads storage.
+    pub fn is_unlocked(&self) -> bool {
+        self.keys.is_some()
+    }
+
     pub fn status(&self) -> Status {
         if self.keys.is_some() {
             Status::Unlocked

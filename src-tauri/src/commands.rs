@@ -9,7 +9,7 @@ use std::time::{Instant, SystemTime};
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use still_core::session::{SecretText, SessionError, Unlocked};
-use still_core::vault::backend::UnlockFailure;
+use still_core::vault::backend::{Status, UnlockFailure};
 use tauri::State;
 
 use crate::autolock::AutoLock;
@@ -135,36 +135,17 @@ impl Serialize for StorageError {
     }
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StoredVault {
-    /// "nothing", "values", "unreadable" or "already-open".
-    status: &'static str,
-    values: Option<Values>,
-}
-
-/// The stored vault values, as they were in localStorage.
+/// Whether there is a vault file: "nothing", "values", "unreadable" or
+/// "already-open". Never the values themselves: those stay in Rust.
 #[tauri::command]
-pub fn storage_load(store: State<'_, Arc<AppStore>>) -> StoredVault {
+pub fn storage_load(store: State<'_, Arc<AppStore>>) -> &'static str {
     if store.already_open {
-        return StoredVault {
-            status: "already-open",
-            values: None,
-        };
+        return "already-open";
     }
     match store.store().load() {
-        Loaded::Nothing => StoredVault {
-            status: "nothing",
-            values: None,
-        },
-        Loaded::Values(values) => StoredVault {
-            status: "values",
-            values: Some(values),
-        },
-        Loaded::Unreadable => StoredVault {
-            status: "unreadable",
-            values: None,
-        },
+        Loaded::Nothing => "nothing",
+        Loaded::Values(_) => "values",
+        Loaded::Unreadable => "unreadable",
     }
 }
 
@@ -197,9 +178,34 @@ pub fn vault_state(vault: State<'_, Vault>) -> Value {
 
 /// Copies every stored vault value under a new name, then removes the
 /// originals, so a new vault can be created. Returns the prefix used.
+///
+/// Only for vault data that can't be opened (the recovery screen): a vault
+/// with its key and salt is never moved aside.
 #[tauri::command]
 pub fn vault_set_aside(vault: State<'_, Vault>) -> Result<String, CommandError> {
-    Ok(vault.backend().set_aside()?)
+    let mut backend = vault.backend();
+    if backend.status() != Status::Orphaned {
+        return Err(CommandError("not-orphaned"));
+    }
+    Ok(backend.set_aside()?)
+}
+
+/// The page's input, checked before it reaches the backend: the UI never
+/// sends a blank name or label, or a type it doesn't know.
+fn check_name(name: &str, error: &'static str) -> Result<(), CommandError> {
+    if name.chars().all(still_core::crypto::is_js_whitespace) {
+        Err(CommandError(error))
+    } else {
+        Ok(())
+    }
+}
+
+fn check_type(item_type: &str) -> Result<(), CommandError> {
+    if ["password", "key", "note"].contains(&item_type) {
+        Ok(())
+    } else {
+        Err(CommandError("unknown-type"))
+    }
 }
 
 /// Runs a change to the vault and returns the new state.
@@ -221,6 +227,7 @@ pub fn lens_create(
     name: String,
 ) -> Result<Value, CommandError> {
     autolock.touch(SystemTime::now());
+    check_name(&name, "empty-name")?;
     let mut backend = vault.backend();
     let id = backend.create_lens(&name)?;
     Ok(json!({ "id": id, "state": state(&backend) }))
@@ -273,6 +280,8 @@ pub fn item_add(
     value: String,
 ) -> Result<Value, CommandError> {
     let value = SecretText::from(value);
+    check_name(&label, "empty-label")?;
+    check_type(&item_type)?;
     change(&vault, &autolock, |b| {
         b.add_item(&lens_id, &label, &item_type, &value)
     })
@@ -290,6 +299,7 @@ pub fn item_update(
     value: Option<String>,
 ) -> Result<Value, CommandError> {
     let value = value.map(SecretText::from);
+    check_type(&item_type)?;
     change(&vault, &autolock, |b| {
         b.update_item(&lens_id, &item_id, &label, &item_type, value.as_ref())
     })
@@ -315,4 +325,27 @@ pub fn item_reveal(
 ) -> Result<Revealed, CommandError> {
     autolock.touch(SystemTime::now());
     Ok(Revealed(vault.backend().reveal_item(&lens_id, &item_id)?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The UI never sends these; a page that does gets a code, not a change.
+    #[test]
+    fn refuses_blank_names_and_unknown_types_from_the_page() {
+        assert_eq!(check_name("Work", "empty-name"), Ok(()));
+        for blank in ["", "   ", "\u{FEFF}\u{3000}", "\n\t"] {
+            assert_eq!(
+                check_name(blank, "empty-name"),
+                Err(CommandError("empty-name"))
+            );
+        }
+        for known in ["password", "key", "note"] {
+            assert_eq!(check_type(known), Ok(()));
+        }
+        for unknown in ["", "card", "Password", "note "] {
+            assert_eq!(check_type(unknown), Err(CommandError("unknown-type")));
+        }
+    }
 }

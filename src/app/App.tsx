@@ -149,9 +149,11 @@ export default function StillHome({ notice }: StillHomeProps) {
   }
 
   const handleCreatePassword = async (password: string) => {
-    show(await api().create(password))
-    setIsUnlocked(true)
+    const state = await api().create(password)
+    show(state)
     setIsFirstLaunch(false)
+    // A Lock while it was being created leaves the new vault saved but locked.
+    setIsUnlocked(state.status === 'unlocked')
     showToast({ message: 'Vault created' })
   }
 
@@ -162,7 +164,14 @@ export default function StillHome({ notice }: StillHomeProps) {
     } catch {
       return 'failed'
     }
-    if (!result.ok) return result.reason === 'no-vault' ? 'failed' : result.reason
+    if (!result.ok) {
+      if (result.reason !== 'no-vault') return result.reason
+      // Start-up couldn't tell; there's no vault to unlock, so offer the right screen.
+      const { status } = await api().state().catch(() => ({ status: 'locked' as const }))
+      setIsFirstLaunch(status === 'empty')
+      setIsOrphaned(status === 'orphaned')
+      return 'failed'
+    }
     show(result.state)
     setIsUnlocked(true)
     return 'ok'

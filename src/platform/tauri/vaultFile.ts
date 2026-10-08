@@ -7,9 +7,8 @@ import { invoke } from '@tauri-apps/api/core'
 
 export type StoredValues = Record<string, string>
 
-export type FileLoad =
-  | { status: 'values'; values: StoredValues }
-  | { status: 'nothing' | 'unreadable' | 'already-open' }
+/** Whether there is a vault file. Its values stay in Rust. */
+export type FileLoad = { status: 'values' | 'nothing' | 'unreadable' | 'already-open' }
 
 /** A failed storage command: unreadable-data, exists, already-open or failed. */
 export class VaultFileError extends Error {
@@ -32,9 +31,6 @@ export interface VaultFileApi {
 }
 
 export const vaultFile: VaultFileApi = {
-  async load() {
-    const loaded = await call<{ status: FileLoad['status']; values: StoredValues | null }>('storage_load')
-    return loaded.status === 'values' ? { status: 'values', values: loaded.values ?? {} } : { status: loaded.status }
-  },
+  load: async () => ({ status: await call<FileLoad['status']>('storage_load') }),
   importLegacy: (values) => call('storage_import_legacy', { values }),
 }

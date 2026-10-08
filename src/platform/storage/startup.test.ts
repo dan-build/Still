@@ -17,8 +17,8 @@ class FakeFile implements VaultFileApi {
   imports: StoredValues[] = []
 
   async load(): Promise<FileLoad> {
-    if (this.status && this.status !== 'values') return { status: this.status } as FileLoad
-    return this.values ? { status: 'values', values: { ...this.values } } : { status: 'nothing' }
+    if (this.status && this.status !== 'values') return { status: this.status }
+    return { status: this.values ? 'values' : 'nothing' }
   }
   async importLegacy(values: StoredValues) {
     if (this.values) throw new VaultFileError('exists')

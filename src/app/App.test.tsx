@@ -565,6 +565,31 @@ describe('creating a vault (B4)', () => {
     expect(lensNames(vault.lenses)).toEqual(['Fresh'])
   })
 
+  it('stays locked when a Lock lands while the vault is being created', async () => {
+    const vault = freshInstall()
+    vault.lockDuringCreate = true
+    render(createElement(StillHome))
+    fireEvent.change(await screen.findByLabelText('Master password'), { target: { value: 'new-password-1' } })
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'new-password-1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create vault' }))
+
+    await screen.findByPlaceholderText('Master password')
+    expect(screen.queryByRole('button', { name: /^Archive/ })).toBeNull()
+    await enterPassword('new-password-1')
+    await screen.findByRole('button', { name: /^Archive/ })
+  })
+
+  it('offers to create a vault if start-up couldn\'t tell there was none', async () => {
+    const vault = freshInstall()
+    vault.failState = true
+    render(createElement(StillHome))
+    await screen.findByPlaceholderText('Master password')
+    vault.failState = false
+    await enterPassword('anything')
+
+    await screen.findByLabelText('Confirm password')
+  })
+
   it('shows the recovery screen for data it can\'t open, and changes nothing', async () => {
     const vault = freshInstall()
     vault.orphaned = true

@@ -48,6 +48,10 @@ export class FakeVault implements VaultApi {
   unlocked = false
   /** Every change is refused, as when the disk refuses the write. */
   failChanges = false
+  /** A Lock lands while create runs: the vault is saved but stays locked. */
+  lockDuringCreate = false
+  /** state() fails, as when the command can't be reached. */
+  failState = false
   /** The command of every call, in order. */
   calls: string[] = []
   /** What copyItem put on the clipboard. */
@@ -105,9 +109,11 @@ export class FakeVault implements VaultApi {
   }
 
   private item(lensId: string, itemId: string): FakeItem {
-    const lens = [...this.lenses, ...this.bin].find((l) => l.id === lensId && !l.unreadable)
+    const lens = [...this.lenses, ...this.bin].find((l) => l.id === lensId)
     const item = lens?.items.find((i) => i.id === itemId)
     if (!item) throw new VaultApiError('unknown-item')
+    // As in Rust: the secret is found, but its Lens's key never opened.
+    if (lens?.unreadable) throw new VaultApiError('crypto-unknown-lens')
     return item
   }
 
@@ -117,6 +123,7 @@ export class FakeVault implements VaultApi {
 
   async state() {
     this.calls.push('state')
+    if (this.failState) throw new VaultApiError('failed')
     return this.now()
   }
 
@@ -124,7 +131,7 @@ export class FakeVault implements VaultApi {
     this.calls.push('create')
     if (this.password !== null || this.orphaned) throw new VaultApiError('vault-exists')
     this.password = password
-    this.unlocked = true
+    this.unlocked = !this.lockDuringCreate
     return this.now()
   }
 

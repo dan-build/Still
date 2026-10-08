@@ -4,7 +4,6 @@
 
 use std::time::{Duration, Instant, SystemTime};
 
-use still_core::vault::backend::Status;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::autolock::AutoLock;
@@ -24,7 +23,7 @@ pub fn start(app: AppHandle) {
             std::thread::sleep(TICK);
             let vault = app.state::<Vault>();
             let clipboard = app.state::<ClipboardGuard>();
-            let unlocked = vault.backend().status() == Status::Unlocked;
+            let unlocked = vault.backend().is_unlocked();
             let reason = app
                 .state::<AutoLock>()
                 .check(Instant::now(), SystemTime::now(), unlocked);
