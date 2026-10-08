@@ -1,5 +1,5 @@
 import type { RefObject } from 'react'
-import type { LensView } from '@/platform/storage/backend'
+import type { LensView } from '@/features/vault/model/types'
 import { IconButton } from '@/shared/ui/Button'
 import { Icon, Mark, type IconName } from '@/shared/ui/Icon'
 import { Kbd } from '@/shared/ui/Kbd'

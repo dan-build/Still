@@ -3,35 +3,29 @@
 //! wrapped in SecretText at once, so they're zeroed when dropped. Every
 //! command counts as activity for auto-lock.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use still_core::session::{SecretText, SessionError, Unlocked};
+use still_core::vault::backend::UnlockFailure;
 use tauri::State;
 
 use crate::autolock::AutoLock;
 use crate::clipboard::ClipboardGuard;
 use crate::store::{AppStore, Loaded, StoreError, Values};
-use crate::vault::{
-    self, state, CommandError, CreatedVault, Revealed, Vault, VaultError, VaultSession,
-};
+use crate::vault::{self, state, CommandError, Revealed, Vault};
 
 /// Every command, as named in build.rs and the capability.
 #[cfg(test)]
-pub const ALL: [&str; 22] = [
+pub const ALL: [&str; 18] = [
     "vault_create",
     "vault_unlock",
     "vault_lock",
     "vault_touch",
-    "lens_new_key",
-    "item_encrypt",
-    "item_decrypt",
     "item_copy",
     "storage_load",
-    "storage_write",
     "storage_import_legacy",
     "vault_state",
     "vault_set_aside",
@@ -46,64 +40,58 @@ pub const ALL: [&str; 22] = [
     "item_reveal",
 ];
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WrappedLensKeyArg {
-    id: String,
-    encrypted_master_key: String,
-}
-
-/// Argon2id takes seconds and 1 GiB, so it runs off the async runtime.
-async fn blocking<T: Send + 'static>(
-    work: impl FnOnce() -> Result<T, VaultError> + Send + 'static,
-) -> Result<T, VaultError> {
-    tauri::async_runtime::spawn_blocking(work)
-        .await
-        .unwrap_or(Err(VaultError(SessionError::Failed)))
-}
-
+/// Creates a vault and unlocks it. Argon2id runs twice (the new key is
+/// checked before it's stored), outside the backend's lock.
 #[tauri::command]
 pub async fn vault_create(
-    session: State<'_, VaultSession>,
+    vault: State<'_, Vault>,
     autolock: State<'_, AutoLock>,
     password: String,
-) -> Result<CreatedVault, VaultError> {
+) -> Result<Value, CommandError> {
     let password = SecretText::from(password);
-    let (unlocked, encrypted_master_key, salt) =
-        blocking(move || Ok(Unlocked::create(&password)?)).await?;
+    let plan = vault.backend().prepare_create()?;
+    let created = tauri::async_runtime::spawn_blocking(move || Unlocked::create(&password))
+        .await
+        .unwrap_or(Err(SessionError::Failed));
     // Activity first, so the watcher never sees a new session as idle.
     autolock.touch(SystemTime::now());
-    session.install(unlocked);
-    Ok(CreatedVault {
-        encrypted_master_key,
-        salt,
+    let mut backend = vault.backend();
+    backend.finish_create(plan, created)?;
+    Ok(state(&backend))
+}
+
+/// Unlocks the vault: {ok: true, state} or {ok: false, reason}. Argon2id
+/// runs outside the backend's lock; a Lock meanwhile wins.
+#[tauri::command]
+pub async fn vault_unlock(
+    vault: State<'_, Vault>,
+    autolock: State<'_, AutoLock>,
+    password: String,
+) -> Result<Value, CommandError> {
+    let password = SecretText::from(password);
+    let failed = |reason: UnlockFailure| json!({ "ok": false, "reason": reason.code() });
+    let plan = match vault.backend().prepare_unlock() {
+        Ok(plan) => plan,
+        Err(reason) => return Ok(failed(reason)),
+    };
+    let (plan, opened) = tauri::async_runtime::spawn_blocking(move || {
+        let opened = plan.open::<Unlocked>(&password);
+        (plan, opened)
+    })
+    .await
+    .map_err(|_| CommandError("failed"))?;
+    autolock.touch(SystemTime::now());
+    let mut backend = vault.backend();
+    Ok(match backend.finish_unlock(plan, opened) {
+        Ok(()) => json!({ "ok": true, "state": state(&backend) }),
+        Err(reason) => failed(reason),
     })
 }
 
+/// Locks at once, or as soon as a change under way has finished.
 #[tauri::command]
-pub async fn vault_unlock(
-    session: State<'_, VaultSession>,
-    autolock: State<'_, AutoLock>,
-    encrypted_master_key: String,
-    salt: String,
-    password: String,
-    lenses: Vec<WrappedLensKeyArg>,
-) -> Result<Vec<bool>, VaultError> {
-    let password = SecretText::from(password);
-    let lenses: Vec<(String, String)> = lenses
-        .into_iter()
-        .map(|l| (l.id, l.encrypted_master_key))
-        .collect();
-    let (unlocked, opened) =
-        blocking(move || vault::open(&encrypted_master_key, &salt, &password, &lenses)).await?;
-    autolock.touch(SystemTime::now());
-    session.install(unlocked);
-    Ok(opened)
-}
-
-#[tauri::command]
-pub fn vault_lock(session: State<'_, VaultSession>, clipboard: State<'_, ClipboardGuard>) {
-    session.lock();
+pub fn vault_lock(vault: State<'_, Vault>, clipboard: State<'_, ClipboardGuard>) {
+    vault.backend().lock();
     clipboard.clear_now();
 }
 
@@ -113,53 +101,21 @@ pub fn vault_touch(autolock: State<'_, AutoLock>) {
     autolock.touch(SystemTime::now());
 }
 
-#[tauri::command]
-pub fn lens_new_key(
-    session: State<'_, VaultSession>,
-    autolock: State<'_, AutoLock>,
-    lens_id: String,
-) -> Result<String, VaultError> {
-    autolock.touch(SystemTime::now());
-    session.new_lens_key(&lens_id)
-}
-
-#[tauri::command]
-pub fn item_encrypt(
-    session: State<'_, VaultSession>,
-    autolock: State<'_, AutoLock>,
-    lens_id: String,
-    plaintext: String,
-) -> Result<String, VaultError> {
-    autolock.touch(SystemTime::now());
-    session.encrypt_item(&lens_id, &SecretText::from(plaintext))
-}
-
-#[tauri::command]
-pub fn item_decrypt(
-    session: State<'_, VaultSession>,
-    autolock: State<'_, AutoLock>,
-    lens_id: String,
-    encrypted_value: String,
-) -> Result<Revealed, VaultError> {
-    autolock.touch(SystemTime::now());
-    session.decrypt_item(&lens_id, &encrypted_value)
-}
-
-/// Decrypts an item straight onto the clipboard; the value never goes back to
-/// the webview. It's cleared after 30 seconds (see clipboard.rs).
+/// Puts a secret's value straight onto the clipboard; it never goes to the
+/// webview. It's cleared after 30 seconds (see clipboard.rs).
 #[tauri::command]
 pub fn item_copy(
-    session: State<'_, VaultSession>,
+    vault: State<'_, Vault>,
     clipboard: State<'_, ClipboardGuard>,
     autolock: State<'_, AutoLock>,
     lens_id: String,
-    encrypted_value: String,
-) -> Result<(), VaultError> {
+    item_id: String,
+) -> Result<(), CommandError> {
     autolock.touch(SystemTime::now());
-    let value = session.decrypt_item(&lens_id, &encrypted_value)?;
+    let value = vault.backend().reveal_item(&lens_id, &item_id)?;
     clipboard
-        .copy(&value.0, Instant::now())
-        .map_err(|_| VaultError(SessionError::Failed))
+        .copy(&value, Instant::now())
+        .map_err(|_| CommandError("failed"))
 }
 
 /// A storage failure the UI may see: a fixed code.
@@ -210,18 +166,6 @@ pub fn storage_load(store: State<'_, Arc<AppStore>>) -> StoredVault {
             values: None,
         },
     }
-}
-
-/// Sets (or, for null, removes) several values in one atomic write.
-#[tauri::command]
-pub fn storage_write(
-    store: State<'_, Arc<AppStore>>,
-    changes: BTreeMap<String, Option<String>>,
-) -> Result<(), StorageError> {
-    if store.already_open {
-        return Err(StorageError::AlreadyOpen);
-    }
-    store.store().write(&changes).map_err(StorageError::Store)
 }
 
 /// Creates the vault file from the values an older version kept in

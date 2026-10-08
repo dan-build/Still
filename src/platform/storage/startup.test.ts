@@ -14,21 +14,11 @@ class FakeFile implements VaultFileApi {
   values: StoredValues | null = null
   status: FileLoad['status'] | null = null
   failImport = false
-  failWrite = false
   imports: StoredValues[] = []
 
   async load(): Promise<FileLoad> {
     if (this.status && this.status !== 'values') return { status: this.status } as FileLoad
     return this.values ? { status: 'values', values: { ...this.values } } : { status: 'nothing' }
-  }
-  async write(changes: Record<string, string | null>) {
-    if (this.failWrite) throw new VaultFileError('failed')
-    const next = { ...(this.values ?? {}) }
-    for (const [k, v] of Object.entries(changes)) {
-      if (v === null) delete next[k]
-      else next[k] = v
-    }
-    this.values = next
   }
   async importLegacy(values: StoredValues) {
     if (this.values) throw new VaultFileError('exists')
@@ -39,7 +29,7 @@ class FakeFile implements VaultFileApi {
 }
 
 describe('opening the vault storage at start-up', () => {
-  it('starts a new install with an empty file storage, writing nothing yet', async () => {
+  it('starts a new install with no file, writing nothing yet', async () => {
     const file = new FakeFile()
     const legacy = fakeWebStorage({ 'unrelated-app-key': 'x' })
     const started = await openVaultStorage(file, legacy, NOW)
@@ -56,8 +46,7 @@ describe('opening the vault storage at start-up', () => {
 
     expect(started).toMatchObject({ kind: 'ready', notice: 'moved' })
     expect(file.imports).toEqual([{ ...realVault, ...setAside }])
-    if (started.kind !== 'ready') throw new Error('ready')
-    expect(started.storage.get('still-lenses')).toBe(realVault['still-lenses'])
+    expect(file.values).toEqual({ ...realVault, ...setAside })
     // The old copy is untouched, apart from the marker.
     for (const [key, value] of Object.entries(realVault)) expect(legacy.getItem(key)).toBe(value)
     expect(JSON.parse(legacy.getItem(MOVED_MARKER)!)).toEqual({
@@ -77,9 +66,9 @@ describe('opening the vault storage at start-up', () => {
     const legacy = fakeWebStorage({ ...realVault })
     await openVaultStorage(file, legacy, NOW)
     file.values!['still-lenses'] = '[]'
-    const started = await openVaultStorage(file, legacy, NOW)
-    if (started.kind !== 'ready') throw new Error('ready')
-    expect(started.storage.get('still-lenses')).toBe('[]')
+    expect(await openVaultStorage(file, legacy, NOW)).toEqual({ kind: 'ready' })
+    expect(file.imports).toHaveLength(1)
+    expect(file.values!['still-lenses']).toBe('[]')
   })
 
   it('says once when an older version changed the old copy after the move', async () => {
@@ -120,17 +109,5 @@ describe('opening the vault storage at start-up', () => {
     expect(await openVaultStorage(failing, legacy, NOW)).toEqual({ kind: 'failed' })
     // No marker, so the move is tried again next time.
     expect(legacy.getItem(MOVED_MARKER)).toBeNull()
-  })
-
-  it('writes through the file first, and changes nothing when the file refuses', async () => {
-    const file = new FakeFile()
-    const started = await openVaultStorage(file, fakeWebStorage(), NOW)
-    if (started.kind !== 'ready') throw new Error('ready')
-    await started.storage.write({ a: '1' })
-    expect(file.values).toEqual({ a: '1' })
-    file.failWrite = true
-    await expect(started.storage.write({ a: '2', b: '3' })).rejects.toThrow()
-    expect(started.storage.get('a')).toBe('1')
-    expect(started.storage.get('b')).toBeNull()
   })
 })

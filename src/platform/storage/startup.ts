@@ -10,8 +10,7 @@
 //   quietly bring back the older copy; let the user choose.
 // - Nothing anywhere: a new install; the file appears with the first vault.
 
-import type { VaultStorage } from './backend'
-import { fileVaultStorage, VaultFileError, type StoredValues, type VaultFileApi } from '@/platform/tauri/vaultFile'
+import { VaultFileError, type StoredValues, type VaultFileApi } from '@/platform/tauri/vaultFile'
 
 /** Set in localStorage once the vault has moved to the file. */
 export const MOVED_MARKER = 'still-moved-to-file'
@@ -23,7 +22,8 @@ interface Moved {
 }
 
 export type Startup =
-  | { kind: 'ready'; storage: VaultStorage; notice?: 'moved' | 'old-copy-changed' }
+  /** The vault file is ready; Rust's vault backend reads and writes it from here. */
+  | { kind: 'ready'; notice?: 'moved' | 'old-copy-changed' }
   | { kind: 'already-open' }
   | { kind: 'unreadable' }
   | { kind: 'file-missing'; movedAt: string }
@@ -80,14 +80,14 @@ export async function openVaultStorage(file: VaultFileApi, legacy: Storage, now:
     if (marker && marker.fingerprint !== (await fingerprint(legacyValues(legacy)))) {
       // Show once: the marker now matches the old copy as it is.
       await setMarker(legacy, legacyValues(legacy), marker.movedAt)
-      return { kind: 'ready', storage: fileVaultStorage(file, loaded.values), notice: 'old-copy-changed' }
+      return { kind: 'ready', notice: 'old-copy-changed' }
     }
-    return { kind: 'ready', storage: fileVaultStorage(file, loaded.values) }
+    return { kind: 'ready' }
   }
 
   if (marker) return { kind: 'file-missing', movedAt: marker.movedAt }
   const values = legacyValues(legacy)
-  if (Object.keys(values).length === 0) return { kind: 'ready', storage: fileVaultStorage(file, {}) }
+  if (Object.keys(values).length === 0) return { kind: 'ready' }
   return moveOldCopy(file, legacy, values, now)
 }
 
@@ -108,5 +108,5 @@ export async function moveOldCopy(
     return { kind: 'failed' }
   }
   await setMarker(legacy, values, now().toISOString())
-  return { kind: 'ready', storage: fileVaultStorage(file, values), notice: 'moved' }
+  return { kind: 'ready', notice: 'moved' }
 }

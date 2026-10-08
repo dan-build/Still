@@ -15,18 +15,14 @@ describe('the vault file commands', () => {
     expect(invoke).toHaveBeenCalledWith('storage_load', undefined)
   })
 
-  it('sends writes and imports with the arguments Rust expects', async () => {
+  it('sends imports with the arguments Rust expects', async () => {
     invoke.mockResolvedValue(null)
-    await vaultFile.write({ a: '1', b: null })
     await vaultFile.importLegacy({ a: '1' })
-    expect(invoke.mock.calls).toEqual([
-      ['storage_write', { changes: { a: '1', b: null } }],
-      ['storage_import_legacy', { values: { a: '1' } }],
-    ])
+    expect(invoke.mock.calls).toEqual([['storage_import_legacy', { values: { a: '1' } }]])
   })
 
   it('turns a Rust error code into a VaultFileError', async () => {
     invoke.mockRejectedValue('unreadable-data')
-    await expect(vaultFile.write({})).rejects.toEqual(new VaultFileError('unreadable-data'))
+    await expect(vaultFile.importLegacy({})).rejects.toEqual(new VaultFileError('unreadable-data'))
   })
 })

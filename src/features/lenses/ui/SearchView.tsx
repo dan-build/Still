@@ -1,4 +1,4 @@
-import type { LensView as Lens } from '@/platform/storage/backend'
+import type { LensView as Lens } from '@/features/vault/model/types'
 import { Button } from '@/shared/ui/Button'
 import { Icon } from '@/shared/ui/Icon'
 import type { ToastMessage } from '@/shared/ui/Toast'

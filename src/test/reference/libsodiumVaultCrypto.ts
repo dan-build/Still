@@ -2,8 +2,7 @@
 // closure. The app uses the Rust one; tests use this, on fake or real crypto.
 
 import type * as CryptoModule from './crypto'
-import { AUTH_FAILURE_MESSAGE } from '@/features/vault/model/format'
-import { VaultCryptoError, type VaultCrypto } from '@/platform/crypto/vaultCrypto'
+import { AUTH_FAILURE_MESSAGE, VaultCryptoError, type VaultCrypto } from './vaultCrypto'
 
 export type CryptoApi = Pick<
   typeof CryptoModule,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { LensView } from '@/platform/storage/backend'
+import type { LensView } from '@/features/vault/model/types'
 import { searchVault } from './search'
 
 const lens = (id: string, name: string, labels: string[]): LensView => ({

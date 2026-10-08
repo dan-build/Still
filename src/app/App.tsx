@@ -5,8 +5,8 @@ import type { SecretOps } from '@/features/lenses/ui/SecretList'
 import LensNameDialog from '@/features/lenses/ui/LensNameDialog'
 import ArchiveView from '@/features/recycle-bin/ui/ArchiveView'
 import { onAutoLocked, reportActivity } from '@/platform/tauri/session'
-import { createTauriVaultCrypto } from '@/platform/tauri/vaultCrypto'
-import { createVaultBackend, type LensView as Lens, type VaultBackend, type VaultStorage, type VaultView } from '@/platform/storage/backend'
+import { createTauriVaultApi, type VaultApi } from '@/platform/tauri/vaultApi'
+import type { LensView as Lens, VaultState, VaultView } from '@/features/vault/model/types'
 import { Button } from '@/shared/ui/Button'
 import { Icon } from '@/shared/ui/Icon'
 import { Toaster, type ToastMessage } from '@/shared/ui/Toast'
@@ -24,14 +24,12 @@ const NOTICES = {
 }
 
 interface StillHomeProps {
-  /** Where the vault is stored: the vault file, opened by StillApp. */
-  storage: VaultStorage
   /** Shown once, after the vault moved into its file or an older version changed the old copy. */
   notice?: keyof typeof NOTICES
 }
 
-export default function StillHome({ storage, notice }: StillHomeProps) {
-  const backendRef = useRef<VaultBackend | null>(null)
+export default function StillHome({ notice }: StillHomeProps) {
+  const apiRef = useRef<VaultApi | null>(null)
   const [view, setView] = useState<VaultView>({ lenses: [], bin: [], unreadable: 0 })
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [selection, setSelection] = useState<Selection | null>(null)
@@ -43,17 +41,20 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
   const [shownNotice, setShownNotice] = useState(notice)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const toastId = useRef(0)
+  // Until Rust has said which screen to show.
+  const [isStarting, setIsStarting] = useState(true)
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
   const [isOrphaned, setIsOrphaned] = useState(false)
 
-  // Created on first use. The keys live in Rust, behind the Tauri commands.
-  const backend = () => {
-    if (!backendRef.current) backendRef.current = createVaultBackend(storage, createTauriVaultCrypto())
-    return backendRef.current
+  // Created on first use. The vault and its keys live in Rust, behind the Tauri commands.
+  const api = () => {
+    if (!apiRef.current) apiRef.current = createTauriVaultApi()
+    return apiRef.current
   }
 
-  const refresh = () => setView(backend().view())
+  // Every change returns the vault as it now is.
+  const show = (state: VaultState) => setView(state.view)
 
   const lenses = view.lenses
   const recycleBin = view.bin
@@ -66,27 +67,27 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
 
   // Reveal, copy, edit and delete, for the Lens view and search alike.
   const ops: SecretOps = {
-    reveal: (lensId, itemId) => backend().revealItem(lensId, itemId),
-    copy: (lensId, itemId) => backend().copyItem(lensId, itemId),
-    update: async (lensId, itemId, edit) => {
-      await backend().updateItem(lensId, itemId, edit)
-      refresh()
-    },
-    remove: async (lensId, itemId) => {
-      await backend().deleteItem(lensId, itemId)
-      refresh()
-    },
+    reveal: (lensId, itemId) => api().revealItem(lensId, itemId),
+    copy: (lensId, itemId) => api().copyItem(lensId, itemId),
+    update: async (lensId, itemId, edit) => show(await api().updateItem(lensId, itemId, edit)),
+    remove: async (lensId, itemId) => show(await api().deleteItem(lensId, itemId)),
   }
 
   useEffect(() => {
     // Rust keeps its keys across a page reload, but this page starts locked,
     // so have Rust forget them too. If that fails, the next unlock replaces them.
-    backend().lock().catch(() => {})
-    const status = backend().status()
-    setIsFirstLaunch(status === 'empty')
-    setIsOrphaned(status === 'orphaned')
-    // Once, when the app starts: backend() is the same object for its life.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    api()
+      .lock()
+      .catch(() => {})
+      .then(() => api().state())
+      .then(({ status }) => {
+        setIsFirstLaunch(status === 'empty')
+        setIsOrphaned(status === 'orphaned')
+      })
+      // The unlock screen then reports what goes wrong.
+      .catch(() => {})
+      .finally(() => setIsStarting(false))
+    // Once, when the app starts: api() is the same object for its life.
   }, [])
 
   // One toast at a time. Errors stay up longer; the copy toast stays until
@@ -104,12 +105,13 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
   const createLens = async (name: string) => {
     let id: string
     try {
-      id = await backend().createLens(name)
+      const created = await api().createLens(name)
+      id = created.id
+      show(created.state)
     } catch {
       showToast(SAVE_FAILED)
       return false
     }
-    refresh()
     setIsCreateOpen(false)
     setSelection({ kind: 'lens', id })
     return true
@@ -117,41 +119,37 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
 
   const forgetLens = async (lens: Lens) => {
     try {
-      await backend().forgetLens(lens.id)
+      show(await api().forgetLens(lens.id))
     } catch {
       showToast(SAVE_FAILED)
       return
     }
-    refresh()
     setSelection(null)
     showToast({ message: `${lens.name} moved to Archive` })
   }
 
   const restoreFromRecycleBin = async (recycledLens: Lens) => {
     try {
-      await backend().restoreLens(recycledLens.id)
+      show(await api().restoreLens(recycledLens.id))
     } catch {
       showToast(SAVE_FAILED)
       return
     }
-    refresh()
     showToast({ message: `${recycledLens.name} restored` })
   }
 
   const deleteForever = async (lens: Lens) => {
     try {
-      await backend().deleteLensForever(lens.id)
+      show(await api().deleteLensForever(lens.id))
     } catch {
       showToast(SAVE_FAILED)
       return
     }
-    refresh()
     showToast({ message: `${lens.name} deleted for good` })
   }
 
   const handleCreatePassword = async (password: string) => {
-    await backend().create(password)
-    refresh()
+    show(await api().create(password))
     setIsUnlocked(true)
     setIsFirstLaunch(false)
     showToast({ message: 'Vault created' })
@@ -160,26 +158,26 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
   const handleUnlock = async (password: string): Promise<UnlockOutcome> => {
     let result
     try {
-      result = await backend().unlock(password)
+      result = await api().unlock(password)
     } catch {
       return 'failed'
     }
     if (!result.ok) return result.reason === 'no-vault' ? 'failed' : result.reason
-    refresh()
+    show(result.state)
     setIsUnlocked(true)
     return 'ok'
   }
 
   const handleSetAside = async () => {
-    await backend().setAside()
+    await api().setAside()
     setIsOrphaned(false)
     setIsFirstLaunch(true)
   }
 
-  // Lock forgets everything shown: the crypto zeroes its keys, and the open
-  // Lens, dialogs and any revealed values go with the unmounted UI.
+  // Lock forgets everything shown: Rust drops (and zeroes) its keys, and the
+  // open Lens, dialogs and any revealed values go with the unmounted UI.
   const lock = () => {
-    backend().lock().catch(() => showToast({ message: "Couldn't clear the keys from memory. Quit Still to be sure.", tone: 'error' }))
+    api().lock().catch(() => showToast({ message: "Couldn't clear the keys from memory. Quit Still to be sure.", tone: 'error' }))
     setIsUnlocked(false)
     setSelection(null)
     setQuery('')
@@ -230,6 +228,8 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUnlocked])
 
+  if (isStarting) return null
+
   return (
     <>
       {!isUnlocked ? (
@@ -273,21 +273,17 @@ export default function StillHome({ storage, notice }: StillHomeProps) {
               <LensView
                 key={currentLens.id}
                 lens={currentLens}
-                onAddItem={async (item) => {
-                  await backend().addItem(currentLens.id, item)
-                  refresh()
-                }}
+                onAddItem={async (item) => show(await api().addItem(currentLens.id, item))}
                 ops={ops}
                 onToast={showToast}
                 onForget={() => forgetLens(currentLens)}
                 onRename={async (name) => {
                   try {
-                    await backend().renameLens(currentLens.id, name)
+                    show(await api().renameLens(currentLens.id, name))
                   } catch {
                     showToast(SAVE_FAILED)
                     return false
                   }
-                  refresh()
                   return true
                 }}
               />
