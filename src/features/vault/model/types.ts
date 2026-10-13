@@ -30,8 +30,11 @@ export interface VaultView {
   unreadable: number
 }
 
-/** 'orphaned': vault data exists but the master key or salt is missing, so it can't be opened. */
-export type VaultStatus = 'empty' | 'locked' | 'unlocked' | 'orphaned'
+/**
+ * 'orphaned': vault data exists but the master key or salt is missing, so it can't be opened.
+ * 'unreadable': the vault file can't be read; nothing is offered that could write over it.
+ */
+export type VaultStatus = 'empty' | 'locked' | 'unlocked' | 'orphaned' | 'unreadable'
 
 export interface VaultState {
   status: VaultStatus
@@ -56,4 +59,10 @@ export interface ItemEdit {
  * unreadable-data: stored vault data is damaged; nothing was opened or changed.
  * failed: something else went wrong, e.g. not enough memory for Argon2id.
  */
-export type UnlockResult = { ok: true; state: VaultState } | { ok: false; reason: 'wrong-password' | 'unreadable-data' | 'failed' | 'no-vault' }
+export type UnlockResult =
+  /**
+   * notice: the vault was converted to format v2 ('upgraded'; `kept` names the
+   * file kept from before), or converting failed and it is unchanged.
+   */
+  | { ok: true; state: VaultState; notice?: 'upgraded' | 'upgrade-failed'; kept?: string }
+  | { ok: false; reason: 'wrong-password' | 'unreadable-data' | 'failed' | 'no-vault' }

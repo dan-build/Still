@@ -78,7 +78,7 @@ pub fn derive_key_from_password(password: &str, salt: &[u8; SALT_BYTES]) -> Resu
 /// Exposed for test vectors; everything else uses a random nonce.
 #[doc(hidden)]
 pub fn wrap_key_with_nonce(key: &Key, wrapping_key: &Key, nonce: [u8; NONCE_BYTES]) -> String {
-    let sealed = sodium::aead_encrypt(&key.0[..], &nonce, &wrapping_key.0);
+    let sealed = sodium::aead_encrypt(&key.0[..], &[], &nonce, &wrapping_key.0);
     let mut blob = KeyBlob {
         nonce,
         sealed: [0; KEY_BYTES + 16],
@@ -89,7 +89,7 @@ pub fn wrap_key_with_nonce(key: &Key, wrapping_key: &Key, nonce: [u8; NONCE_BYTE
 
 fn unwrap_key(blob: &str, wrapping_key: &Key) -> Result<Key, Error> {
     let blob = parse_key_blob(blob)?;
-    let mut opened = sodium::aead_decrypt(&blob.sealed, &blob.nonce, &wrapping_key.0)
+    let mut opened = sodium::aead_decrypt(&blob.sealed, &[], &blob.nonce, &wrapping_key.0)
         .map_err(|_| Error::WrongKey)?;
     let mut key = Key(Box::new([0; KEY_BYTES]));
     key.0.copy_from_slice(&opened);
@@ -170,7 +170,7 @@ pub fn encrypt_item_with(
         return Err(Error::EmptyPlaintext);
     }
     let subkey = derive_subkey(lens_key, subkey_id);
-    let sealed = sodium::aead_encrypt(plaintext.as_bytes(), &nonce, &subkey.0);
+    let sealed = sodium::aead_encrypt(plaintext.as_bytes(), &[], &nonce, &subkey.0);
     Ok(encode_item_blob(&ItemBlob {
         subkey_id,
         nonce,
@@ -181,8 +181,8 @@ pub fn encrypt_item_with(
 pub fn decrypt_item(blob: &str, lens_key: &Key) -> Result<String, Error> {
     let blob = parse_item_blob(blob)?;
     let subkey = derive_subkey(lens_key, blob.subkey_id);
-    let bytes =
-        sodium::aead_decrypt(&blob.sealed, &blob.nonce, &subkey.0).map_err(|_| Error::WrongKey)?;
+    let bytes = sodium::aead_decrypt(&blob.sealed, &[], &blob.nonce, &subkey.0)
+        .map_err(|_| Error::WrongKey)?;
     String::from_utf8(bytes).map_err(|e| {
         let mut bytes = e.into_bytes();
         sodium::memzero(&mut bytes);

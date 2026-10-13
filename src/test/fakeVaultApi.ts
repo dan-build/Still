@@ -52,6 +52,10 @@ export class FakeVault implements VaultApi {
   lockDuringCreate = false
   /** state() fails, as when the command can't be reached. */
   failState = false
+  /** What the next successful unlock tells the user (the conversion to v2). */
+  unlockNotice: 'upgraded' | 'upgrade-failed' | undefined
+  /** The status while locked is 'unreadable' (the vault file became unreadable). */
+  unreadableFile = false
   /** The command of every call, in order. */
   calls: string[] = []
   /** What copyItem put on the clipboard. */
@@ -68,6 +72,7 @@ export class FakeVault implements VaultApi {
 
   private status(): VaultStatus {
     if (this.unlocked) return 'unlocked'
+    if (this.unreadableFile) return 'unreadable'
     if (this.password !== null) return 'locked'
     return this.orphaned ? 'orphaned' : 'empty'
   }
@@ -141,7 +146,10 @@ export class FakeVault implements VaultApi {
     if (this.unreadableData) return { ok: false, reason: 'unreadable-data' } as const
     if (password !== this.password) return { ok: false, reason: 'wrong-password' } as const
     this.unlocked = true
-    return { ok: true, state: this.now() } as const
+    const notice = this.unlockNotice
+    this.unlockNotice = undefined
+    const kept = notice === 'upgraded' ? { kept: 'vault-v1-2.json' } : {}
+    return { ok: true, state: this.now(), ...(notice ? { notice } : {}), ...kept } as const
   }
 
   async lock() {

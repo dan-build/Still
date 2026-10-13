@@ -33,6 +33,8 @@ pub fn run() {
             commands::item_copy,
             commands::startup_open,
             commands::startup_use_old_copy,
+            commands::startup_open_old_format,
+            commands::startup_restore_v1,
             commands::vault_state,
             commands::vault_set_aside,
             commands::lens_create,

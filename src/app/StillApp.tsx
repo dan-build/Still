@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { openVault, restoreOldCopy, type Startup } from '@/platform/tauri/startup'
+import { openOldFormat, openVault, restoreKeptCopy, restoreOldCopy, type Startup } from '@/platform/tauri/startup'
 import { Button } from '@/shared/ui/Button'
 import StillHome from './App'
 import LockLayout from './lock/LockLayout'
@@ -36,10 +36,31 @@ export default function StillApp() {
         </Message>
       )
     case 'unreadable':
-      return (
+      return startup.canRestore ? (
+        <Message
+          title="Still can't open its vault file"
+          action={{ label: 'Use the kept copy', busy, onClick: () => run(() => restoreKeptCopy(window.localStorage)) }}
+        >
+          Nothing was changed. The file is missing, damaged, or from a newer version of Still. Still kept an earlier copy: the file as it
+          was before your last change, or the file from before the upgrade to the new format. Either may lack your most recent changes.
+          Restore vault.json from a backup if you have one, or use the kept copy. Nothing is deleted either way.
+        </Message>
+      ) : (
         <Message title="Still can't read its vault file">
-          Nothing was changed. The file and its previous version (vault.json.bak) are in Still's app data folder. Keep both safe, and
-          don't create a new vault until they're dealt with.
+          Nothing was changed. It may be damaged, or from a newer version of Still. The file and its previous version (vault.json.bak) are
+          in Still's app data folder. Keep both safe, and don't create a new vault until they're dealt with.
+        </Message>
+      )
+    case 'old-format':
+      return (
+        <Message
+          title="This vault is in the old format"
+          action={{ label: 'Open anyway', busy, onClick: () => run(() => openOldFormat(window.localStorage, false)) }}
+          secondary={{ label: 'Open and upgrade it', onClick: () => run(() => openOldFormat(window.localStorage, true)) }}
+        >
+          Your vault was upgraded to the new format on {new Date(startup.convertedAt).toLocaleDateString()}, but the file there now is in the
+          old format: an older copy, or one that was changed. Open it only if you put it back on purpose. Open anyway keeps it as it is;
+          upgrading makes it your vault from now on.
         </Message>
       )
     case 'file-missing':
@@ -66,10 +87,13 @@ function Message({
   title,
   children,
   action,
+  secondary,
 }: {
   title: string
   children?: React.ReactNode
   action?: { label: string; busy: boolean; onClick: () => void }
+  /** A second, quieter choice next to the action. */
+  secondary?: { label: string; onClick: () => void }
 }) {
   // "Opening Still…" shows the mark; every other message is a problem.
   const problem = Boolean(children)
@@ -80,7 +104,12 @@ function Message({
       width={400}
       actions={
         action && (
-          <div className="flex justify-center">
+          <div className="flex justify-center gap-2">
+            {secondary && (
+              <Button size="md" variant="ghost" onClick={secondary.onClick} disabled={action.busy}>
+                {secondary.label}
+              </Button>
+            )}
             <Button size="md" onClick={action.onClick} disabled={action.busy}>
               {action.busy ? 'Working…' : action.label}
             </Button>

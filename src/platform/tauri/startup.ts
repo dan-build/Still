@@ -8,11 +8,16 @@ import { invoke } from '@tauri-apps/api/core'
 
 /** Set in localStorage once the vault has moved to the file. */
 export const MOVED_MARKER = 'still-moved-to-file'
+/** Set in localStorage once the vault was converted to format v2 (vaultApi.ts writes it). */
+export const CONVERTED_MARKER = 'still-converted-v2'
 
 export type Startup =
-  | { kind: 'ready'; notice?: 'moved' | 'old-copy-changed' }
+  | { kind: 'ready'; notice?: 'moved' | 'old-copy-changed' | 'restored' }
   | { kind: 'already-open' }
-  | { kind: 'unreadable' }
+  /** canRestore: the v1 file a conversion kept can be put back. */
+  | { kind: 'unreadable'; canRestore?: boolean }
+  /** The file is in the old format, but the vault was converted on convertedAt: it opens only if the user says so. */
+  | { kind: 'old-format'; convertedAt: string }
   | { kind: 'file-missing'; movedAt: string }
   | { kind: 'failed' }
 
@@ -39,12 +44,12 @@ function wellFormed(text: string): string {
   return out
 }
 
-/** Every value an older version stored (they all start with "still-"), except the marker. */
+/** Every value an older version stored (they all start with "still-"), except the two markers. */
 function legacyValues(legacy: Storage): Record<string, string> {
   const values: Record<string, string> = {}
   for (let i = 0; i < legacy.length; i++) {
     const key = legacy.key(i)
-    if (key === null || !key.startsWith('still-') || key === MOVED_MARKER) continue
+    if (key === null || !key.startsWith('still-') || key === MOVED_MARKER || key === CONVERTED_MARKER) continue
     const value = legacy.getItem(key)
     if (value !== null) values[wellFormed(key)] = wellFormed(value)
   }
@@ -72,10 +77,44 @@ async function run(command: string, args: Record<string, unknown>, legacy: Stora
 /** Opens the vault file, moving an older version's vault into it the first time. */
 export function openVault(legacy: Storage): Promise<Startup> {
   const marker = legacy.getItem(MOVED_MARKER)
-  return run('startup_open', { legacy: legacyValues(legacy), marker: marker === null ? null : wellFormed(marker) }, legacy)
+  const converted = legacy.getItem(CONVERTED_MARKER)
+  return run(
+    'startup_open',
+    {
+      legacy: legacyValues(legacy),
+      marker: marker === null ? null : wellFormed(marker),
+      converted: converted === null ? null : wellFormed(converted),
+    },
+    legacy,
+  )
 }
 
 /** The user's choice when the moved vault file has gone: bring back the older copy. */
 export function restoreOldCopy(legacy: Storage): Promise<Startup> {
   return run('startup_use_old_copy', { legacy: legacyValues(legacy) }, legacy)
+}
+
+/**
+ * The user's choice for an old-format vault file: open it as it is (it isn't
+ * converted), or open and upgrade it, making that copy the vault from now on.
+ */
+export function openOldFormat(legacy: Storage, upgrade: boolean): Promise<Startup> {
+  return run('startup_open_old_format', { upgrade }, legacy)
+}
+
+/**
+ * The user's choice for a vault file that can't be opened: put back the newest
+ * copy Still kept. When that is the file from before the upgrade, going back
+ * was their choice, so the conversion marker goes.
+ */
+export async function restoreKeptCopy(legacy: Storage): Promise<Startup> {
+  const { forgetConversion, ...startup } = (await run('startup_restore_v1', {}, legacy)) as Startup & { forgetConversion?: boolean }
+  if (startup.kind === 'ready' && forgetConversion) {
+    try {
+      legacy.removeItem(CONVERTED_MARKER)
+    } catch {
+      // Without this, the next start asks before opening the restored copy.
+    }
+  }
+  return startup
 }

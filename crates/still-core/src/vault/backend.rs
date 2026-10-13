@@ -33,6 +33,7 @@ use super::time;
 use crate::crypto::is_js_whitespace;
 use crate::session::{SecretText, SessionError, Unlocked, WrappedLensKey};
 use crate::sodium;
+use crate::v2;
 
 /// The stored values, under the names older versions used in localStorage.
 pub mod keys {
@@ -56,6 +57,41 @@ pub trait Storage {
     /// Every stored key, for set-aside to find a free name.
     fn keys(&self) -> Vec<String>;
     fn write(&mut self, changes: &[(String, Option<String>)]) -> Result<(), StorageError>;
+
+    /// The stored vault, when it is in format v2. While it is, the v1 values
+    /// above are empty and writing them fails.
+    fn v2(&self) -> Option<v2::File> {
+        None
+    }
+    /// Replaces the stored v2 vault in one all-or-nothing write.
+    fn write_v2(&mut self, _file: &v2::File) -> Result<(), StorageError> {
+        Err(StorageError)
+    }
+    /// Whether a new vault is created in format v2 here.
+    fn creates_v2(&self) -> bool {
+        false
+    }
+    /// Whether a v1 vault is converted to v2 here on its first unlock.
+    fn converts_v1(&self) -> bool {
+        false
+    }
+    /// The stored vault file exists but can't be read. Nothing is offered
+    /// that would write over it, such as creating a new vault.
+    fn unreadable(&self) -> bool {
+        false
+    }
+    /// Replaces the stored v1 vault with this v2 file, keeping the v1 file
+    /// (docs/vault-format-v2.md, "Converting from v1"). Refuses unless every
+    /// value in `expected` is still exactly as it was read before the
+    /// password step (a missing one still missing). On any failure the v1
+    /// vault is left as it was. Returns the kept copy's name.
+    fn convert_to_v2(
+        &mut self,
+        _file: &v2::File,
+        _expected: &[(String, Option<String>)],
+    ) -> Result<String, StorageError> {
+        Err(StorageError)
+    }
 }
 
 /// The keys of an unlocked vault. [`Unlocked`] is the real one; tests may
@@ -73,6 +109,17 @@ pub trait Keys: Sized {
     fn new_lens_key(&mut self, lens_id: &str) -> String;
     fn encrypt_item(&self, lens_id: &str, plaintext: &SecretText) -> Result<String, SessionError>;
     fn decrypt_item(&self, lens_id: &str, blob: &str) -> Result<SecretText, SessionError>;
+
+    /// A new vault in format v2, with an empty body; it opens before it's returned.
+    fn create_v2(password: &SecretText) -> Result<(Self, v2::File), SessionError>;
+    /// Opens a v2 file's app key and body; Lens keys come after, from the body.
+    fn open_v2(file: &v2::File, password: &SecretText) -> Result<(Self, v2::Body), SessionError>;
+    fn open_lens_keys(&mut self, lenses: &[WrappedLensKey<'_>]) -> Vec<bool>;
+    /// The file with this body sealed in; its settings and wrapped key unchanged.
+    fn seal_v2(&self, file: &v2::File, body: &v2::Body) -> v2::File;
+    /// This vault, opened from v1, as a new v2 file holding these lists,
+    /// checked to open to the same key and lists before it's returned.
+    fn convert_v2(&self, password: &SecretText, body: &v2::Body) -> Result<v2::File, SessionError>;
 }
 
 impl Keys for Unlocked {
@@ -99,6 +146,26 @@ impl Keys for Unlocked {
 
     fn decrypt_item(&self, lens_id: &str, blob: &str) -> Result<SecretText, SessionError> {
         Unlocked::decrypt_item(self, lens_id, blob)
+    }
+
+    fn create_v2(password: &SecretText) -> Result<(Self, v2::File), SessionError> {
+        Unlocked::create_v2(password)
+    }
+
+    fn open_v2(file: &v2::File, password: &SecretText) -> Result<(Self, v2::Body), SessionError> {
+        Unlocked::open_v2(file, password)
+    }
+
+    fn open_lens_keys(&mut self, lenses: &[WrappedLensKey<'_>]) -> Vec<bool> {
+        Unlocked::open_lens_keys(self, lenses)
+    }
+
+    fn seal_v2(&self, file: &v2::File, body: &v2::Body) -> v2::File {
+        Unlocked::seal_v2(self, file, body)
+    }
+
+    fn convert_v2(&self, password: &SecretText, body: &v2::Body) -> Result<v2::File, SessionError> {
+        Unlocked::convert_v2(self, password, body)
     }
 }
 
@@ -162,6 +229,8 @@ pub enum Status {
     Unlocked,
     /// Vault data is stored, but its master key or salt is missing.
     Orphaned,
+    /// The vault file can't be read; nothing is done that could write over it.
+    Unreadable,
 }
 
 impl Status {
@@ -171,6 +240,7 @@ impl Status {
             Self::Locked => "locked",
             Self::Unlocked => "unlocked",
             Self::Orphaned => "orphaned",
+            Self::Unreadable => "unreadable",
         }
     }
 }
@@ -218,41 +288,167 @@ impl View {
 /// What `prepare_unlock` read, for the slow password step and `finish_unlock`.
 pub struct UnlockPlan {
     generation: u64,
+    source: Source,
+}
+
+enum Source {
+    /// v1: the lists are readable before the password.
+    V1 {
+        stored: Lists,
+        encrypted_master_key: String,
+        salt: String,
+        /// The lists exactly as stored, for converting to v2 (a missing list is "[]").
+        raw: v2::Body,
+        /// Every vault value as it was read, for the conversion to check
+        /// nothing changed meanwhile.
+        expected: Vec<(String, Option<String>)>,
+        /// Convert to v2 during this unlock.
+        convert: bool,
+    },
+    /// v2: the lists are inside the body, opened with the password.
+    V2 { file: v2::File },
+}
+
+/// What the password step opened, for `finish_unlock`.
+pub struct Opened<K> {
+    keys: K,
+    /// One entry per stored Lens (Lenses, then Archive): true if its key opened.
+    opened: Vec<bool>,
     stored: Lists,
-    encrypted_master_key: String,
-    salt: String,
-    /// One entry per stored Lens (Lenses, then Archive): its id and wrapped
-    /// key, when both are strings.
-    wrapped: Vec<Option<(String, String)>>,
+    v2: bool,
+    /// v2: the lists exactly as stored in the body.
+    raw: Option<v2::Body>,
+    /// A v1 vault's conversion: not tried (None), or the checked v2 file
+    /// with the lists it holds, or a failure.
+    converted: Option<Result<(v2::File, v2::Body), SessionError>>,
+}
+
+/// One entry per stored Lens (Lenses, then Archive): its id and wrapped key,
+/// when both are strings. Fails on a null entry (the TypeScript backend did:
+/// it read fields of every entry before opening any).
+fn wrapped_keys(stored: &Lists) -> Result<Vec<Option<(String, String)>>, UnlockFailure> {
+    let all = stored.lenses.iter().chain(&stored.bin);
+    if all.clone().any(Value::is_null) {
+        return Err(UnlockFailure::Failed);
+    }
+    Ok(all
+        .map(|lens| {
+            let key = lens.get("encryptedMasterKey")?.as_str()?;
+            Some((id_of(lens)?.to_owned(), key.to_owned()))
+        })
+        .collect())
+}
+
+/// Opens the Lens keys that can be opened; one entry per stored Lens.
+fn open_lenses<K: Keys>(keys: &mut K, wrapped: &[Option<(String, String)>]) -> Vec<bool> {
+    let lenses: Vec<WrappedLensKey<'_>> = wrapped
+        .iter()
+        .flatten()
+        .map(|(id, key)| WrappedLensKey {
+            id,
+            encrypted_master_key: key,
+        })
+        .collect();
+    // Spread the results back over every entry; those not passed didn't open.
+    let mut results = keys.open_lens_keys(&lenses).into_iter();
+    wrapped
+        .iter()
+        .map(|entry| entry.is_some() && results.next().unwrap_or(false))
+        .collect()
 }
 
 impl UnlockPlan {
-    /// The slow part: Argon2id, then every Lens key. Needs no backend.
-    pub fn open<K: Keys>(&self, password: &SecretText) -> Result<(K, Vec<bool>), SessionError> {
-        let lenses: Vec<WrappedLensKey<'_>> = self
-            .wrapped
-            .iter()
-            .flatten()
-            .map(|(id, key)| WrappedLensKey {
-                id,
-                encrypted_master_key: key,
-            })
-            .collect();
-        let (keys, opened) = K::open(&self.encrypted_master_key, &self.salt, password, &lenses)?;
-        // Spread the results back over every entry; those not passed didn't open.
-        let mut results = opened.into_iter();
-        let all = self
-            .wrapped
-            .iter()
-            .map(|entry| entry.is_some() && results.next().unwrap_or(false))
-            .collect();
-        Ok((keys, all))
+    /// The slow part: Argon2id, then (in v2) the body, then every Lens key.
+    /// Needs no backend.
+    pub fn open<K: Keys>(&self, password: &SecretText) -> Result<Opened<K>, SessionError> {
+        match &self.source {
+            Source::V1 {
+                stored,
+                encrypted_master_key,
+                salt,
+                raw,
+                convert,
+                ..
+            } => {
+                let wrapped = wrapped_keys(stored).map_err(|_| SessionError::Failed)?;
+                let lenses: Vec<WrappedLensKey<'_>> = wrapped
+                    .iter()
+                    .flatten()
+                    .map(|(id, key)| WrappedLensKey {
+                        id,
+                        encrypted_master_key: key,
+                    })
+                    .collect();
+                let (keys, opened) = K::open(encrypted_master_key, salt, password, &lenses)?;
+                let mut results = opened.into_iter();
+                let opened = wrapped
+                    .iter()
+                    .map(|entry| entry.is_some() && results.next().unwrap_or(false))
+                    .collect();
+                // Converting runs Argon2id twice more (a new salt, then an
+                // independent check); it happens here, outside any lock.
+                let converted = convert.then(|| {
+                    let body = v2::Body {
+                        lenses: raw.lenses.clone(),
+                        bin: raw.bin.clone(),
+                    };
+                    keys.convert_v2(password, &body).map(|file| (file, body))
+                });
+                Ok(Opened {
+                    keys,
+                    opened,
+                    stored: stored.clone(),
+                    v2: false,
+                    raw: None,
+                    converted,
+                })
+            }
+            Source::V2 { file } => {
+                let (mut keys, body) = K::open_v2(file, password)?;
+                // The body is authenticated: lists it can't read are damaged data.
+                let lenses = parse_list(Some(&body.lenses)).map_err(|_| SessionError::Corrupt)?;
+                let bin = parse_list(Some(&body.bin)).map_err(|_| SessionError::Corrupt)?;
+                let stored = Lists { lenses, bin };
+                let wrapped = wrapped_keys(&stored).map_err(|_| SessionError::Failed)?;
+                let opened = open_lenses(&mut keys, &wrapped);
+                Ok(Opened {
+                    keys,
+                    opened,
+                    stored,
+                    v2: true,
+                    raw: Some(body),
+                    converted: None,
+                })
+            }
+        }
     }
 }
 
-/// What `prepare_create` checked, for `finish_create`.
+/// What `prepare_create` checked, for the password step and `finish_create`.
 pub struct CreatePlan {
     generation: u64,
+    v2: bool,
+}
+
+/// A new vault from the password step.
+pub enum Created<K> {
+    /// The keys, the wrapped app key and the salt.
+    V1(K, String, String),
+    V2(K, v2::File),
+}
+
+impl CreatePlan {
+    /// The slow part: Argon2id (twice, to check the new vault opens). Needs
+    /// no backend.
+    pub fn create<K: Keys>(&self, password: &SecretText) -> Result<Created<K>, SessionError> {
+        if self.v2 {
+            let (keys, file) = K::create_v2(password)?;
+            Ok(Created::V2(keys, file))
+        } else {
+            let (keys, blob, salt) = K::create(password)?;
+            Ok(Created::V1(keys, blob, salt))
+        }
+    }
 }
 
 /// The current time, in milliseconds since 1970.
@@ -278,7 +474,31 @@ pub struct Backend<S: Storage, K: Keys> {
     /// a slow create or unlock that something overtook is thrown away (it
     /// would otherwise bring back lists or keys from before).
     generation: u64,
+    /// The unlocked vault is in format v2, so every save reseals its body.
+    v2: bool,
+    /// v2: the file as this vault last opened or saved it. Saves seal onto
+    /// its settings and wrapped key, and refuse if the file on disk has
+    /// another vault's: sealing onto that would make the vault unopenable.
+    v2_file: Option<v2::File>,
+    /// v2: both lists exactly as stored, so a list a change leaves alone is
+    /// written back byte for byte, as in v1.
+    v2_raw: Option<v2::Body>,
+    /// Convert a v1 vault to v2 when it unlocks (where the storage can).
+    convert_v1: bool,
+    /// Something to tell the user once, after an unlock.
+    notice: Option<Notice>,
     clock: Clock,
+}
+
+/// What an unlock has to tell the user, once.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Notice {
+    /// The vault was converted to v2, and the v1 file kept as `kept`. The
+    /// page keeps `marker` (localStorage `still-converted-v2`), so an old v1
+    /// copy asks before it opens.
+    Upgraded { marker: String, kept: String },
+    /// Converting failed; the vault is unchanged (v1) and is tried again next time.
+    UpgradeFailed,
 }
 
 impl<S: Storage, K: Keys> Backend<S, K> {
@@ -289,12 +509,28 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             lists: Lists::default(),
             readable: HashSet::new(),
             generation: 0,
+            v2: false,
+            v2_file: None,
+            v2_raw: None,
+            convert_v1: true,
+            notice: None,
             clock,
         }
     }
 
     pub fn storage(&self) -> &S {
         &self.storage
+    }
+
+    /// Whether to convert a v1 vault to v2 when it unlocks (on by default).
+    /// Off after the user chose to open an old v1 copy as it is.
+    pub fn set_convert_v1(&mut self, convert: bool) {
+        self.convert_v1 = convert;
+    }
+
+    /// What the last unlock has to tell the user, once.
+    pub fn take_notice(&mut self) -> Option<Notice> {
+        self.notice.take()
     }
 
     /// Whether keys are held; unlike `status`, this never reads storage.
@@ -305,6 +541,8 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     pub fn status(&self) -> Status {
         if self.keys.is_some() {
             Status::Unlocked
+        } else if self.storage.unreadable() {
+            Status::Unreadable
         } else if self.has_stored_vault() {
             Status::Locked
         } else if self.has_orphaned_data() {
@@ -315,7 +553,9 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     }
 
     fn has_stored_vault(&self) -> bool {
-        self.storage.get(keys::MASTER_KEY).is_some() && self.storage.get(keys::SALT).is_some()
+        self.storage.v2().is_some()
+            || (self.storage.get(keys::MASTER_KEY).is_some()
+                && self.storage.get(keys::SALT).is_some())
     }
 
     /// Vault data that a new vault would bury: a lone key or salt, or any Lens data.
@@ -337,11 +577,12 @@ impl<S: Storage, K: Keys> Backend<S, K> {
 
     /// Refuses while a vault or orphaned data is stored, so existing data is never buried.
     pub fn prepare_create(&self) -> Result<CreatePlan, VaultError> {
-        if self.has_stored_vault() || self.has_orphaned_data() {
+        if self.storage.unreadable() || self.has_stored_vault() || self.has_orphaned_data() {
             return Err(VaultError::VaultExists);
         }
         Ok(CreatePlan {
             generation: self.generation,
+            v2: self.storage.creates_v2(),
         })
     }
 
@@ -351,21 +592,38 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     pub fn finish_create(
         &mut self,
         plan: CreatePlan,
-        created: Result<(K, String, String), SessionError>,
+        created: Result<Created<K>, SessionError>,
     ) -> Result<(), VaultError> {
-        let (keys, blob, salt) = created.map_err(VaultError::Crypto)?;
+        let created = created.map_err(VaultError::Crypto)?;
         self.prepare_create()?;
-        let changes = [
-            (keys::MASTER_KEY.to_owned(), Some(blob)),
-            (keys::SALT.to_owned(), Some(salt)),
-            // Kept for the v1 format; the PIN option never worked and has been removed.
-            (keys::HAS_PIN.to_owned(), Some("false".to_owned())),
-        ];
-        self.storage
-            .write(&changes)
-            .map_err(|_| VaultError::StorageFailed)?;
+        let (keys, v2) = match created {
+            Created::V1(keys, blob, salt) => {
+                let changes = [
+                    (keys::MASTER_KEY.to_owned(), Some(blob)),
+                    (keys::SALT.to_owned(), Some(salt)),
+                    // Kept for the v1 format; the PIN option never worked and has been removed.
+                    (keys::HAS_PIN.to_owned(), Some("false".to_owned())),
+                ];
+                self.storage
+                    .write(&changes)
+                    .map_err(|_| VaultError::StorageFailed)?;
+                (keys, None)
+            }
+            Created::V2(keys, file) => {
+                self.storage
+                    .write_v2(&file)
+                    .map_err(|_| VaultError::StorageFailed)?;
+                (keys, Some(file))
+            }
+        };
         if plan.generation == self.generation {
             self.generation += 1;
+            self.v2 = v2.is_some();
+            self.v2_raw = v2.is_some().then(|| v2::Body {
+                lenses: "[]".into(),
+                bin: "[]".into(),
+            });
+            self.v2_file = v2;
             self.keys = Some(keys);
             self.lists = Lists::default();
             self.readable.clear();
@@ -376,45 +634,59 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     /// All of create in one call (the password step runs here).
     pub fn create(&mut self, password: &SecretText) -> Result<(), VaultError> {
         let plan = self.prepare_create()?;
-        self.finish_create(plan, K::create(password))
+        let created = plan.create::<K>(password);
+        self.finish_create(plan, created)
     }
 
     // ---- unlock and lock ------------------------------------------------------
 
     pub fn prepare_unlock(&self) -> Result<UnlockPlan, UnlockFailure> {
-        let (Some(blob), Some(salt)) = (
-            self.storage.get(keys::MASTER_KEY),
-            self.storage.get(keys::SALT),
-        ) else {
+        if let Some(file) = self.storage.v2() {
+            return Ok(UnlockPlan {
+                generation: self.generation,
+                source: Source::V2 { file },
+            });
+        }
+        // Each value is read once, so the lists, the key and what the
+        // conversion checks all come from the same reading of the file.
+        let read: Vec<(String, Option<String>)> = keys::ALL
+            .iter()
+            .map(|key| ((*key).to_owned(), self.storage.get(key)))
+            .collect();
+        let value = |key: &str| {
+            read.iter()
+                .find(|(k, _)| k == key)
+                .and_then(|(_, v)| v.clone())
+        };
+        let (Some(blob), Some(salt)) = (value(keys::MASTER_KEY), value(keys::SALT)) else {
             return Err(UnlockFailure::NoVault);
         };
         if !is_v1_master_key(&blob, &salt) {
             return Err(UnlockFailure::UnreadableData);
         }
         // Saving any change would overwrite an unreadable list, so don't open.
-        let read = |key| parse_list(self.storage.get(key).as_deref());
-        let stored = match (read(keys::LENSES), read(keys::BIN)) {
+        let (lenses_raw, bin_raw) = (value(keys::LENSES), value(keys::BIN));
+        let stored = match (
+            parse_list(lenses_raw.as_deref()),
+            parse_list(bin_raw.as_deref()),
+        ) {
             (Ok(lenses), Ok(bin)) => Lists { lenses, bin },
             _ => return Err(UnlockFailure::UnreadableData),
         };
-        let all = stored.lenses.iter().chain(&stored.bin);
-        // The TypeScript backend failed outright on a null entry (it read
-        // fields of every entry before opening any); kept as it was.
-        if all.clone().any(Value::is_null) {
-            return Err(UnlockFailure::Failed);
-        }
-        let wrapped = all
-            .map(|lens| {
-                let key = lens.get("encryptedMasterKey")?.as_str()?;
-                Some((id_of(lens)?.to_owned(), key.to_owned()))
-            })
-            .collect();
+        wrapped_keys(&stored)?;
         Ok(UnlockPlan {
             generation: self.generation,
-            stored,
-            encrypted_master_key: blob,
-            salt,
-            wrapped,
+            source: Source::V1 {
+                stored,
+                encrypted_master_key: blob,
+                salt,
+                raw: v2::Body {
+                    lenses: lenses_raw.unwrap_or_else(|| "[]".to_owned()),
+                    bin: bin_raw.unwrap_or_else(|| "[]".to_owned()),
+                },
+                expected: read,
+                convert: self.convert_v1 && self.storage.converts_v1(),
+            },
         })
     }
 
@@ -423,9 +695,9 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     pub fn finish_unlock(
         &mut self,
         plan: UnlockPlan,
-        opened: Result<(K, Vec<bool>), SessionError>,
+        opened: Result<Opened<K>, SessionError>,
     ) -> Result<(), UnlockFailure> {
-        let (keys, opened) = opened.map_err(|e| match e {
+        let opened = opened.map_err(|e| match e {
             SessionError::WrongPassword => UnlockFailure::WrongPassword,
             SessionError::Corrupt => UnlockFailure::UnreadableData,
             _ => UnlockFailure::Failed,
@@ -436,8 +708,31 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             return Err(UnlockFailure::Failed);
         }
         self.generation += 1;
-        self.keys = Some(keys);
-        self.open_lists(plan.stored, &opened);
+        self.v2 = opened.v2;
+        self.v2_raw = opened.raw;
+        let (v2_file, expected) = match plan.source {
+            Source::V2 { file } => (Some(file), Vec::new()),
+            Source::V1 { expected, .. } => (None, expected),
+        };
+        self.v2_file = v2_file;
+        self.keys = Some(opened.keys);
+        // Convert before anything is saved, so the Archive purge below is
+        // already saved in v2. A failure leaves the vault as it was (v1).
+        self.notice = match opened.converted {
+            None => None,
+            Some(Ok((file, body))) => match self.storage.convert_to_v2(&file, &expected) {
+                Ok(kept) => {
+                    self.v2 = true;
+                    let marker = conversion_marker(&file, (self.clock)());
+                    self.v2_file = Some(file);
+                    self.v2_raw = Some(body);
+                    Some(Notice::Upgraded { marker, kept })
+                }
+                Err(_) => Some(Notice::UpgradeFailed),
+            },
+            Some(Err(_)) => Some(Notice::UpgradeFailed),
+        };
+        self.open_lists(opened.stored, &opened.opened);
         Ok(())
     }
 
@@ -495,6 +790,9 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     pub fn lock(&mut self) {
         self.generation += 1;
         self.keys = None;
+        self.v2 = false;
+        self.v2_file = None;
+        self.v2_raw = None;
         self.readable.clear();
         self.lists = Lists::default();
     }
@@ -568,18 +866,47 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     /// Saves the lists a change produced, in one write, then makes them
     /// current. On failure nothing changes.
     fn write(&mut self, change: Change) -> Result<(), VaultError> {
-        self.keys()?;
-        let mut writes = Vec::new();
-        if let Some(lenses) = &change.lenses {
-            writes.push((keys::LENSES.to_owned(), Some(write_list(lenses))));
-        }
-        if let Some(bin) = &change.bin {
-            writes.push((keys::BIN.to_owned(), Some(write_list(bin))));
-        }
-        if !writes.is_empty() {
+        let vault_keys = self.keys()?;
+        if self.v2 && !change.is_empty() {
+            let (Some(current), Some(raw)) = (&self.v2_file, &self.v2_raw) else {
+                return Err(VaultError::WriteFailed);
+            };
+            // Only onto this vault's own file: another vault's (a backup put
+            // back, a synced copy) would end up with neither's key fitting.
+            let on_disk = self.storage.v2().ok_or(VaultError::WriteFailed)?;
+            if on_disk.kdf != current.kdf || on_disk.master_key != current.master_key {
+                return Err(VaultError::WriteFailed);
+            }
+            // A list the change leaves alone is written back exactly as stored.
+            let body = v2::Body {
+                lenses: change
+                    .lenses
+                    .as_deref()
+                    .map_or_else(|| raw.lenses.clone(), write_list),
+                bin: change
+                    .bin
+                    .as_deref()
+                    .map_or_else(|| raw.bin.clone(), write_list),
+            };
+            let sealed = vault_keys.seal_v2(current, &body);
             self.storage
-                .write(&writes)
+                .write_v2(&sealed)
                 .map_err(|_| VaultError::WriteFailed)?;
+            self.v2_file = Some(sealed);
+            self.v2_raw = Some(body);
+        } else if !self.v2 {
+            let mut writes = Vec::new();
+            if let Some(lenses) = &change.lenses {
+                writes.push((keys::LENSES.to_owned(), Some(write_list(lenses))));
+            }
+            if let Some(bin) = &change.bin {
+                writes.push((keys::BIN.to_owned(), Some(write_list(bin))));
+            }
+            if !writes.is_empty() {
+                self.storage
+                    .write(&writes)
+                    .map_err(|_| VaultError::WriteFailed)?;
+            }
         }
         self.generation += 1;
         if let Some(lenses) = change.lenses {
@@ -734,6 +1061,16 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         self.generation += 1;
         Ok(prefix)
     }
+}
+
+/// The conversion marker: when, and a fingerprint of the converted file.
+fn conversion_marker(file: &v2::File, now_ms: i64) -> String {
+    let fingerprint: String = sodium::sha256(file.to_json().as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    serde_json::json!({ "convertedAt": time::to_iso(now_ms), "fingerprint": fingerprint })
+        .to_string()
 }
 
 /// 128 random bits in hex. v0.1.0's ids (`Date.now().toString(36)`) are kept as they are.

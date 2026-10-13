@@ -13,6 +13,7 @@ use crate::crypto::{
 };
 use crate::error::Error;
 use crate::sodium;
+use crate::v2;
 
 /// Why a session operation failed. `code()` is all the UI ever sees, the
 /// same codes the page's VaultCrypto used before the vault moved to Rust.
@@ -122,20 +123,111 @@ impl Unlocked {
     ) -> Result<(Self, Vec<bool>), SessionError> {
         let app_key = decrypt_master_key(encrypted_master_key, password.expose(), salt)
             .map_err(unlock_error)?;
-        let mut lens_keys = HashMap::new();
-        let opened = lenses
+        let mut session = Self {
+            app_key,
+            lens_keys: HashMap::new(),
+        };
+        let opened = session.open_lens_keys(lenses);
+        Ok((session, opened))
+    }
+
+    /// Opens each Lens key with the app key and keeps those that open. One
+    /// entry per Lens, in order: true if its key opened.
+    pub fn open_lens_keys(&mut self, lenses: &[WrappedLensKey<'_>]) -> Vec<bool> {
+        lenses
             .iter()
             .map(
-                |lens| match decrypt_lens_key(lens.encrypted_master_key, &app_key) {
+                |lens| match decrypt_lens_key(lens.encrypted_master_key, &self.app_key) {
                     Ok(key) => {
-                        lens_keys.insert(lens.id.to_owned(), key);
+                        self.lens_keys.insert(lens.id.to_owned(), key);
                         true
                     }
                     Err(_) => false,
                 },
             )
-            .collect();
-        Ok((Self { app_key, lens_keys }, opened))
+            .collect()
+    }
+
+    /// A new vault in format v2: a fresh app key, wrapped under the password
+    /// with SENSITIVE settings and a fresh salt, and an empty body. As with
+    /// `create`, the password key is derived a second time and the file
+    /// must open to the same app key before it is handed out.
+    pub fn create_v2(password: &SecretText) -> Result<(Self, v2::File), SessionError> {
+        let app_key = Key::random();
+        let kdf = v2::Kdf::new_sensitive();
+        let password_key = kdf
+            .password_key(password.expose())
+            .map_err(|_| SessionError::Failed)?;
+        let empty = v2::Body {
+            lenses: "[]".into(),
+            bin: "[]".into(),
+        };
+        let file = v2::seal_file(&app_key, &password_key, kdf, &empty, None);
+        drop(password_key);
+        let (session, _) = Self::open_v2(&file, password).map_err(|_| SessionError::Failed)?;
+        if !session.app_key.same_as(&app_key) {
+            return Err(SessionError::Failed);
+        }
+        Ok((session, file))
+    }
+
+    /// Opens a v2 file: Argon2id with its recorded settings, the app key,
+    /// then the body. Lens keys are opened afterwards from the body's lists
+    /// (`open_lens_keys`). A key that doesn't open is `WrongPassword`; a body
+    /// that doesn't open after it is `Corrupt`.
+    pub fn open_v2(
+        file: &v2::File,
+        password: &SecretText,
+    ) -> Result<(Self, v2::Body), SessionError> {
+        let password_key = file
+            .kdf
+            .password_key(password.expose())
+            .map_err(unlock_error)?;
+        let app_key = file.open_master_key(&password_key).map_err(unlock_error)?;
+        let body = file.open_body(&app_key).map_err(unlock_error)?;
+        let session = Self {
+            app_key,
+            lens_keys: HashMap::new(),
+        };
+        Ok((session, body))
+    }
+
+    /// This vault (opened from v1) in format v2: the app key wrapped under a
+    /// new salt with SENSITIVE settings, and the given lists sealed in. It
+    /// is checked before it's returned, with a second, independent Argon2id
+    /// run: it must open to this very app key and to these very lists.
+    pub fn convert_v2(
+        &self,
+        password: &SecretText,
+        body: &v2::Body,
+    ) -> Result<v2::File, SessionError> {
+        let kdf = v2::Kdf::new_sensitive();
+        let password_key = kdf
+            .password_key(password.expose())
+            .map_err(|_| SessionError::Failed)?;
+        let file = v2::seal_file(
+            &self.app_key,
+            &password_key,
+            kdf,
+            body,
+            Some("vault-v1".into()),
+        );
+        drop(password_key);
+        let (check, opened) = Self::open_v2(&file, password).map_err(|_| SessionError::Failed)?;
+        let same = check.app_key.same_as(&self.app_key)
+            && opened.lenses == body.lenses
+            && opened.bin == body.bin;
+        if same {
+            Ok(file)
+        } else {
+            Err(SessionError::Failed)
+        }
+    }
+
+    /// The same file with this body sealed in (for a save). Its settings and
+    /// wrapped app key stay as they are.
+    pub fn seal_v2(&self, file: &v2::File, body: &v2::Body) -> v2::File {
+        file.with_body(body, &self.app_key)
     }
 
     /// Makes and keeps a key for a new Lens. Returns it wrapped by the app key.

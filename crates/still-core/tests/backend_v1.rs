@@ -189,7 +189,7 @@ fn saves_a_new_vault_but_keeps_it_locked_after_a_lock_during_create() {
     let disk = Memory::default();
     let mut vault = backend::<FastKeys>(&disk);
     let plan = vault.prepare_create().unwrap();
-    let created = FastKeys::create(&secret("pw"));
+    let created = plan.create::<FastKeys>(&secret("pw"));
     vault.lock();
     vault.finish_create(plan, created).unwrap();
     assert_eq!(vault.status(), Status::Locked);
@@ -202,7 +202,7 @@ fn saves_a_new_vault_but_keeps_it_locked_after_a_lock_during_create() {
     let plan = second.prepare_create().unwrap();
     first.create(&secret("first")).unwrap();
     let before = other.0.borrow().data.clone();
-    let created = FastKeys::create(&secret("second"));
+    let created = plan.create::<FastKeys>(&secret("second"));
     assert_eq!(
         second.finish_create(plan, created),
         Err(VaultError::VaultExists)

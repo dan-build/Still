@@ -14,6 +14,7 @@ import Sidebar, { type Selection } from './shell/Sidebar'
 import UnlockScreen, { type UnlockOutcome } from './lock/UnlockScreen'
 import CreatePasswordScreen from './lock/CreatePasswordScreen'
 import RecoveryScreen from './lock/RecoveryScreen'
+import LockLayout from './lock/LockLayout'
 
 // Activity is reported to Rust's auto-lock at most this often.
 const ACTIVITY_EVERY_MS = 15_000
@@ -21,11 +22,13 @@ const ACTIVITY_EVERY_MS = 15_000
 const NOTICES = {
   moved: 'Your vault now lives in its own file. The copy from before is kept, unchanged.',
   'old-copy-changed': 'An older version of Still changed its own copy of your vault. This version uses its file, which is unchanged; both are kept.',
+  upgraded: 'Your vault was upgraded to the new format: names and labels are now encrypted too. The file from before is kept as {kept}.',
+  restored: "Your vault file couldn't be opened, so Still put back the newest copy it had kept. Nothing was deleted.",
 }
 
 interface StillHomeProps {
   /** Shown once, after the vault moved into its file or an older version changed the old copy. */
-  notice?: keyof typeof NOTICES
+  notice?: 'moved' | 'old-copy-changed' | 'restored'
 }
 
 export default function StillHome({ notice }: StillHomeProps) {
@@ -38,7 +41,9 @@ export default function StillHome({ notice }: StillHomeProps) {
   const searchField = useRef<HTMLInputElement>(null)
   const [toast, setToast] = useState<(ToastMessage & { id: number }) | null>(null)
   // Notices about where the vault lives stay until dismissed, unlike toasts.
-  const [shownNotice, setShownNotice] = useState(notice)
+  const [shownNotice, setShownNotice] = useState<keyof typeof NOTICES | undefined>(notice)
+  // The file an upgrade kept, named in its notice.
+  const [keptName, setKeptName] = useState('vault-v1.json')
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const toastId = useRef(0)
   // Until Rust has said which screen to show.
@@ -46,6 +51,8 @@ export default function StillHome({ notice }: StillHomeProps) {
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
   const [isOrphaned, setIsOrphaned] = useState(false)
+  // The vault file became unreadable while Still was open.
+  const [isUnreadable, setIsUnreadable] = useState(false)
 
   // Created on first use. The vault and its keys live in Rust, behind the Tauri commands.
   const api = () => {
@@ -83,6 +90,7 @@ export default function StillHome({ notice }: StillHomeProps) {
       .then(({ status }) => {
         setIsFirstLaunch(status === 'empty')
         setIsOrphaned(status === 'orphaned')
+        setIsUnreadable(status === 'unreadable')
       })
       // The unlock screen then reports what goes wrong.
       .catch(() => {})
@@ -170,10 +178,18 @@ export default function StillHome({ notice }: StillHomeProps) {
       const { status } = await api().state().catch(() => ({ status: 'locked' as const }))
       setIsFirstLaunch(status === 'empty')
       setIsOrphaned(status === 'orphaned')
+      setIsUnreadable(status === 'unreadable')
       return 'failed'
     }
     show(result.state)
     setIsUnlocked(true)
+    if (result.notice === 'upgraded') {
+      if (result.kept) setKeptName(result.kept)
+      setShownNotice('upgraded')
+    }
+    if (result.notice === 'upgrade-failed') {
+      showToast({ message: "Couldn't upgrade your vault to the new format. It's unchanged, and Still will try again next time.", tone: 'error' })
+    }
     return 'ok'
   }
 
@@ -242,7 +258,11 @@ export default function StillHome({ notice }: StillHomeProps) {
   return (
     <>
       {!isUnlocked ? (
-        isOrphaned ? (
+        isUnreadable ? (
+          <LockLayout title="Still can't read its vault file" warning width={400}>
+            <p>Nothing was changed. Quit Still and open it again to see your options. Keep the files in Still's app data folder safe.</p>
+          </LockLayout>
+        ) : isOrphaned ? (
           <RecoveryScreen onSetAside={handleSetAside} />
         ) : isFirstLaunch ? (
           <CreatePasswordScreen onCreate={handleCreatePassword} />
@@ -323,7 +343,7 @@ export default function StillHome({ notice }: StillHomeProps) {
           className="fixed top-3 left-1/2 z-40 flex w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-2.5 rounded-8 bg-sidebar py-2 pr-2 pl-3 text-13 leading-[1.45] text-g2 shadow-[inset_0_0_0_1px_var(--hairline)]"
         >
           {shownNotice === 'old-copy-changed' && <Icon name="warning" className="text-warning" />}
-          <p className="flex-1">{NOTICES[shownNotice]}</p>
+          <p className="flex-1">{NOTICES[shownNotice].replace('{kept}', keptName)}</p>
           <Button onClick={() => setShownNotice(undefined)}>OK</Button>
         </div>
       )}

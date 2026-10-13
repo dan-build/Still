@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use serde_json::{json, Value};
-use still_core::session::{SecretText, SessionError, Unlocked};
-use still_core::vault::backend::{Status, UnlockFailure};
+use still_core::session::{SecretText, Unlocked};
+use still_core::vault::backend::{Notice, Status, UnlockFailure};
 use tauri::State;
 
 use crate::autolock::AutoLock;
@@ -19,7 +19,7 @@ use crate::vault::{self, state, CommandError, Revealed, Vault};
 
 /// Every command, as named in build.rs and the capability.
 #[cfg(test)]
-pub const ALL: [&str; 18] = [
+pub const ALL: [&str; 20] = [
     "vault_create",
     "vault_unlock",
     "vault_lock",
@@ -27,6 +27,8 @@ pub const ALL: [&str; 18] = [
     "item_copy",
     "startup_open",
     "startup_use_old_copy",
+    "startup_open_old_format",
+    "startup_restore_v1",
     "vault_state",
     "vault_set_aside",
     "lens_create",
@@ -50,9 +52,12 @@ pub async fn vault_create(
 ) -> Result<Value, CommandError> {
     let password = SecretText::from(password);
     let plan = vault.backend().prepare_create()?;
-    let created = tauri::async_runtime::spawn_blocking(move || Unlocked::create(&password))
-        .await
-        .unwrap_or(Err(SessionError::Failed));
+    let (plan, created) = tauri::async_runtime::spawn_blocking(move || {
+        let created = plan.create::<Unlocked>(&password);
+        (plan, created)
+    })
+    .await
+    .map_err(|_| CommandError("failed"))?;
     // Activity first, so the watcher never sees a new session as idle.
     autolock.touch(SystemTime::now());
     let mut backend = vault.backend();
@@ -83,7 +88,22 @@ pub async fn vault_unlock(
     autolock.touch(SystemTime::now());
     let mut backend = vault.backend();
     Ok(match backend.finish_unlock(plan, opened) {
-        Ok(()) => json!({ "ok": true, "state": state(&backend) }),
+        Ok(()) => {
+            let mut unlocked = json!({ "ok": true, "state": state(&backend) });
+            // The first unlock after updating converts the vault to v2. The
+            // page keeps the marker (localStorage still-converted-v2), so an
+            // old v1 copy put back later asks before it opens.
+            match backend.take_notice() {
+                Some(Notice::Upgraded { marker, kept }) => {
+                    unlocked["notice"] = json!("upgraded");
+                    unlocked["marker"] = json!(marker);
+                    unlocked["kept"] = json!(kept);
+                }
+                Some(Notice::UpgradeFailed) => unlocked["notice"] = json!("upgrade-failed"),
+                None => {}
+            }
+            unlocked
+        }
         Err(reason) => failed(reason),
     })
 }
@@ -126,11 +146,41 @@ pub fn item_copy(
 /// marker?}, and writes `marker` to localStorage when there is one.
 #[tauri::command]
 pub fn startup_open(
+    vault: State<'_, Vault>,
     store: State<'_, Arc<AppStore>>,
     legacy: Values,
     marker: Option<String>,
+    converted: Option<String>,
 ) -> Value {
-    startup::open(&store, legacy, marker.as_deref(), now_ms()).to_json()
+    let startup = startup::open(
+        &store,
+        legacy,
+        marker.as_deref(),
+        converted.as_deref(),
+        now_ms(),
+    );
+    // An old-format file in a converted vault's place is never converted
+    // unless the user says so; Rust holds to that whatever the page does.
+    if matches!(startup, startup::Startup::OldFormat { .. }) {
+        vault.backend().set_convert_v1(false);
+    }
+    startup.to_json()
+}
+
+/// The user's choice when the vault file is in the old format although the
+/// vault was converted: open it as it is, or open and upgrade it (sealing
+/// this copy, whatever it holds, into v2: their decision).
+#[tauri::command]
+pub fn startup_open_old_format(vault: State<'_, Vault>, upgrade: bool) -> Value {
+    vault.backend().set_convert_v1(upgrade);
+    json!({ "kind": "ready" })
+}
+
+/// The user's choice when the vault file can't be opened: put back the
+/// newest copy Still kept (the unreadable file is kept too).
+#[tauri::command]
+pub fn startup_restore_v1(store: State<'_, Arc<AppStore>>) -> Value {
+    startup::restore_kept(&store)
 }
 
 /// The user's choice when the moved vault file has gone: bring back the
