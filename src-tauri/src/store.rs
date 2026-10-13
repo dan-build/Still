@@ -302,16 +302,13 @@ impl Store {
         if self.file().exists() {
             // Refresh the backup by copying, so vault.json never goes missing.
             let previous = fs::read(self.file())?;
-            // A readable backup in another format than the file replacing it
-            // (a v2 backup, after an old v1 copy was put back) may be the
-            // newest copy there is: keep it first, under its own name.
+            // A v2 backup about to be replaced by a file that isn't v2 (an
+            // old v1 copy put back) may be the newest copy there is: keep it
+            // first, under its own name. (A v1 backup replaced after an
+            // upgrade is already kept as vault-v1.json.)
             if let Ok(backup) = fs::read(self.backup()) {
-                let format = |bytes: &[u8]| match read_vault(bytes) {
-                    Loaded::Values(_) => 1,
-                    Loaded::V2(_) => 2,
-                    _ => 0,
-                };
-                if format(&backup) != 0 && format(&backup) != format(&previous) {
+                let is_v2 = |bytes: &[u8]| matches!(read_vault(bytes), Loaded::V2(_));
+                if is_v2(&backup) && !is_v2(&previous) {
                     self.keep("vault-bak", &backup)?;
                 }
             }
@@ -881,6 +878,23 @@ mod tests {
         store.write(&set(&[("still-lenses", Some("[]"))])).unwrap();
         assert_eq!(fs::read(store.dir.join("vault-bak.json")).unwrap(), backup);
         assert_eq!(fs::read(store.backup()).unwrap(), v1_bytes);
+    }
+
+    // The normal path after an upgrade: the v1 backup is replaced by v2
+    // files, and no extra copy is made (vault-v1.json already has it).
+    #[test]
+    fn makes_no_extra_copy_when_saves_follow_an_upgrade() {
+        let tmp = TempDir::new();
+        let (store, _) = real_v1(&tmp);
+        store
+            .write(&set(&[("still-has-pin", Some("false"))]))
+            .unwrap();
+        store
+            .convert_to_v2(&a_v2_file(), &expected(&real_vault()))
+            .unwrap();
+        store.write_v2(&a_v2_file()).unwrap();
+        store.write_v2(&a_v2_file()).unwrap();
+        assert!(!store.dir.join("vault-bak.json").exists());
     }
 
     #[test]
