@@ -41,9 +41,9 @@ export default function StillApp() {
           title="Still can't open its vault file"
           action={{ label: 'Use the kept copy', busy, onClick: () => run(() => restoreKeptCopy(window.localStorage)) }}
         >
-          Nothing was changed. The file is missing, damaged, or from a newer version of Still. Still kept an earlier copy: the previous
-          version of the file, or the file from before the upgrade to the new format, which doesn't include anything changed since. Restore
-          vault.json from a backup if you have one, or use the kept copy. Nothing is deleted either way.
+          Nothing was changed. The file is missing, damaged, or from a newer version of Still. Still kept an earlier copy: the file as it
+          was before your last change, or the file from before the upgrade to the new format. Either may lack your most recent changes.
+          Restore vault.json from a backup if you have one, or use the kept copy. Nothing is deleted either way.
         </Message>
       ) : (
         <Message title="Still can't read its vault file">
