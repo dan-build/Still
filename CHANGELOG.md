@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-13
+
 ### Changed
 
 - **Everything in your vault is now encrypted, and any change to the file is detected** (vault format v2). Lens names, secret labels and types, dates and counts were readable in the vault file; now only the Argon2id settings and the file's rough size are. Every part of the file is tied to the rest, so a swapped, edited or spliced value is reported as damaged data instead of being used. The Argon2id settings are recorded in the file, so they can be raised later.
@@ -14,8 +16,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **If an old-format file is put in place of an upgraded vault**, Still asks before opening it.
-- **If the vault file can't be read** and the file from before the upgrade is there, Still offers to put it back. The unreadable file is kept too.
+- **If an old-format file is put in place of an upgraded vault**, Still asks before opening it: open it as it is, or open and upgrade it.
+- **If the vault file can't be opened** (missing, damaged, or from a newer version), Still offers to put back the newest copy it kept. The file it replaces is kept too; nothing is deleted.
 
 ### Fixed
 
@@ -128,7 +130,8 @@ First public pre-release, for macOS.
 - An Archive (recycle bin) that keeps forgotten Lenses for 7 days.
 - Offline by design: no accounts, servers or telemetry.
 
-[Unreleased]: https://github.com/dan-build/Still/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/dan-build/Still/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/dan-build/Still/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dan-build/Still/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/dan-build/Still/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/dan-build/Still/compare/v0.3.0...v0.3.1
