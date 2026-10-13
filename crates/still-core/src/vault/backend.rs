@@ -81,15 +81,15 @@ pub trait Storage {
         false
     }
     /// Replaces the stored v1 vault with this v2 file, keeping the v1 file
-    /// (docs/vault-format-v2.md, "Converting from v1"). Refuses unless the
-    /// stored lists are still exactly `lenses` and `bin`. On any failure
-    /// the v1 vault is left as it was.
+    /// (docs/vault-format-v2.md, "Converting from v1"). Refuses unless every
+    /// value in `expected` is still exactly as it was read before the
+    /// password step (a missing one still missing). On any failure the v1
+    /// vault is left as it was. Returns the kept copy's name.
     fn convert_to_v2(
         &mut self,
         _file: &v2::File,
-        _lenses: &str,
-        _bin: &str,
-    ) -> Result<(), StorageError> {
+        _expected: &[(String, Option<String>)],
+    ) -> Result<String, StorageError> {
         Err(StorageError)
     }
 }
@@ -299,6 +299,9 @@ enum Source {
         salt: String,
         /// The lists exactly as stored, for converting to v2 (a missing list is "[]").
         raw: v2::Body,
+        /// Every vault value as it was read, for the conversion to check
+        /// nothing changed meanwhile.
+        expected: Vec<(String, Option<String>)>,
         /// Convert to v2 during this unlock.
         convert: bool,
     },
@@ -365,6 +368,7 @@ impl UnlockPlan {
                 salt,
                 raw,
                 convert,
+                ..
             } => {
                 let wrapped = wrapped_keys(stored).map_err(|_| SessionError::Failed)?;
                 let lenses: Vec<WrappedLensKey<'_>> = wrapped
@@ -489,9 +493,10 @@ pub struct Backend<S: Storage, K: Keys> {
 /// What an unlock has to tell the user, once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Notice {
-    /// The vault was converted to v2. The page keeps `marker` (localStorage
-    /// `still-converted-v2`), so an old v1 copy asks before it opens.
-    Upgraded { marker: String },
+    /// The vault was converted to v2, and the v1 file kept as `kept`. The
+    /// page keeps `marker` (localStorage `still-converted-v2`), so an old v1
+    /// copy asks before it opens.
+    Upgraded { marker: String, kept: String },
     /// Converting failed; the vault is unchanged (v1) and is tried again next time.
     UpgradeFailed,
 }
@@ -642,23 +647,33 @@ impl<S: Storage, K: Keys> Backend<S, K> {
                 source: Source::V2 { file },
             });
         }
-        let (Some(blob), Some(salt)) = (
-            self.storage.get(keys::MASTER_KEY),
-            self.storage.get(keys::SALT),
-        ) else {
+        // Each value is read once, so the lists, the key and what the
+        // conversion checks all come from the same reading of the file.
+        let read: Vec<(String, Option<String>)> = keys::ALL
+            .iter()
+            .map(|key| ((*key).to_owned(), self.storage.get(key)))
+            .collect();
+        let value = |key: &str| {
+            read.iter()
+                .find(|(k, _)| k == key)
+                .and_then(|(_, v)| v.clone())
+        };
+        let (Some(blob), Some(salt)) = (value(keys::MASTER_KEY), value(keys::SALT)) else {
             return Err(UnlockFailure::NoVault);
         };
         if !is_v1_master_key(&blob, &salt) {
             return Err(UnlockFailure::UnreadableData);
         }
         // Saving any change would overwrite an unreadable list, so don't open.
-        let read = |key| parse_list(self.storage.get(key).as_deref());
-        let stored = match (read(keys::LENSES), read(keys::BIN)) {
+        let (lenses_raw, bin_raw) = (value(keys::LENSES), value(keys::BIN));
+        let stored = match (
+            parse_list(lenses_raw.as_deref()),
+            parse_list(bin_raw.as_deref()),
+        ) {
             (Ok(lenses), Ok(bin)) => Lists { lenses, bin },
             _ => return Err(UnlockFailure::UnreadableData),
         };
         wrapped_keys(&stored)?;
-        let raw = |key| self.storage.get(key).unwrap_or_else(|| "[]".to_owned());
         Ok(UnlockPlan {
             generation: self.generation,
             source: Source::V1 {
@@ -666,9 +681,10 @@ impl<S: Storage, K: Keys> Backend<S, K> {
                 encrypted_master_key: blob,
                 salt,
                 raw: v2::Body {
-                    lenses: raw(keys::LENSES),
-                    bin: raw(keys::BIN),
+                    lenses: lenses_raw.unwrap_or_else(|| "[]".to_owned()),
+                    bin: bin_raw.unwrap_or_else(|| "[]".to_owned()),
                 },
+                expected: read,
                 convert: self.convert_v1 && self.storage.converts_v1(),
             },
         })
@@ -694,27 +710,26 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         self.generation += 1;
         self.v2 = opened.v2;
         self.v2_raw = opened.raw;
-        self.v2_file = match plan.source {
-            Source::V2 { file } => Some(file),
-            Source::V1 { .. } => None,
+        let (v2_file, expected) = match plan.source {
+            Source::V2 { file } => (Some(file), Vec::new()),
+            Source::V1 { expected, .. } => (None, expected),
         };
+        self.v2_file = v2_file;
         self.keys = Some(opened.keys);
         // Convert before anything is saved, so the Archive purge below is
         // already saved in v2. A failure leaves the vault as it was (v1).
         self.notice = match opened.converted {
             None => None,
-            Some(Ok((file, body))) => {
-                match self.storage.convert_to_v2(&file, &body.lenses, &body.bin) {
-                    Ok(()) => {
-                        self.v2 = true;
-                        let marker = conversion_marker(&file, (self.clock)());
-                        self.v2_file = Some(file);
-                        self.v2_raw = Some(body);
-                        Some(Notice::Upgraded { marker })
-                    }
-                    Err(_) => Some(Notice::UpgradeFailed),
+            Some(Ok((file, body))) => match self.storage.convert_to_v2(&file, &expected) {
+                Ok(kept) => {
+                    self.v2 = true;
+                    let marker = conversion_marker(&file, (self.clock)());
+                    self.v2_file = Some(file);
+                    self.v2_raw = Some(body);
+                    Some(Notice::Upgraded { marker, kept })
                 }
-            }
+                Err(_) => Some(Notice::UpgradeFailed),
+            },
             Some(Err(_)) => Some(Notice::UpgradeFailed),
         };
         self.open_lists(opened.stored, &opened.opened);

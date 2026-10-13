@@ -40,6 +40,15 @@ struct VaultFile {
     data: Values,
 }
 
+/// What `Store::restore` puts back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Restore {
+    /// `vault.json.bak`, a readable v2 vault.
+    Backup,
+    /// The v1 file a conversion kept.
+    KeptV1(PathBuf),
+}
+
 /// What's on disk.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Loaded {
@@ -144,28 +153,34 @@ impl Store {
     /// Converts the v1 vault to this v2 file (docs/vault-format-v2.md,
     /// "Converting from v1"), keeping the v1 file as `vault-v1.json` (or
     /// `vault-v1-2.json`, ... if a different one is there); Still never
-    /// writes over or deletes a kept file. Refuses unless the file is still v1 with
-    /// exactly these lists. Keeps the v1 file's bytes first, crash-safe;
-    /// then writes v2 atomically and reads it back, putting the v1 file back
-    /// if it doesn't read back exactly. Returns the kept copy's path.
+    /// writes over or deletes a kept file. Refuses unless the file is still
+    /// v1 and every value in `expected` is still exactly as read before the
+    /// password step (a missing value still missing). Keeps the v1 file's
+    /// bytes first, crash-safe; then writes v2 atomically and reads it back,
+    /// putting the v1 file back if it doesn't read back exactly. Returns the
+    /// kept copy's file name.
     pub fn convert_to_v2(
         &self,
         file: &v2::File,
-        lenses: &str,
-        bin: &str,
-    ) -> Result<PathBuf, StoreError> {
+        expected: &[(String, Option<String>)],
+    ) -> Result<String, StoreError> {
         let original = fs::read(self.file())?;
         let Loaded::Values(values) = read_vault(&original) else {
             return Err(StoreError::OtherFormat);
         };
-        let stored = |key: &str| values.get(key).map_or("[]", String::as_str);
-        if stored("still-lenses") != lenses || stored("still-recycle-bin") != bin {
+        if expected
+            .iter()
+            .any(|(key, value)| values.get(key) != value.as_ref())
+        {
             return Err(StoreError::VerifyFailed);
         }
         let kept = self.keep("vault-v1", &original)?;
         self.save_bytes(file.to_json().as_bytes())?;
         match self.load() {
-            Loaded::V2(stored) if *stored == *file => Ok(kept),
+            Loaded::V2(stored) if *stored == *file => Ok(kept
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()),
             _ => {
                 write_atomically(&self.dir, &self.file(), &original)?;
                 Err(StoreError::VerifyFailed)
@@ -195,27 +210,51 @@ impl Store {
         Err(StoreError::Io)
     }
 
-    /// The v1 file the latest conversion kept, if there is one.
+    /// The v1 file the latest conversion kept (the newest `vault-v1*.json`
+    /// by modification time), if there is one.
     pub fn kept_v1(&self) -> Option<PathBuf> {
-        (1..1000)
-            .map(|n| self.dir.join(numbered("vault-v1", n)))
-            .take_while(|path| path.exists())
-            .last()
+        let entries = fs::read_dir(&self.dir).ok()?;
+        entries
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                name == "vault-v1.json"
+                    || name
+                        .strip_prefix("vault-v1-")
+                        .and_then(|rest| rest.strip_suffix(".json"))
+                        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+            })
+            .filter_map(|entry| Some((entry.metadata().ok()?.modified().ok()?, entry.path())))
+            .max_by_key(|(modified, _)| *modified)
+            .map(|(_, path)| path)
     }
 
-    /// Puts the kept v1 file back as the vault, over a vault file that can't
-    /// be read. That file is kept too (`vault-unreadable.json`, ...): nothing
-    /// is ever deleted. Only for an unreadable vault, and only a readable
-    /// v1 copy.
-    pub fn restore_v1(&self) -> Result<(), StoreError> {
-        if self.load() != Loaded::Unreadable {
-            return Err(StoreError::OtherFormat);
+    /// What `restore` would put back when the vault file can't be opened:
+    /// the backup if it is a readable v2 vault (it holds the latest changes
+    /// it can), else the v1 file a conversion kept, if it reads.
+    pub fn restore_source(&self) -> Option<Restore> {
+        if matches!(self.load(), Loaded::Values(_) | Loaded::V2(_)) {
+            return None;
         }
-        let kept = self.kept_v1().ok_or(StoreError::Unreadable)?;
-        let bytes = fs::read(kept)?;
-        if !matches!(read_vault(&bytes), Loaded::Values(_)) {
-            return Err(StoreError::Unreadable);
+        if let Ok(bytes) = fs::read(self.backup()) {
+            if matches!(read_vault(&bytes), Loaded::V2(_)) {
+                return Some(Restore::Backup);
+            }
         }
+        let kept = self.kept_v1()?;
+        let bytes = fs::read(&kept).ok()?;
+        matches!(read_vault(&bytes), Loaded::Values(_)).then_some(Restore::KeptV1(kept))
+    }
+
+    /// Puts back what `restore_source` names, over a vault file that can't
+    /// be opened (or is missing). That file is kept too
+    /// (`vault-unreadable.json`, ...): nothing is ever deleted.
+    pub fn restore(&self) -> Result<Restore, StoreError> {
+        let source = self.restore_source().ok_or(StoreError::Unreadable)?;
+        let bytes = match &source {
+            Restore::Backup => fs::read(self.backup())?,
+            Restore::KeptV1(path) => fs::read(path)?,
+        };
         if self.file().exists() {
             let damaged = fs::read(self.file())?;
             self.keep("vault-unreadable", &damaged)?;
@@ -223,7 +262,7 @@ impl Store {
         create_private_dir(&self.dir)?;
         write_atomically(&self.dir, &self.file(), &bytes)?;
         match self.load() {
-            Loaded::Values(_) => Ok(()),
+            Loaded::Values(_) | Loaded::V2(_) => Ok(source),
             _ => Err(StoreError::VerifyFailed),
         }
     }
@@ -263,6 +302,19 @@ impl Store {
         if self.file().exists() {
             // Refresh the backup by copying, so vault.json never goes missing.
             let previous = fs::read(self.file())?;
+            // A readable backup in another format than the file replacing it
+            // (a v2 backup, after an old v1 copy was put back) may be the
+            // newest copy there is: keep it first, under its own name.
+            if let Ok(backup) = fs::read(self.backup()) {
+                let format = |bytes: &[u8]| match read_vault(bytes) {
+                    Loaded::Values(_) => 1,
+                    Loaded::V2(_) => 2,
+                    _ => 0,
+                };
+                if format(&backup) != 0 && format(&backup) != format(&previous) {
+                    self.keep("vault-bak", &backup)?;
+                }
+            }
             write_atomically(&self.dir, &self.backup(), &previous)?;
         }
         write_atomically(&self.dir, &self.file(), bytes)
@@ -714,22 +766,30 @@ mod tests {
         (store, bytes)
     }
 
-    fn lists(values: &Values) -> (String, String) {
-        (
-            values["still-lenses"].clone(),
-            values["still-recycle-bin"].clone(),
-        )
+    /// Every vault value as the backend reads it before the password step.
+    fn expected(values: &Values) -> Vec<(String, Option<String>)> {
+        [
+            "still-encrypted-master-key",
+            "still-salt",
+            "still-has-pin",
+            "still-lenses",
+            "still-recycle-bin",
+        ]
+        .iter()
+        .map(|key| ((*key).to_owned(), values.get(*key).cloned()))
+        .collect()
     }
 
     #[test]
     fn converts_to_v2_keeping_the_v1_file_byte_for_byte() {
         let tmp = TempDir::new();
         let (store, v1_bytes) = real_v1(&tmp);
-        let (lenses, bin) = lists(&real_vault());
         let file = a_v2_file();
-        let kept = store.convert_to_v2(&file, &lenses, &bin).unwrap();
-        assert_eq!(kept, store.dir.join("vault-v1.json"));
-        assert_eq!(fs::read(&kept).unwrap(), v1_bytes);
+        let kept = store
+            .convert_to_v2(&file, &expected(&real_vault()))
+            .unwrap();
+        assert_eq!(kept, "vault-v1.json");
+        assert_eq!(fs::read(store.dir.join(&kept)).unwrap(), v1_bytes);
         assert_eq!(store.load(), Loaded::V2(Box::new(file)));
         // No temp files are left behind.
         let names: Vec<String> = fs::read_dir(&store.dir)
@@ -740,7 +800,10 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = fs::metadata(&kept).unwrap().permissions().mode();
+            let mode = fs::metadata(store.dir.join(&kept))
+                .unwrap()
+                .permissions()
+                .mode();
             assert_eq!(mode & 0o777, 0o600);
         }
     }
@@ -749,12 +812,13 @@ mod tests {
     fn never_writes_over_a_kept_v1_file() {
         let tmp = TempDir::new();
         let (store, v1_bytes) = real_v1(&tmp);
-        let (lenses, bin) = lists(&real_vault());
         // A different file already holds the name; an identical one is reused.
         fs::write(store.dir.join("vault-v1.json"), b"someone else's").unwrap();
         fs::write(store.dir.join("vault-v1-2.json"), &v1_bytes).unwrap();
-        let kept = store.convert_to_v2(&a_v2_file(), &lenses, &bin).unwrap();
-        assert_eq!(kept, store.dir.join("vault-v1-2.json"));
+        let kept = store
+            .convert_to_v2(&a_v2_file(), &expected(&real_vault()))
+            .unwrap();
+        assert_eq!(kept, "vault-v1-2.json");
         assert_eq!(
             fs::read(store.dir.join("vault-v1.json")).unwrap(),
             b"someone else's"
@@ -763,31 +827,120 @@ mod tests {
         let tmp = TempDir::new();
         let (store, v1_bytes) = real_v1(&tmp);
         fs::write(store.dir.join("vault-v1.json"), b"not this vault").unwrap();
-        let kept = store.convert_to_v2(&a_v2_file(), &lenses, &bin).unwrap();
-        assert_eq!(kept, store.dir.join("vault-v1-2.json"));
-        assert_eq!(fs::read(kept).unwrap(), v1_bytes);
+        let kept = store
+            .convert_to_v2(&a_v2_file(), &expected(&real_vault()))
+            .unwrap();
+        assert_eq!(kept, "vault-v1-2.json");
+        assert_eq!(fs::read(store.dir.join(kept)).unwrap(), v1_bytes);
     }
 
     #[test]
-    fn refuses_to_convert_anything_but_the_lists_it_was_given() {
-        let tmp = TempDir::new();
-        let (store, v1_bytes) = real_v1(&tmp);
-        let (lenses, _) = lists(&real_vault());
-        assert_eq!(
-            store.convert_to_v2(&a_v2_file(), &lenses, "[]"),
-            Err(StoreError::VerifyFailed)
-        );
-        assert_eq!(fs::read(store.file()).unwrap(), v1_bytes);
-        assert!(!store.dir.join("vault-v1.json").exists());
+    fn refuses_to_convert_anything_but_the_vault_it_read() {
+        // Any value changed since it was read (a list, or the key: another
+        // vault with the same lists) is refused, and nothing is touched.
+        for key in ["still-recycle-bin", "still-encrypted-master-key"] {
+            let tmp = TempDir::new();
+            let (store, v1_bytes) = real_v1(&tmp);
+            let mut changed = real_vault();
+            changed.insert(key.into(), "something else".into());
+            assert_eq!(
+                store.convert_to_v2(&a_v2_file(), &expected(&changed)),
+                Err(StoreError::VerifyFailed),
+                "{key}"
+            );
+            assert_eq!(fs::read(store.file()).unwrap(), v1_bytes);
+            assert!(!store.dir.join("vault-v1.json").exists());
+        }
 
         // A v2 vault is never converted again.
         let tmp = TempDir::new();
         let store = tmp.store();
         store.write_v2(&a_v2_file()).unwrap();
         assert_eq!(
-            store.convert_to_v2(&a_v2_file(), "[]", "[]"),
+            store.convert_to_v2(&a_v2_file(), &[]),
             Err(StoreError::OtherFormat)
         );
+    }
+
+    // After an upgrade the backup is a good v2 copy. An old v1 file put back
+    // (and then saved, or restored over) must never replace it unkept.
+    #[test]
+    fn keeps_a_backup_that_a_file_in_the_other_format_would_replace() {
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        let first = a_v2_file();
+        store.write_v2(&first).unwrap();
+        store.write_v2(&a_v2_file()).unwrap();
+        let backup = fs::read(store.backup()).unwrap();
+        assert_eq!(backup, first.to_json().into_bytes());
+
+        // An old v1 file is put in place, and a save replaces the backup.
+        let v1 = TempDir::new();
+        let (_, v1_bytes) = real_v1(&v1);
+        fs::write(store.file(), &v1_bytes).unwrap();
+        store.write(&set(&[("still-lenses", Some("[]"))])).unwrap();
+        assert_eq!(fs::read(store.dir.join("vault-bak.json")).unwrap(), backup);
+        assert_eq!(fs::read(store.backup()).unwrap(), v1_bytes);
+    }
+
+    #[test]
+    fn restores_the_newest_kept_copy_keeping_the_unreadable_file() {
+        // The backup is a readable v2 vault: it is newer than the v1 file.
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        let good = a_v2_file();
+        store.write_v2(&good).unwrap();
+        store.write_v2(&a_v2_file()).unwrap();
+        fs::write(store.dir.join("vault-v1.json"), b"older").unwrap();
+        fs::write(store.file(), b"{damaged").unwrap();
+        assert_eq!(store.restore_source(), Some(Restore::Backup));
+        assert_eq!(store.restore(), Ok(Restore::Backup));
+        assert_eq!(store.load(), Loaded::V2(Box::new(good)));
+        assert_eq!(
+            fs::read(store.dir.join("vault-unreadable.json")).unwrap(),
+            b"{damaged"
+        );
+
+        // No backup, no vault.json: the v1 file is offered and put back.
+        let tmp = TempDir::new();
+        let (v1_store, v1_bytes) = real_v1(&tmp);
+        fs::rename(v1_store.file(), v1_store.dir.join("vault-v1.json")).unwrap();
+        assert_eq!(v1_store.load(), Loaded::Nothing);
+        let kept = v1_store.dir.join("vault-v1.json");
+        assert_eq!(
+            v1_store.restore_source(),
+            Some(Restore::KeptV1(kept.clone()))
+        );
+        assert_eq!(v1_store.restore(), Ok(Restore::KeptV1(kept)));
+        assert_eq!(fs::read(v1_store.file()).unwrap(), v1_bytes);
+
+        // Never over a vault that opens.
+        assert_eq!(v1_store.restore_source(), None);
+        assert_eq!(v1_store.restore(), Err(StoreError::Unreadable));
+    }
+
+    #[test]
+    fn picks_the_newest_kept_v1_file() {
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        create_private_dir(&store.dir).unwrap();
+        for (name, age) in [
+            ("vault-v1.json", 10),
+            ("vault-v1-3.json", 5),
+            ("vault-v1-2.json", 20),
+        ] {
+            let path = store.dir.join(name);
+            fs::write(&path, name).unwrap();
+            let time = std::time::SystemTime::now() - std::time::Duration::from_secs(age * 60);
+            File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(time)
+                .unwrap();
+        }
+        fs::write(store.dir.join("vault-v1-x.json"), b"not a kept copy").unwrap();
+        assert_eq!(store.kept_v1(), Some(store.dir.join("vault-v1-3.json")));
     }
 
     #[test]

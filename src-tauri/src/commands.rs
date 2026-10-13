@@ -94,9 +94,10 @@ pub async fn vault_unlock(
             // page keeps the marker (localStorage still-converted-v2), so an
             // old v1 copy put back later asks before it opens.
             match backend.take_notice() {
-                Some(Notice::Upgraded { marker }) => {
+                Some(Notice::Upgraded { marker, kept }) => {
                     unlocked["notice"] = json!("upgraded");
                     unlocked["marker"] = json!(marker);
+                    unlocked["kept"] = json!(kept);
                 }
                 Some(Notice::UpgradeFailed) => unlocked["notice"] = json!("upgrade-failed"),
                 None => {}
@@ -145,34 +146,41 @@ pub fn item_copy(
 /// marker?}, and writes `marker` to localStorage when there is one.
 #[tauri::command]
 pub fn startup_open(
+    vault: State<'_, Vault>,
     store: State<'_, Arc<AppStore>>,
     legacy: Values,
     marker: Option<String>,
     converted: Option<String>,
 ) -> Value {
-    startup::open(
+    let startup = startup::open(
         &store,
         legacy,
         marker.as_deref(),
         converted.as_deref(),
         now_ms(),
-    )
-    .to_json()
+    );
+    // An old-format file in a converted vault's place is never converted
+    // unless the user says so; Rust holds to that whatever the page does.
+    if matches!(startup, startup::Startup::OldFormat { .. }) {
+        vault.backend().set_convert_v1(false);
+    }
+    startup.to_json()
 }
 
 /// The user's choice when the vault file is in the old format although the
-/// vault was converted: open it as it is. It isn't converted this time.
+/// vault was converted: open it as it is, or open and upgrade it (sealing
+/// this copy, whatever it holds, into v2: their decision).
 #[tauri::command]
-pub fn startup_open_old_format(vault: State<'_, Vault>) -> Value {
-    vault.backend().set_convert_v1(false);
+pub fn startup_open_old_format(vault: State<'_, Vault>, upgrade: bool) -> Value {
+    vault.backend().set_convert_v1(upgrade);
     json!({ "kind": "ready" })
 }
 
-/// The user's choice when the vault file can't be read: put back the v1
-/// file the conversion kept (the unreadable one is kept too).
+/// The user's choice when the vault file can't be opened: put back the
+/// newest copy Still kept (the unreadable file is kept too).
 #[tauri::command]
 pub fn startup_restore_v1(store: State<'_, Arc<AppStore>>) -> Value {
-    startup::restore_kept_v1(&store).to_json()
+    startup::restore_kept(&store)
 }
 
 /// The user's choice when the moved vault file has gone: bring back the

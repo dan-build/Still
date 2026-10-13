@@ -148,7 +148,8 @@ export class FakeVault implements VaultApi {
     this.unlocked = true
     const notice = this.unlockNotice
     this.unlockNotice = undefined
-    return { ok: true, state: this.now(), ...(notice ? { notice } : {}) } as const
+    const kept = notice === 'upgraded' ? { kept: 'vault-v1-2.json' } : {}
+    return { ok: true, state: this.now(), ...(notice ? { notice } : {}), ...kept } as const
   }
 
   async lock() {

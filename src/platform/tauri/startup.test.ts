@@ -59,18 +59,28 @@ describe('start-up, seen from the page', () => {
     expect(invoke).toHaveBeenCalledWith('startup_open', { legacy: {}, marker: null, converted })
   })
 
-  it('opens an old-format vault, and restores the kept copy forgetting the conversion', async () => {
-    invoke.mockResolvedValueOnce({ kind: 'ready' })
+  it('opens an old-format vault as it is, or upgrading it', async () => {
+    invoke.mockResolvedValue({ kind: 'ready' })
     const legacy = fakeWebStorage({ [CONVERTED_MARKER]: '{}' })
-    expect(await openOldFormat(legacy)).toEqual({ kind: 'ready' })
-    expect(invoke).toHaveBeenLastCalledWith('startup_open_old_format', {})
+    expect(await openOldFormat(legacy, false)).toEqual({ kind: 'ready' })
+    expect(invoke).toHaveBeenLastCalledWith('startup_open_old_format', { upgrade: false })
+    await openOldFormat(legacy, true)
+    expect(invoke).toHaveBeenLastCalledWith('startup_open_old_format', { upgrade: true })
     expect(legacy.getItem(CONVERTED_MARKER)).toBe('{}')
+  })
 
+  it('forgets the conversion only when the copy from before it is put back', async () => {
+    const legacy = fakeWebStorage({ [CONVERTED_MARKER]: '{}' })
     invoke.mockResolvedValueOnce({ kind: 'failed' })
     await restoreKeptCopy(legacy)
     expect(legacy.getItem(CONVERTED_MARKER)).toBe('{}')
 
-    invoke.mockResolvedValueOnce({ kind: 'ready', notice: 'restored' })
+    // The v2 backup was put back: still converted.
+    invoke.mockResolvedValueOnce({ kind: 'ready', notice: 'restored', forgetConversion: false })
+    expect(await restoreKeptCopy(legacy)).toEqual({ kind: 'ready', notice: 'restored' })
+    expect(legacy.getItem(CONVERTED_MARKER)).toBe('{}')
+
+    invoke.mockResolvedValueOnce({ kind: 'ready', notice: 'restored', forgetConversion: true })
     expect(await restoreKeptCopy(legacy)).toEqual({ kind: 'ready', notice: 'restored' })
     expect(invoke).toHaveBeenLastCalledWith('startup_restore_v1', {})
     expect(legacy.getItem(CONVERTED_MARKER)).toBeNull()

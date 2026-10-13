@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use still_core::sodium;
 use still_core::vault::time;
 
-use crate::store::{AppStore, Loaded, Values};
+use crate::store::{AppStore, Loaded, Restore, Values};
 
 /// The localStorage key the page keeps the marker under, once the vault moved.
 pub const MOVED_MARKER: &str = "still-moved-to-file";
@@ -149,7 +149,7 @@ pub fn open(
     let loaded = store.store().load();
     match (loaded, marker) {
         (Loaded::Unreadable, _) => Startup::Unreadable {
-            can_restore: store.store().kept_v1().is_some(),
+            can_restore: store.store().restore_source().is_some(),
         },
         (Loaded::Values(_), _) if read_converted(converted).is_some() => Startup::OldFormat {
             converted_at: read_converted(converted).unwrap_or_default(),
@@ -171,6 +171,11 @@ pub fn open(
             notice: None,
             marker: None,
         },
+        // No vault file, but a copy Still kept (the file from before an
+        // upgrade): offer that, not the much older localStorage copy.
+        (Loaded::Nothing, _) if store.store().restore_source().is_some() => {
+            Startup::Unreadable { can_restore: true }
+        }
         (Loaded::Nothing, Some(marker)) => Startup::FileMissing {
             moved_at: marker.moved_at,
         },
@@ -182,19 +187,21 @@ pub fn open(
     }
 }
 
-/// Puts back the v1 file a conversion kept, over a vault file that can't be
-/// read (which is kept too, never deleted). The page then forgets the
-/// conversion marker: going back was the user's choice.
-pub fn restore_kept_v1(store: &AppStore) -> Startup {
+/// Puts back the newest copy Still kept (a readable v2 backup, else the v1
+/// file an upgrade kept) over a vault file that can't be opened, which is
+/// kept too: nothing is deleted. Going back to the v1 file was the user's
+/// choice, so the page then forgets the conversion marker.
+pub fn restore_kept(store: &AppStore) -> Value {
     if store.already_open {
-        return Startup::AlreadyOpen;
+        return Startup::AlreadyOpen.to_json();
     }
-    match store.store().restore_v1() {
-        Ok(()) => Startup::Ready {
-            notice: Some("restored"),
-            marker: None,
-        },
-        Err(_) => Startup::Failed,
+    match store.store().restore() {
+        Ok(source) => json!({
+            "kind": "ready",
+            "notice": "restored",
+            "forgetConversion": matches!(source, Restore::KeptV1(_)),
+        }),
+        Err(_) => Startup::Failed.to_json(),
     }
 }
 
@@ -593,8 +600,8 @@ mod tests {
             Startup::Unreadable { can_restore: true }
         );
         assert_eq!(
-            restore_kept_v1(&store).to_json(),
-            json!({ "kind": "ready", "notice": "restored" })
+            restore_kept(&store),
+            json!({ "kind": "ready", "notice": "restored", "forgetConversion": true })
         );
         assert_eq!(stored(&store), Some(real_vault()));
         assert_eq!(
@@ -607,7 +614,7 @@ mod tests {
         );
 
         // Only over an unreadable vault: never over one that opens.
-        assert_eq!(restore_kept_v1(&store), Startup::Failed);
+        assert_eq!(restore_kept(&store), Startup::Failed.to_json());
         assert_eq!(stored(&store), Some(real_vault()));
     }
 
@@ -620,7 +627,7 @@ mod tests {
             open(&store, Values::new(), None, None, NOW),
             Startup::Unreadable { can_restore: false }
         );
-        assert_eq!(restore_kept_v1(&store), Startup::Failed);
+        assert_eq!(restore_kept(&store), Startup::Failed.to_json());
         assert_eq!(
             std::fs::read_to_string(tmp.0.join("vault").join("vault.json")).unwrap(),
             "{damaged"
@@ -639,5 +646,27 @@ mod tests {
             open(&store, with_marker, Some(&marker), None, NOW).to_json(),
             json!({ "kind": "ready" })
         );
+    }
+
+    // No vault file at all, but the copy an upgrade kept: offer that (it is
+    // newer than any localStorage copy), not the create screen.
+    #[test]
+    fn offers_the_kept_copy_when_the_vault_file_is_gone() {
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        let marker = marker_text(&open(&store, real_vault(), None, None, NOW));
+        let dir = tmp.0.join("vault");
+        std::fs::rename(dir.join("vault.json"), dir.join("vault-v1.json")).unwrap();
+        for marker in [None, Some(marker.as_str())] {
+            assert_eq!(
+                open(&store, real_vault(), marker, None, NOW),
+                Startup::Unreadable { can_restore: true }
+            );
+        }
+        assert_eq!(
+            restore_kept(&store),
+            json!({ "kind": "ready", "notice": "restored", "forgetConversion": true })
+        );
+        assert_eq!(stored(&store), Some(real_vault()));
     }
 }

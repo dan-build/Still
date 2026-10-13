@@ -163,7 +163,7 @@ describe('the upgrade to the new vault format', () => {
     seedVault({ lenses: [fakeLens('l1', 'Alpha')] }).unlockNotice = 'upgraded'
     await unlock()
     const notice = await screen.findByText(/Your vault was upgraded to the new format/)
-    expect(notice.textContent).toContain('vault-v1.json')
+    expect(notice.textContent).toContain('kept as vault-v1-2.json')
     fireEvent.click(screen.getByRole('button', { name: 'OK' }))
     expect(screen.queryByText(/Your vault was upgraded/)).toBeNull()
   })

@@ -70,8 +70,8 @@ describe('the vault commands', () => {
     try {
       const state = { status: 'unlocked', view: { lenses: [], bin: [], unreadable: 0 } }
       const marker = '{"convertedAt":"2026-10-13T09:00:00.000Z","fingerprint":"ab"}'
-      invoke.mockResolvedValueOnce({ ok: true, state, notice: 'upgraded', marker })
-      expect(await api.unlock('pw')).toEqual({ ok: true, state, notice: 'upgraded' })
+      invoke.mockResolvedValueOnce({ ok: true, state, notice: 'upgraded', marker, kept: 'vault-v1.json' })
+      expect(await api.unlock('pw')).toEqual({ ok: true, state, notice: 'upgraded', kept: 'vault-v1.json' })
       expect(legacy.getItem('still-converted-v2')).toBe(marker)
 
       invoke.mockResolvedValueOnce({ ok: true, state })

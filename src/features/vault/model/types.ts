@@ -60,6 +60,9 @@ export interface ItemEdit {
  * failed: something else went wrong, e.g. not enough memory for Argon2id.
  */
 export type UnlockResult =
-  /** notice: the vault was converted to format v2 ('upgraded'), or converting failed and it is unchanged. */
-  | { ok: true; state: VaultState; notice?: 'upgraded' | 'upgrade-failed' }
+  /**
+   * notice: the vault was converted to format v2 ('upgraded'; `kept` names the
+   * file kept from before), or converting failed and it is unchanged.
+   */
+  | { ok: true; state: VaultState; notice?: 'upgraded' | 'upgrade-failed'; kept?: string }
   | { ok: false; reason: 'wrong-password' | 'unreadable-data' | 'failed' | 'no-vault' }

@@ -231,14 +231,13 @@ impl Storage for Memory {
     fn convert_to_v2(
         &mut self,
         file: &v2::File,
-        lenses: &str,
-        bin: &str,
-    ) -> Result<(), StorageError> {
+        expected: &[(String, Option<String>)],
+    ) -> Result<String, StorageError> {
         let mut disk = self.0.borrow_mut();
-        let stored = |key: &str| disk.data.get(key).cloned().unwrap_or_else(|| "[]".into());
         let unchanged = disk.v2.is_none()
-            && stored("still-lenses") == lenses
-            && stored("still-recycle-bin") == bin;
+            && expected
+                .iter()
+                .all(|(key, value)| disk.data.get(key) == value.as_ref());
         if disk.fail_all || disk.fail_keys.contains("convert") || !unchanged {
             return Err(StorageError);
         }
@@ -246,6 +245,6 @@ impl Storage for Memory {
         let kept = std::mem::take(&mut disk.data);
         disk.kept_v1.push(kept);
         disk.v2 = Some(file.to_json());
-        Ok(())
+        Ok(format!("vault-v1-{}.json", disk.kept_v1.len()))
     }
 }

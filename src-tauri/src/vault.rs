@@ -89,16 +89,14 @@ impl Storage for FileStorage {
     fn convert_to_v2(
         &mut self,
         file: &v2::File,
-        lenses: &str,
-        bin: &str,
-    ) -> Result<(), StorageError> {
+        expected: &[(String, Option<String>)],
+    ) -> Result<String, StorageError> {
         if self.0.already_open {
             return Err(StorageError);
         }
         self.0
             .store()
-            .convert_to_v2(file, lenses, bin)
-            .map(|_| ())
+            .convert_to_v2(file, expected)
             .map_err(|_| StorageError)
     }
 }

@@ -94,18 +94,22 @@ export function restoreOldCopy(legacy: Storage): Promise<Startup> {
   return run('startup_use_old_copy', { legacy: legacyValues(legacy) }, legacy)
 }
 
-/** The user's choice for an old-format vault file: open it as it is (it isn't converted this time). */
-export function openOldFormat(legacy: Storage): Promise<Startup> {
-  return run('startup_open_old_format', {}, legacy)
+/**
+ * The user's choice for an old-format vault file: open it as it is (it isn't
+ * converted), or open and upgrade it, making that copy the vault from now on.
+ */
+export function openOldFormat(legacy: Storage, upgrade: boolean): Promise<Startup> {
+  return run('startup_open_old_format', { upgrade }, legacy)
 }
 
 /**
- * The user's choice for an unreadable vault file: put back the v1 file the
- * conversion kept. Going back was their choice, so the conversion marker goes.
+ * The user's choice for a vault file that can't be opened: put back the newest
+ * copy Still kept. When that is the file from before the upgrade, going back
+ * was their choice, so the conversion marker goes.
  */
 export async function restoreKeptCopy(legacy: Storage): Promise<Startup> {
-  const startup = await run('startup_restore_v1', {}, legacy)
-  if (startup.kind === 'ready') {
+  const { forgetConversion, ...startup } = (await run('startup_restore_v1', {}, legacy)) as Startup & { forgetConversion?: boolean }
+  if (startup.kind === 'ready' && forgetConversion) {
     try {
       legacy.removeItem(CONVERTED_MARKER)
     } catch {
