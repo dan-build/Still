@@ -119,7 +119,9 @@ pub fn open(store: &AppStore, legacy: Values, marker: Option<&str>, now_ms: i64)
     let loaded = store.store().load();
     match (loaded, marker) {
         (Loaded::Unreadable, _) => Startup::Unreadable,
-        (Loaded::Values(_), Some(marker)) if marker.fingerprint != fingerprint(&legacy) => {
+        (Loaded::Values(_) | Loaded::V2(_), Some(marker))
+            if marker.fingerprint != fingerprint(&legacy) =>
+        {
             // Show once: the marker now matches the old copy as it is.
             let marker = Moved {
                 fingerprint: fingerprint(&legacy),
@@ -130,7 +132,7 @@ pub fn open(store: &AppStore, legacy: Values, marker: Option<&str>, now_ms: i64)
                 marker: Some(marker),
             }
         }
-        (Loaded::Values(_), _) => Startup::Ready {
+        (Loaded::Values(_) | Loaded::V2(_), _) => Startup::Ready {
             notice: None,
             marker: None,
         },

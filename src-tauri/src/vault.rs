@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use still_core::session::{SecretText, Unlocked};
+use still_core::v2;
 use still_core::vault::backend::{self, Backend, Status, Storage, StorageError};
 use tauri::Manager;
 
@@ -31,7 +32,7 @@ impl FileStorage {
         }
         match self.0.store().load() {
             Loaded::Values(values) => values,
-            Loaded::Nothing | Loaded::Unreadable => BTreeMap::new(),
+            Loaded::Nothing | Loaded::V2(_) | Loaded::Unreadable => BTreeMap::new(),
         }
     }
 }
@@ -51,6 +52,28 @@ impl Storage for FileStorage {
         }
         let changes: BTreeMap<String, Option<String>> = changes.iter().cloned().collect();
         self.0.store().write(&changes).map_err(|_| StorageError)
+    }
+
+    fn v2(&self) -> Option<v2::File> {
+        if self.0.already_open {
+            return None;
+        }
+        match self.0.store().load() {
+            Loaded::V2(file) => Some(*file),
+            _ => None,
+        }
+    }
+
+    fn write_v2(&mut self, file: &v2::File) -> Result<(), StorageError> {
+        if self.0.already_open {
+            return Err(StorageError);
+        }
+        self.0.store().write_v2(file).map_err(|_| StorageError)
+    }
+
+    /// New vaults are created in format v2.
+    fn creates_v2(&self) -> bool {
+        true
     }
 }
 
@@ -165,11 +188,14 @@ mod tests {
         assert_eq!(state(&backend)["view"]["lenses"], json!([]));
         drop(backend);
 
-        // A new backend on the same file (as after a restart) opens it.
-        let Loaded::Values(values) = store.store().load() else {
-            panic!("the vault file exists");
+        // The file is v2, and nothing in it is readable.
+        let Loaded::V2(_) = store.store().load() else {
+            panic!("a new vault is saved in v2");
         };
-        assert!(values["still-lenses"].contains("\"name\":\"Work\""));
+        let text = std::fs::read_to_string(dir.0.join("vault").join("vault.json")).unwrap();
+        assert!(!text.contains("Work") && !text.contains("Email"));
+
+        // A new backend on the same file (as after a restart) opens it.
         let reopened = Vault::new(FileStorage(store));
         let mut backend = reopened.backend();
         backend.unlock(&secret("pw-123456")).unwrap();

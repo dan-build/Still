@@ -8,6 +8,7 @@ use std::rc::Rc;
 use still_core::crypto::{self, Key};
 use still_core::session::{SecretText, SessionError, WrappedLensKey};
 use still_core::sodium;
+use still_core::v2;
 use still_core::vault::backend::{Keys, Storage, StorageError};
 use still_core::Error;
 
@@ -18,6 +19,7 @@ pub struct FastKeys {
     lenses: HashMap<String, Key>,
 }
 
+/// The stand-in password step: a keyed hash instead of Argon2id.
 fn password_key(password: &SecretText, salt: &[u8]) -> Key {
     let mut input = password.expose().as_bytes().to_vec();
     input.extend_from_slice(salt);
@@ -87,6 +89,52 @@ impl Keys for FastKeys {
             .map(SecretText::from)
             .map_err(|_| SessionError::Corrupt)
     }
+
+    fn create_v2(password: &SecretText) -> Result<(Self, v2::File), SessionError> {
+        let app = Key::random();
+        let kdf = v2::Kdf::new_sensitive();
+        let empty = v2::Body {
+            lenses: "[]".into(),
+            bin: "[]".into(),
+        };
+        let file = v2::seal_file(&app, &password_key(password, &kdf.salt), kdf, &empty, None);
+        let keys = Self {
+            app,
+            lenses: HashMap::new(),
+        };
+        Ok((keys, file))
+    }
+
+    fn open_v2(file: &v2::File, password: &SecretText) -> Result<(Self, v2::Body), SessionError> {
+        let app = file
+            .open_master_key(&password_key(password, &file.kdf.salt))
+            .map_err(|_| SessionError::WrongPassword)?;
+        let body = file.open_body(&app).map_err(|_| SessionError::Corrupt)?;
+        let keys = Self {
+            app,
+            lenses: HashMap::new(),
+        };
+        Ok((keys, body))
+    }
+
+    fn open_lens_keys(&mut self, lenses: &[WrappedLensKey<'_>]) -> Vec<bool> {
+        lenses
+            .iter()
+            .map(
+                |lens| match crypto::decrypt_lens_key(lens.encrypted_master_key, &self.app) {
+                    Ok(key) => {
+                        self.lenses.insert(lens.id.to_owned(), key);
+                        true
+                    }
+                    Err(_) => false,
+                },
+            )
+            .collect()
+    }
+
+    fn seal_v2(&self, file: &v2::File, body: &v2::Body) -> v2::File {
+        file.with_body(body, &self.app)
+    }
 }
 
 // ---- storage in memory, shared across restarts -------------------------------------
@@ -94,6 +142,10 @@ impl Keys for FastKeys {
 #[derive(Default)]
 pub struct Disk {
     pub data: BTreeMap<String, String>,
+    /// The vault file in format v2, as written (when there is one).
+    pub v2: Option<String>,
+    /// Whether new vaults are created in v2 here.
+    pub creates_v2: bool,
     pub fail_all: bool,
     pub fail_keys: HashSet<String>,
     pub writes: Vec<Vec<String>>,
@@ -125,5 +177,23 @@ impl Storage for Memory {
             };
         }
         Ok(())
+    }
+
+    fn v2(&self) -> Option<v2::File> {
+        v2::File::parse(self.0.borrow().v2.as_deref()?).ok()
+    }
+
+    fn write_v2(&mut self, file: &v2::File) -> Result<(), StorageError> {
+        let mut disk = self.0.borrow_mut();
+        if disk.fail_all || disk.fail_keys.contains("v2") {
+            return Err(StorageError);
+        }
+        disk.writes.push(vec!["v2".to_owned()]);
+        disk.v2 = Some(file.to_json());
+        Ok(())
+    }
+
+    fn creates_v2(&self) -> bool {
+        self.0.borrow().creates_v2
     }
 }

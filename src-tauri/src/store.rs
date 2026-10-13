@@ -19,11 +19,13 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use still_core::sodium;
+use still_core::v2;
 
 pub const FILE_NAME: &str = "vault.json";
 pub const BACKUP_NAME: &str = "vault.json.bak";
 const FORMAT: &str = "still-vault";
 const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION_1: u64 = FORMAT_VERSION as u64;
 
 /// Stored values by key, exactly as the app writes them.
 pub type Values = BTreeMap<String, String>;
@@ -44,6 +46,8 @@ pub enum Loaded {
     /// No vault file (and no backup): nothing has been stored yet.
     Nothing,
     Values(Values),
+    /// A vault in format v2 (docs/vault-format-v2.md), read strictly.
+    V2(Box<v2::File>),
     /// The file is damaged or in an unknown format, or it's missing while
     /// its backup exists. Never written over.
     Unreadable,
@@ -57,6 +61,9 @@ pub enum StoreError {
     Exists,
     /// Reading back what was just written gave something else.
     VerifyFailed,
+    /// A write for one format while the file is in the other (a v2 vault
+    /// never takes v1 values; only the conversion writes v2 over v1).
+    OtherFormat,
     /// The disk refused (permissions, space, ...). Nothing was changed.
     Io,
 }
@@ -86,12 +93,7 @@ impl Store {
 
     pub fn load(&self) -> Loaded {
         match fs::read(self.file()) {
-            Ok(bytes) => match serde_json::from_slice::<VaultFile>(&bytes) {
-                Ok(file) if file.format == FORMAT && file.format_version == FORMAT_VERSION => {
-                    Loaded::Values(file.data)
-                }
-                _ => Loaded::Unreadable,
-            },
+            Ok(bytes) => read_vault(&bytes),
             Err(e) if e.kind() == ErrorKind::NotFound => {
                 if self.backup().exists() {
                     Loaded::Unreadable
@@ -111,6 +113,7 @@ impl Store {
                 let file = self.read_file()?;
                 (file.data, file.migrated_from)
             }
+            Loaded::V2(_) => return Err(StoreError::OtherFormat),
             Loaded::Unreadable => return Err(StoreError::Unreadable),
         };
         for (key, value) in changes {
@@ -125,6 +128,17 @@ impl Store {
             migrated_from,
             data,
         })
+    }
+
+    /// Replaces the vault with this v2 file in one atomic write (the
+    /// previous file kept as the backup). Only a new vault or a v2 one: a v1
+    /// vault changes to v2 only through the conversion, which keeps it.
+    pub fn write_v2(&self, file: &v2::File) -> Result<(), StoreError> {
+        match self.load() {
+            Loaded::Nothing | Loaded::V2(_) => self.save_bytes(file.to_json().as_bytes()),
+            Loaded::Values(_) => Err(StoreError::OtherFormat),
+            Loaded::Unreadable => Err(StoreError::Unreadable),
+        }
     }
 
     /// Creates the vault file from the values an older version kept in
@@ -154,13 +168,43 @@ impl Store {
     fn save(&self, file: &VaultFile) -> Result<(), StoreError> {
         let mut bytes = serde_json::to_vec_pretty(file).map_err(|_| StoreError::Io)?;
         bytes.push(b'\n');
+        self.save_bytes(&bytes)
+    }
+
+    fn save_bytes(&self, bytes: &[u8]) -> Result<(), StoreError> {
         create_private_dir(&self.dir)?;
         if self.file().exists() {
             // Refresh the backup by copying, so vault.json never goes missing.
             let previous = fs::read(self.file())?;
             write_atomically(&self.dir, &self.backup(), &previous)?;
         }
-        write_atomically(&self.dir, &self.file(), &bytes)
+        write_atomically(&self.dir, &self.file(), bytes)
+    }
+}
+
+/// A vault file's bytes: format v1 (the localStorage values) or v2, by its
+/// `formatVersion`. Anything else, or anything either format refuses, is
+/// unreadable, and so never written over.
+fn read_vault(bytes: &[u8]) -> Loaded {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return Loaded::Unreadable;
+    };
+    let Ok(header) = serde_json::from_str::<serde_json::Value>(text) else {
+        return Loaded::Unreadable;
+    };
+    if header["format"] != FORMAT {
+        return Loaded::Unreadable;
+    }
+    match header["formatVersion"].as_u64() {
+        Some(2) => match v2::File::parse(text) {
+            Ok(file) => Loaded::V2(Box::new(file)),
+            Err(_) => Loaded::Unreadable,
+        },
+        Some(FORMAT_VERSION_1) => match serde_json::from_str::<VaultFile>(text) {
+            Ok(file) if file.format_version == FORMAT_VERSION => Loaded::Values(file.data),
+            _ => Loaded::Unreadable,
+        },
+        _ => Loaded::Unreadable,
     }
 }
 
@@ -449,6 +493,88 @@ mod tests {
         )
         .unwrap();
         assert!(opened.iter().all(|&o| o));
+    }
+
+    /// A v2 file sealed with fixed keys (no Argon2id here).
+    fn a_v2_file() -> v2::File {
+        let app = still_core::crypto::Key::random();
+        let body = v2::Body {
+            lenses: "[]".into(),
+            bin: "[]".into(),
+        };
+        v2::seal_file(
+            &app,
+            &still_core::crypto::Key::random(),
+            v2::Kdf::new_sensitive(),
+            &body,
+            None,
+        )
+    }
+
+    #[test]
+    fn writes_and_reads_a_v2_vault_keeping_the_backup() {
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        let first = a_v2_file();
+        store.write_v2(&first).unwrap();
+        assert_eq!(store.load(), Loaded::V2(Box::new(first.clone())));
+        let second = a_v2_file();
+        store.write_v2(&second).unwrap();
+        assert_eq!(store.load(), Loaded::V2(Box::new(second)));
+        assert_eq!(fs::read_to_string(store.backup()).unwrap(), first.to_json());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(store.file()).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    #[test]
+    fn never_mixes_the_two_formats() {
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        store.write_v2(&a_v2_file()).unwrap();
+        let before = fs::read(store.file()).unwrap();
+        // v1 values never go into a v2 vault.
+        assert_eq!(
+            store.write(&set(&[("still-lenses", Some("[]"))])),
+            Err(StoreError::OtherFormat)
+        );
+        assert_eq!(fs::read(store.file()).unwrap(), before);
+
+        // A normal v2 save never goes over a v1 vault (only the conversion does).
+        let v1 = TempDir::new();
+        let v1_store = v1.store();
+        v1_store.import_legacy(real_vault()).unwrap();
+        let before = fs::read(v1_store.file()).unwrap();
+        assert_eq!(
+            v1_store.write_v2(&a_v2_file()),
+            Err(StoreError::OtherFormat)
+        );
+        assert_eq!(fs::read(v1_store.file()).unwrap(), before);
+    }
+
+    #[test]
+    fn treats_a_damaged_v2_file_as_unreadable_and_never_writes_over_it() {
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        let file = a_v2_file();
+        store.write_v2(&file).unwrap();
+        let damaged = file
+            .to_json()
+            .replace("\"formatVersion\": 2", "\"formatVersion\": 2 ");
+        fs::write(store.file(), &damaged).unwrap();
+        assert_eq!(store.load(), Loaded::Unreadable);
+        assert_eq!(store.write_v2(&a_v2_file()), Err(StoreError::Unreadable));
+        assert_eq!(fs::read_to_string(store.file()).unwrap(), damaged);
+        // An unknown format version is unreadable too.
+        fs::write(
+            store.file(),
+            r#"{"format":"still-vault","formatVersion":3}"#,
+        )
+        .unwrap();
+        assert_eq!(store.load(), Loaded::Unreadable);
     }
 
     #[test]

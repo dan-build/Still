@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use serde_json::{json, Value};
-use still_core::session::{SecretText, SessionError, Unlocked};
+use still_core::session::{SecretText, Unlocked};
 use still_core::vault::backend::{Status, UnlockFailure};
 use tauri::State;
 
@@ -50,9 +50,12 @@ pub async fn vault_create(
 ) -> Result<Value, CommandError> {
     let password = SecretText::from(password);
     let plan = vault.backend().prepare_create()?;
-    let created = tauri::async_runtime::spawn_blocking(move || Unlocked::create(&password))
-        .await
-        .unwrap_or(Err(SessionError::Failed));
+    let (plan, created) = tauri::async_runtime::spawn_blocking(move || {
+        let created = plan.create::<Unlocked>(&password);
+        (plan, created)
+    })
+    .await
+    .map_err(|_| CommandError("failed"))?;
     // Activity first, so the watcher never sees a new session as idle.
     autolock.touch(SystemTime::now());
     let mut backend = vault.backend();
