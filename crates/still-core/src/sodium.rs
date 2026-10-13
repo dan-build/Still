@@ -109,7 +109,33 @@ pub fn argon2id_sensitive(
     password: &[u8],
     salt: &[u8; 16],
 ) -> Result<(), PasswordHashFailed> {
+    argon2id(
+        out,
+        password,
+        salt,
+        ARGON2ID_OPS_SENSITIVE,
+        ARGON2ID_MEM_SENSITIVE,
+    )
+}
+
+/// libsodium's SENSITIVE limits for Argon2id: 4 passes over 1 GiB.
+pub const ARGON2ID_OPS_SENSITIVE: u64 = ffi::crypto_pwhash_OPSLIMIT_SENSITIVE as u64;
+pub const ARGON2ID_MEM_SENSITIVE: u64 = ffi::crypto_pwhash_MEMLIMIT_SENSITIVE as u64;
+/// libsodium's id for Argon2id v1.3.
+pub const ARGON2ID13: u8 = ffi::crypto_pwhash_ALG_ARGON2ID13 as u8;
+
+/// Argon2id v1.3 with the given passes and memory (bytes), 32-byte output.
+/// Callers bound the limits (vault v2 allows SENSITIVE up to 16 passes and
+/// 4 GiB); libsodium refuses what it can't run. One at a time per process.
+pub fn argon2id(
+    out: &mut [u8; 32],
+    password: &[u8],
+    salt: &[u8; 16],
+    ops_limit: u64,
+    mem_limit: u64,
+) -> Result<(), PasswordHashFailed> {
     init().map_err(|_| PasswordHashFailed)?;
+    let mem_limit = usize::try_from(mem_limit).map_err(|_| PasswordHashFailed)?;
     static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
     let _running = ONE_AT_A_TIME
         .lock()
@@ -123,8 +149,8 @@ pub fn argon2id_sensitive(
             password.as_ptr() as *const c_char,
             password.len() as c_ulonglong,
             salt.as_ptr(),
-            ffi::crypto_pwhash_OPSLIMIT_SENSITIVE as c_ulonglong,
-            ffi::crypto_pwhash_MEMLIMIT_SENSITIVE as usize,
+            ops_limit as c_ulonglong,
+            mem_limit,
             ffi::crypto_pwhash_ALG_ARGON2ID13 as c_int,
         )
     };
@@ -135,21 +161,27 @@ pub fn argon2id_sensitive(
     }
 }
 
-/// XChaCha20-Poly1305 (IETF) with no associated data. Returns ciphertext + tag.
-pub fn aead_encrypt(message: &[u8], nonce: &[u8; NONCE_BYTES], key: &[u8; 32]) -> Vec<u8> {
+/// XChaCha20-Poly1305 (IETF), authenticating `ad` too (v1 passes none).
+/// Returns ciphertext + tag.
+pub fn aead_encrypt(
+    message: &[u8],
+    ad: &[u8],
+    nonce: &[u8; NONCE_BYTES],
+    key: &[u8; 32],
+) -> Vec<u8> {
     let _ = init();
     let mut sealed = vec![0u8; message.len() + TAG_BYTES];
     let mut sealed_len: c_ulonglong = 0;
     // SAFETY: `sealed` has room for the message plus the 16-byte tag; the
-    // other buffers are valid for their lengths; no additional data.
+    // other buffers (including `ad`, which may be empty) are valid for their lengths.
     unsafe {
         ffi::crypto_aead_xchacha20poly1305_ietf_encrypt(
             sealed.as_mut_ptr(),
             &mut sealed_len,
             message.as_ptr(),
             message.len() as c_ulonglong,
-            ptr::null(),
-            0,
+            ad.as_ptr(),
+            ad.len() as c_ulonglong,
             ptr::null(),
             nonce.as_ptr(),
             key.as_ptr(),
@@ -159,10 +191,12 @@ pub fn aead_encrypt(message: &[u8], nonce: &[u8; NONCE_BYTES], key: &[u8; 32]) -
     sealed
 }
 
-/// Opens an XChaCha20-Poly1305 (IETF) ciphertext + tag. Err if it is too short
-/// or fails authentication (wrong key or changed bytes).
+/// Opens an XChaCha20-Poly1305 (IETF) ciphertext + tag with the same `ad`.
+/// Err if it is too short or fails authentication (wrong key, changed bytes
+/// or different associated data).
 pub fn aead_decrypt(
     sealed: &[u8],
+    ad: &[u8],
     nonce: &[u8; NONCE_BYTES],
     key: &[u8; 32],
 ) -> Result<Vec<u8>, AuthFailed> {
@@ -173,7 +207,7 @@ pub fn aead_decrypt(
     let mut message = vec![0u8; sealed.len() - TAG_BYTES];
     let mut message_len: c_ulonglong = 0;
     // SAFETY: `message` has room for the ciphertext length minus the tag; the
-    // other buffers are valid for their lengths; no additional data.
+    // other buffers (including `ad`, which may be empty) are valid for their lengths.
     let rc = unsafe {
         ffi::crypto_aead_xchacha20poly1305_ietf_decrypt(
             message.as_mut_ptr(),
@@ -181,8 +215,8 @@ pub fn aead_decrypt(
             ptr::null_mut(),
             sealed.as_ptr(),
             sealed.len() as c_ulonglong,
-            ptr::null(),
-            0,
+            ad.as_ptr(),
+            ad.len() as c_ulonglong,
             nonce.as_ptr(),
             key.as_ptr(),
         )

@@ -30,6 +30,11 @@ pub enum FormatError {
     WrongLength { expected: usize, actual: usize },
     /// Fewer bytes than this kind of blob needs.
     TooShort { minimum: usize, actual: usize },
+    /// A v2 file header that isn't exactly as v2 writes it.
+    InvalidHeader(&'static str),
+    /// A v2 body that doesn't open with the vault's own key: changed bytes,
+    /// or a body from another vault.
+    DamagedBody,
 }
 
 impl std::fmt::Display for FormatError {
@@ -43,6 +48,8 @@ impl std::fmt::Display for FormatError {
             Self::TooShort { minimum, actual } => {
                 write!(f, "expected at least {minimum} bytes, got {actual}")
             }
+            Self::InvalidHeader(why) => write!(f, "invalid v2 header: {why}"),
+            Self::DamagedBody => write!(f, "the v2 body doesn't open with this vault's key"),
         }
     }
 }
