@@ -141,6 +141,93 @@ impl Store {
         }
     }
 
+    /// Converts the v1 vault to this v2 file (docs/vault-format-v2.md,
+    /// "Converting from v1"), keeping the v1 file as `vault-v1.json` (or
+    /// `vault-v1-2.json`, ... if a different one is there); Still never
+    /// writes over or deletes a kept file. Refuses unless the file is still v1 with
+    /// exactly these lists. Keeps the v1 file's bytes first, crash-safe;
+    /// then writes v2 atomically and reads it back, putting the v1 file back
+    /// if it doesn't read back exactly. Returns the kept copy's path.
+    pub fn convert_to_v2(
+        &self,
+        file: &v2::File,
+        lenses: &str,
+        bin: &str,
+    ) -> Result<PathBuf, StoreError> {
+        let original = fs::read(self.file())?;
+        let Loaded::Values(values) = read_vault(&original) else {
+            return Err(StoreError::OtherFormat);
+        };
+        let stored = |key: &str| values.get(key).map_or("[]", String::as_str);
+        if stored("still-lenses") != lenses || stored("still-recycle-bin") != bin {
+            return Err(StoreError::VerifyFailed);
+        }
+        let kept = self.keep("vault-v1", &original)?;
+        self.save_bytes(file.to_json().as_bytes())?;
+        match self.load() {
+            Loaded::V2(stored) if *stored == *file => Ok(kept),
+            _ => {
+                write_atomically(&self.dir, &self.file(), &original)?;
+                Err(StoreError::VerifyFailed)
+            }
+        }
+    }
+
+    /// Keeps `bytes` as `<stem>.json`, or the first free `<stem>-N.json`,
+    /// never replacing a file: a temp file is written and flushed, then
+    /// linked to the name (which fails if the name exists), and read back.
+    /// An existing copy with the very same bytes is used as it is.
+    fn keep(&self, stem: &str, bytes: &[u8]) -> Result<PathBuf, StoreError> {
+        for n in 1..1000 {
+            let target = self.dir.join(numbered(stem, n));
+            if target.exists() {
+                if fs::read(&target)? == bytes {
+                    return Ok(target);
+                }
+                continue;
+            }
+            write_new(&self.dir, &target, bytes)?;
+            if fs::read(&target)? != bytes {
+                return Err(StoreError::VerifyFailed);
+            }
+            return Ok(target);
+        }
+        Err(StoreError::Io)
+    }
+
+    /// The v1 file the latest conversion kept, if there is one.
+    pub fn kept_v1(&self) -> Option<PathBuf> {
+        (1..1000)
+            .map(|n| self.dir.join(numbered("vault-v1", n)))
+            .take_while(|path| path.exists())
+            .last()
+    }
+
+    /// Puts the kept v1 file back as the vault, over a vault file that can't
+    /// be read. That file is kept too (`vault-unreadable.json`, ...): nothing
+    /// is ever deleted. Only for an unreadable vault, and only a readable
+    /// v1 copy.
+    pub fn restore_v1(&self) -> Result<(), StoreError> {
+        if self.load() != Loaded::Unreadable {
+            return Err(StoreError::OtherFormat);
+        }
+        let kept = self.kept_v1().ok_or(StoreError::Unreadable)?;
+        let bytes = fs::read(kept)?;
+        if !matches!(read_vault(&bytes), Loaded::Values(_)) {
+            return Err(StoreError::Unreadable);
+        }
+        if self.file().exists() {
+            let damaged = fs::read(self.file())?;
+            self.keep("vault-unreadable", &damaged)?;
+        }
+        create_private_dir(&self.dir)?;
+        write_atomically(&self.dir, &self.file(), &bytes)?;
+        match self.load() {
+            Loaded::Values(_) => Ok(()),
+            _ => Err(StoreError::VerifyFailed),
+        }
+    }
+
     /// Creates the vault file from the values an older version kept in
     /// localStorage, unchanged. Refuses if a vault file (or its backup)
     /// already exists, and checks the file reads back exactly.
@@ -217,6 +304,48 @@ fn create_private_dir(dir: &Path) -> std::io::Result<()> {
         builder.mode(0o700);
     }
     builder.create(dir)
+}
+
+/// `<stem>.json`, then `<stem>-2.json`, `<stem>-3.json`, ...
+fn numbered(stem: &str, n: usize) -> String {
+    if n == 1 {
+        format!("{stem}.json")
+    } else {
+        format!("{stem}-{n}.json")
+    }
+}
+
+/// Writes `bytes` to a new file at `target`, which must not exist: a temp
+/// file is written and flushed, then hard-linked to `target` (failing if it
+/// exists, so nothing is ever replaced), and the folder flushed. The temp
+/// file is removed either way.
+fn write_new(dir: &Path, target: &Path, bytes: &[u8]) -> Result<(), StoreError> {
+    let mut suffix = [0u8; 8];
+    sodium::random_bytes(&mut suffix);
+    let temp = dir.join(format!(
+        ".keep.{}.tmp",
+        suffix
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+    ));
+    let result = (|| {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        fs::hard_link(&temp, target)?;
+        sync_dir(dir)
+    })();
+    let _ = fs::remove_file(&temp);
+    result.map_err(StoreError::from)
 }
 
 /// Writes `bytes` to a new file beside `target`, flushes it, renames it over
@@ -575,6 +704,90 @@ mod tests {
         )
         .unwrap();
         assert_eq!(store.load(), Loaded::Unreadable);
+    }
+
+    /// A store holding the real exported vault (v1), and its file's bytes.
+    fn real_v1(tmp: &TempDir) -> (Store, Vec<u8>) {
+        let store = tmp.store();
+        store.import_legacy(real_vault()).unwrap();
+        let bytes = fs::read(store.file()).unwrap();
+        (store, bytes)
+    }
+
+    fn lists(values: &Values) -> (String, String) {
+        (
+            values["still-lenses"].clone(),
+            values["still-recycle-bin"].clone(),
+        )
+    }
+
+    #[test]
+    fn converts_to_v2_keeping_the_v1_file_byte_for_byte() {
+        let tmp = TempDir::new();
+        let (store, v1_bytes) = real_v1(&tmp);
+        let (lenses, bin) = lists(&real_vault());
+        let file = a_v2_file();
+        let kept = store.convert_to_v2(&file, &lenses, &bin).unwrap();
+        assert_eq!(kept, store.dir.join("vault-v1.json"));
+        assert_eq!(fs::read(&kept).unwrap(), v1_bytes);
+        assert_eq!(store.load(), Loaded::V2(Box::new(file)));
+        // No temp files are left behind.
+        let names: Vec<String> = fs::read_dir(&store.dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert!(names.iter().all(|n| !n.ends_with(".tmp")), "{names:?}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&kept).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    #[test]
+    fn never_writes_over_a_kept_v1_file() {
+        let tmp = TempDir::new();
+        let (store, v1_bytes) = real_v1(&tmp);
+        let (lenses, bin) = lists(&real_vault());
+        // A different file already holds the name; an identical one is reused.
+        fs::write(store.dir.join("vault-v1.json"), b"someone else's").unwrap();
+        fs::write(store.dir.join("vault-v1-2.json"), &v1_bytes).unwrap();
+        let kept = store.convert_to_v2(&a_v2_file(), &lenses, &bin).unwrap();
+        assert_eq!(kept, store.dir.join("vault-v1-2.json"));
+        assert_eq!(
+            fs::read(store.dir.join("vault-v1.json")).unwrap(),
+            b"someone else's"
+        );
+
+        let tmp = TempDir::new();
+        let (store, v1_bytes) = real_v1(&tmp);
+        fs::write(store.dir.join("vault-v1.json"), b"not this vault").unwrap();
+        let kept = store.convert_to_v2(&a_v2_file(), &lenses, &bin).unwrap();
+        assert_eq!(kept, store.dir.join("vault-v1-2.json"));
+        assert_eq!(fs::read(kept).unwrap(), v1_bytes);
+    }
+
+    #[test]
+    fn refuses_to_convert_anything_but_the_lists_it_was_given() {
+        let tmp = TempDir::new();
+        let (store, v1_bytes) = real_v1(&tmp);
+        let (lenses, _) = lists(&real_vault());
+        assert_eq!(
+            store.convert_to_v2(&a_v2_file(), &lenses, "[]"),
+            Err(StoreError::VerifyFailed)
+        );
+        assert_eq!(fs::read(store.file()).unwrap(), v1_bytes);
+        assert!(!store.dir.join("vault-v1.json").exists());
+
+        // A v2 vault is never converted again.
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        store.write_v2(&a_v2_file()).unwrap();
+        assert_eq!(
+            store.convert_to_v2(&a_v2_file(), "[]", "[]"),
+            Err(StoreError::OtherFormat)
+        );
     }
 
     #[test]

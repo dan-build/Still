@@ -40,7 +40,17 @@ pub enum Startup {
         marker: Option<Moved>,
     },
     AlreadyOpen,
-    Unreadable,
+    /// The vault file can't be read. `can_restore`: the v1 file a
+    /// conversion kept is there, and the user may put it back.
+    Unreadable {
+        can_restore: bool,
+    },
+    /// The vault file is v1, but this vault was converted to v2 on
+    /// `converted_at`: an older or changed copy is in its place. It opens
+    /// only if the user says so, and is then never converted silently.
+    OldFormat {
+        converted_at: String,
+    },
     FileMissing {
         moved_at: String,
     },
@@ -64,7 +74,12 @@ impl Startup {
                 ready
             }
             Self::AlreadyOpen => json!({ "kind": "already-open" }),
-            Self::Unreadable => json!({ "kind": "unreadable" }),
+            Self::Unreadable { can_restore } => {
+                json!({ "kind": "unreadable", "canRestore": can_restore })
+            }
+            Self::OldFormat { converted_at } => {
+                json!({ "kind": "old-format", "convertedAt": converted_at })
+            }
             Self::FileMissing { moved_at } => {
                 json!({ "kind": "file-missing", "movedAt": moved_at })
             }
@@ -74,11 +89,13 @@ impl Startup {
 }
 
 /// Every value an older version stored (they all start with "still-"),
-/// except the marker.
+/// except the markers this version sets (moved, and converted to v2).
 fn legacy_values(legacy: Values) -> Values {
     legacy
         .into_iter()
-        .filter(|(key, _)| key.starts_with("still-") && key != MOVED_MARKER)
+        .filter(|(key, _)| {
+            key.starts_with("still-") && key != MOVED_MARKER && key != "still-converted-v2"
+        })
         .collect()
 }
 
@@ -110,7 +127,20 @@ fn read_marker(text: Option<&str>) -> Option<Moved> {
     })
 }
 
-pub fn open(store: &AppStore, legacy: Values, marker: Option<&str>, now_ms: i64) -> Startup {
+/// When the conversion marker (localStorage `still-converted-v2`, which the
+/// page keeps once the vault was converted to v2) says it was converted.
+fn read_converted(text: Option<&str>) -> Option<String> {
+    let value: Value = serde_json::from_str(text?).ok()?;
+    Some(value.as_object()?.get("convertedAt")?.as_str()?.to_owned())
+}
+
+pub fn open(
+    store: &AppStore,
+    legacy: Values,
+    marker: Option<&str>,
+    converted: Option<&str>,
+    now_ms: i64,
+) -> Startup {
     if store.already_open {
         return Startup::AlreadyOpen;
     }
@@ -118,7 +148,12 @@ pub fn open(store: &AppStore, legacy: Values, marker: Option<&str>, now_ms: i64)
     let marker = read_marker(marker);
     let loaded = store.store().load();
     match (loaded, marker) {
-        (Loaded::Unreadable, _) => Startup::Unreadable,
+        (Loaded::Unreadable, _) => Startup::Unreadable {
+            can_restore: store.store().kept_v1().is_some(),
+        },
+        (Loaded::Values(_), _) if read_converted(converted).is_some() => Startup::OldFormat {
+            converted_at: read_converted(converted).unwrap_or_default(),
+        },
         (Loaded::Values(_) | Loaded::V2(_), Some(marker))
             if marker.fingerprint != fingerprint(&legacy) =>
         {
@@ -144,6 +179,22 @@ pub fn open(store: &AppStore, legacy: Values, marker: Option<&str>, now_ms: i64)
             marker: None,
         },
         (Loaded::Nothing, None) => move_old_copy(store, legacy, now_ms),
+    }
+}
+
+/// Puts back the v1 file a conversion kept, over a vault file that can't be
+/// read (which is kept too, never deleted). The page then forgets the
+/// conversion marker: going back was the user's choice.
+pub fn restore_kept_v1(store: &AppStore) -> Startup {
+    if store.already_open {
+        return Startup::AlreadyOpen;
+    }
+    match store.store().restore_v1() {
+        Ok(()) => Startup::Ready {
+            notice: Some("restored"),
+            marker: None,
+        },
+        Err(_) => Startup::Failed,
     }
 }
 
@@ -258,7 +309,7 @@ mod tests {
         let store = tmp.store();
         let legacy = with(&Values::new(), &[("unrelated-app-key", "x")]);
         assert_eq!(
-            open(&store, legacy, None, NOW),
+            open(&store, legacy, None, None, NOW),
             Startup::Ready {
                 notice: None,
                 marker: None
@@ -280,6 +331,7 @@ mod tests {
             &store,
             with(&legacy, &[("unrelated-app-key", "x")]),
             None,
+            None,
             NOW,
         );
 
@@ -299,6 +351,7 @@ mod tests {
             &store,
             with(&legacy, &[(MOVED_MARKER, &marker)]),
             Some(&marker),
+            None,
             NOW,
         );
         assert_eq!(again.to_json(), json!({ "kind": "ready" }));
@@ -308,13 +361,13 @@ mod tests {
     fn uses_the_file_not_the_old_copy_from_then_on() {
         let tmp = TempDir::new();
         let store = tmp.store();
-        let marker = marker_text(&open(&store, real_vault(), None, NOW));
+        let marker = marker_text(&open(&store, real_vault(), None, None, NOW));
         let mut changes = std::collections::BTreeMap::new();
         changes.insert("still-lenses".to_owned(), Some("[]".to_owned()));
         store.store().write(&changes).unwrap();
 
         assert_eq!(
-            open(&store, real_vault(), Some(&marker), NOW).to_json(),
+            open(&store, real_vault(), Some(&marker), None, NOW).to_json(),
             json!({ "kind": "ready" })
         );
         assert_eq!(stored(&store).unwrap()["still-lenses"], "[]");
@@ -324,10 +377,10 @@ mod tests {
     fn says_once_when_an_older_version_changed_the_old_copy_after_the_move() {
         let tmp = TempDir::new();
         let store = tmp.store();
-        let marker = marker_text(&open(&store, real_vault(), None, NOW));
+        let marker = marker_text(&open(&store, real_vault(), None, None, NOW));
         let changed = with(&real_vault(), &[("still-lenses", "[]")]);
 
-        let started = open(&store, changed.clone(), Some(&marker), NOW + 1000);
+        let started = open(&store, changed.clone(), Some(&marker), None, NOW + 1000);
         assert_eq!(started.to_json()["notice"], "old-copy-changed");
         // The marker keeps when the vault moved, with the copy as it is now.
         let updated = marker_text(&started);
@@ -339,7 +392,7 @@ mod tests {
             )
         );
         assert_eq!(
-            open(&store, changed, Some(&updated), NOW).to_json(),
+            open(&store, changed, Some(&updated), None, NOW).to_json(),
             json!({ "kind": "ready" })
         );
         assert_eq!(stored(&store), Some(real_vault()));
@@ -349,13 +402,13 @@ mod tests {
     fn never_quietly_brings_back_the_old_copy_when_the_moved_file_has_gone() {
         let tmp = TempDir::new();
         let store = tmp.store();
-        let marker = marker_text(&open(&store, real_vault(), None, NOW));
+        let marker = marker_text(&open(&store, real_vault(), None, None, NOW));
         drop(store);
         std::fs::remove_dir_all(tmp.0.join("vault")).unwrap();
         let store = tmp.store();
 
         assert_eq!(
-            open(&store, real_vault(), Some(&marker), NOW),
+            open(&store, real_vault(), Some(&marker), None, NOW),
             Startup::FileMissing {
                 moved_at: "2026-10-05T10:00:00.000Z".into()
             }
@@ -374,13 +427,19 @@ mod tests {
         let tmp = TempDir::new();
         let store = tmp.store();
         std::fs::write(tmp.0.join("vault").join("vault.json"), "{oops").unwrap();
-        assert_eq!(open(&store, real_vault(), None, NOW), Startup::Unreadable);
+        assert_eq!(
+            open(&store, real_vault(), None, None, NOW),
+            Startup::Unreadable { can_restore: false }
+        );
         // A move never writes over it.
         assert_eq!(move_old_copy(&store, real_vault(), NOW), Startup::Failed);
 
         let second = tmp.store();
         assert!(second.already_open);
-        assert_eq!(open(&second, real_vault(), None, NOW), Startup::AlreadyOpen);
+        assert_eq!(
+            open(&second, real_vault(), None, None, NOW),
+            Startup::AlreadyOpen
+        );
         assert_eq!(
             move_old_copy(&second, real_vault(), NOW),
             Startup::AlreadyOpen
@@ -436,8 +495,15 @@ mod tests {
             json!({ "kind": "already-open" })
         );
         assert_eq!(
-            Startup::Unreadable.to_json(),
-            json!({ "kind": "unreadable" })
+            Startup::Unreadable { can_restore: true }.to_json(),
+            json!({ "kind": "unreadable", "canRestore": true })
+        );
+        assert_eq!(
+            Startup::OldFormat {
+                converted_at: "t".into()
+            }
+            .to_json(),
+            json!({ "kind": "old-format", "convertedAt": "t" })
         );
         assert_eq!(Startup::Failed.to_json(), json!({ "kind": "failed" }));
     }
@@ -451,15 +517,127 @@ mod tests {
         let store = tmp.store();
         let dir = tmp.0.join("vault");
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
-        let started = open(&store, real_vault(), None, NOW);
+        let started = open(&store, real_vault(), None, None, NOW);
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
 
         assert_eq!(started, Startup::Failed);
         assert!(started.to_json().get("marker").is_none());
         assert_eq!(stored(&store), None);
         assert_eq!(
-            open(&store, real_vault(), None, NOW).to_json()["notice"],
+            open(&store, real_vault(), None, None, NOW).to_json()["notice"],
             "moved"
+        );
+    }
+
+    const CONVERTED: &str = r#"{"convertedAt":"2026-10-13T09:00:00.000Z","fingerprint":"ab"}"#;
+
+    // After a conversion, a v1 file in the vault's place asks before it opens.
+    #[test]
+    fn asks_before_opening_an_old_format_vault_after_a_conversion() {
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        let marker = marker_text(&open(&store, real_vault(), None, None, NOW));
+        assert_eq!(
+            open(&store, real_vault(), Some(&marker), Some(CONVERTED), NOW),
+            Startup::OldFormat {
+                converted_at: "2026-10-13T09:00:00.000Z".into()
+            }
+        );
+        // Without the conversion marker (or with one it can't read), as before.
+        for converted in [None, Some("{oops"), Some(r#"{"convertedAt":1}"#)] {
+            assert_eq!(
+                open(&store, real_vault(), Some(&marker), converted, NOW).to_json(),
+                json!({ "kind": "ready" })
+            );
+        }
+    }
+
+    #[test]
+    fn opens_a_v2_vault_as_usual_with_the_conversion_marker() {
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        let body = still_core::v2::Body {
+            lenses: "[]".into(),
+            bin: "[]".into(),
+        };
+        let file = still_core::v2::seal_file(
+            &still_core::crypto::Key::random(),
+            &still_core::crypto::Key::random(),
+            still_core::v2::Kdf::new_sensitive(),
+            &body,
+            None,
+        );
+        store.store().write_v2(&file).unwrap();
+        assert_eq!(
+            open(&store, Values::new(), None, Some(CONVERTED), NOW).to_json(),
+            json!({ "kind": "ready" })
+        );
+    }
+
+    // A v2 file that can't be read, next to the kept v1 file: the user can
+    // put the v1 file back, and the unreadable one is kept too.
+    #[test]
+    fn offers_to_restore_the_kept_v1_file_over_an_unreadable_vault() {
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        let dir = tmp.0.join("vault");
+        let v1 = include_str!("../../fixtures/vault-v1-real/vault.json");
+        let v1_file = format!(
+            r#"{{"format":"still-vault","formatVersion":1,"migratedFrom":"localStorage","data":{v1}}}"#
+        );
+        std::fs::write(dir.join("vault-v1.json"), &v1_file).unwrap();
+        std::fs::write(dir.join("vault.json"), "{damaged v2").unwrap();
+
+        assert_eq!(
+            open(&store, real_vault(), None, None, NOW),
+            Startup::Unreadable { can_restore: true }
+        );
+        assert_eq!(
+            restore_kept_v1(&store).to_json(),
+            json!({ "kind": "ready", "notice": "restored" })
+        );
+        assert_eq!(stored(&store), Some(real_vault()));
+        assert_eq!(
+            std::fs::read_to_string(dir.join("vault-unreadable.json")).unwrap(),
+            "{damaged v2"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("vault-v1.json")).unwrap(),
+            v1_file
+        );
+
+        // Only over an unreadable vault: never over one that opens.
+        assert_eq!(restore_kept_v1(&store), Startup::Failed);
+        assert_eq!(stored(&store), Some(real_vault()));
+    }
+
+    #[test]
+    fn offers_no_restore_without_a_kept_v1_file() {
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        std::fs::write(tmp.0.join("vault").join("vault.json"), "{damaged").unwrap();
+        assert_eq!(
+            open(&store, Values::new(), None, None, NOW),
+            Startup::Unreadable { can_restore: false }
+        );
+        assert_eq!(restore_kept_v1(&store), Startup::Failed);
+        assert_eq!(
+            std::fs::read_to_string(tmp.0.join("vault").join("vault.json")).unwrap(),
+            "{damaged"
+        );
+    }
+
+    // The conversion marker is this version's, not the old copy's: setting
+    // it must not look like an older version changed its copy.
+    #[test]
+    fn leaves_the_conversion_marker_out_of_the_old_copy() {
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        let marker = marker_text(&open(&store, real_vault(), None, None, NOW));
+        let with_marker = with(&real_vault(), &[("still-converted-v2", CONVERTED)]);
+        assert_eq!(
+            open(&store, with_marker, Some(&marker), None, NOW).to_json(),
+            json!({ "kind": "ready" })
         );
     }
 }

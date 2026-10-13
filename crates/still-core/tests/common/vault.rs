@@ -135,6 +135,18 @@ impl Keys for FastKeys {
     fn seal_v2(&self, file: &v2::File, body: &v2::Body) -> v2::File {
         file.with_body(body, &self.app)
     }
+
+    fn convert_v2(&self, password: &SecretText, body: &v2::Body) -> Result<v2::File, SessionError> {
+        let kdf = v2::Kdf::new_sensitive();
+        let key = password_key(password, &kdf.salt);
+        Ok(v2::seal_file(
+            &self.app,
+            &key,
+            kdf,
+            body,
+            Some("vault-v1".into()),
+        ))
+    }
 }
 
 // ---- storage in memory, shared across restarts -------------------------------------
@@ -144,8 +156,12 @@ pub struct Disk {
     pub data: BTreeMap<String, String>,
     /// The vault file in format v2, as written (when there is one).
     pub v2: Option<String>,
-    /// Whether new vaults are created in v2 here.
+    /// Whether new vaults are created in v2 here (and v1 ones converted).
     pub creates_v2: bool,
+    /// The file exists but can't be read.
+    pub unreadable: bool,
+    /// The v1 values each conversion kept, in order.
+    pub kept_v1: Vec<BTreeMap<String, String>>,
     pub fail_all: bool,
     pub fail_keys: HashSet<String>,
     pub writes: Vec<Vec<String>>,
@@ -185,7 +201,12 @@ impl Storage for Memory {
 
     fn write_v2(&mut self, file: &v2::File) -> Result<(), StorageError> {
         let mut disk = self.0.borrow_mut();
-        if disk.fail_all || disk.fail_keys.contains("v2") {
+        // As the vault file: never a v2 write over v1 values (only the conversion).
+        if disk.fail_all
+            || disk.fail_keys.contains("v2")
+            || !disk.data.is_empty()
+            || disk.unreadable
+        {
             return Err(StorageError);
         }
         disk.writes.push(vec!["v2".to_owned()]);
@@ -194,6 +215,37 @@ impl Storage for Memory {
     }
 
     fn creates_v2(&self) -> bool {
+        // As the vault file: a new vault goes into v2 unless v1 values are there.
+        let disk = self.0.borrow();
+        disk.creates_v2 && disk.data.is_empty()
+    }
+
+    fn converts_v1(&self) -> bool {
         self.0.borrow().creates_v2
+    }
+
+    fn unreadable(&self) -> bool {
+        self.0.borrow().unreadable
+    }
+
+    fn convert_to_v2(
+        &mut self,
+        file: &v2::File,
+        lenses: &str,
+        bin: &str,
+    ) -> Result<(), StorageError> {
+        let mut disk = self.0.borrow_mut();
+        let stored = |key: &str| disk.data.get(key).cloned().unwrap_or_else(|| "[]".into());
+        let unchanged = disk.v2.is_none()
+            && stored("still-lenses") == lenses
+            && stored("still-recycle-bin") == bin;
+        if disk.fail_all || disk.fail_keys.contains("convert") || !unchanged {
+            return Err(StorageError);
+        }
+        disk.writes.push(vec!["convert".to_owned()]);
+        let kept = std::mem::take(&mut disk.data);
+        disk.kept_v1.push(kept);
+        disk.v2 = Some(file.to_json());
+        Ok(())
     }
 }

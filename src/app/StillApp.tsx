@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { openVault, restoreOldCopy, type Startup } from '@/platform/tauri/startup'
+import { openOldFormat, openVault, restoreKeptCopy, restoreOldCopy, type Startup } from '@/platform/tauri/startup'
 import { Button } from '@/shared/ui/Button'
 import StillHome from './App'
 import LockLayout from './lock/LockLayout'
@@ -36,10 +36,29 @@ export default function StillApp() {
         </Message>
       )
     case 'unreadable':
-      return (
+      return startup.canRestore ? (
+        <Message
+          title="Still can't read its vault file"
+          action={{ label: 'Use the kept copy', busy, onClick: () => run(() => restoreKeptCopy(window.localStorage)) }}
+        >
+          Nothing was changed. When your vault was upgraded to the new format, Still kept the file from before as vault-v1.json. It doesn't
+          include anything changed since the upgrade. Restore vault.json from a backup if you have one, or use the kept copy. The file
+          that can't be read is kept either way.
+        </Message>
+      ) : (
         <Message title="Still can't read its vault file">
           Nothing was changed. The file and its previous version (vault.json.bak) are in Still's app data folder. Keep both safe, and
           don't create a new vault until they're dealt with.
+        </Message>
+      )
+    case 'old-format':
+      return (
+        <Message
+          title="This vault is in the old format"
+          action={{ label: 'Open anyway', busy, onClick: () => run(() => openOldFormat(window.localStorage)) }}
+        >
+          Your vault was upgraded to the new format on {new Date(startup.convertedAt).toLocaleDateString()}, but the file there now is in the
+          old format: an older copy, or one that was changed. Open it only if you put it back on purpose. It won't be upgraded this time.
         </Message>
       )
     case 'file-missing':

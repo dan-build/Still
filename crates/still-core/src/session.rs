@@ -192,6 +192,38 @@ impl Unlocked {
         Ok((session, body))
     }
 
+    /// This vault (opened from v1) in format v2: the app key wrapped under a
+    /// new salt with SENSITIVE settings, and the given lists sealed in. It
+    /// is checked before it's returned, with a second, independent Argon2id
+    /// run: it must open to this very app key and to these very lists.
+    pub fn convert_v2(
+        &self,
+        password: &SecretText,
+        body: &v2::Body,
+    ) -> Result<v2::File, SessionError> {
+        let kdf = v2::Kdf::new_sensitive();
+        let password_key = kdf
+            .password_key(password.expose())
+            .map_err(|_| SessionError::Failed)?;
+        let file = v2::seal_file(
+            &self.app_key,
+            &password_key,
+            kdf,
+            body,
+            Some("vault-v1".into()),
+        );
+        drop(password_key);
+        let (check, opened) = Self::open_v2(&file, password).map_err(|_| SessionError::Failed)?;
+        let same = check.app_key.same_as(&self.app_key)
+            && opened.lenses == body.lenses
+            && opened.bin == body.bin;
+        if same {
+            Ok(file)
+        } else {
+            Err(SessionError::Failed)
+        }
+    }
+
     /// The same file with this body sealed in (for a save). Its settings and
     /// wrapped app key stay as they are.
     pub fn seal_v2(&self, file: &v2::File, body: &v2::Body) -> v2::File {

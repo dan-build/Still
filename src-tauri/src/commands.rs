@@ -8,7 +8,7 @@ use std::time::{Instant, SystemTime};
 
 use serde_json::{json, Value};
 use still_core::session::{SecretText, Unlocked};
-use still_core::vault::backend::{Status, UnlockFailure};
+use still_core::vault::backend::{Notice, Status, UnlockFailure};
 use tauri::State;
 
 use crate::autolock::AutoLock;
@@ -19,7 +19,7 @@ use crate::vault::{self, state, CommandError, Revealed, Vault};
 
 /// Every command, as named in build.rs and the capability.
 #[cfg(test)]
-pub const ALL: [&str; 18] = [
+pub const ALL: [&str; 20] = [
     "vault_create",
     "vault_unlock",
     "vault_lock",
@@ -27,6 +27,8 @@ pub const ALL: [&str; 18] = [
     "item_copy",
     "startup_open",
     "startup_use_old_copy",
+    "startup_open_old_format",
+    "startup_restore_v1",
     "vault_state",
     "vault_set_aside",
     "lens_create",
@@ -86,7 +88,21 @@ pub async fn vault_unlock(
     autolock.touch(SystemTime::now());
     let mut backend = vault.backend();
     Ok(match backend.finish_unlock(plan, opened) {
-        Ok(()) => json!({ "ok": true, "state": state(&backend) }),
+        Ok(()) => {
+            let mut unlocked = json!({ "ok": true, "state": state(&backend) });
+            // The first unlock after updating converts the vault to v2. The
+            // page keeps the marker (localStorage still-converted-v2), so an
+            // old v1 copy put back later asks before it opens.
+            match backend.take_notice() {
+                Some(Notice::Upgraded { marker }) => {
+                    unlocked["notice"] = json!("upgraded");
+                    unlocked["marker"] = json!(marker);
+                }
+                Some(Notice::UpgradeFailed) => unlocked["notice"] = json!("upgrade-failed"),
+                None => {}
+            }
+            unlocked
+        }
         Err(reason) => failed(reason),
     })
 }
@@ -132,8 +148,31 @@ pub fn startup_open(
     store: State<'_, Arc<AppStore>>,
     legacy: Values,
     marker: Option<String>,
+    converted: Option<String>,
 ) -> Value {
-    startup::open(&store, legacy, marker.as_deref(), now_ms()).to_json()
+    startup::open(
+        &store,
+        legacy,
+        marker.as_deref(),
+        converted.as_deref(),
+        now_ms(),
+    )
+    .to_json()
+}
+
+/// The user's choice when the vault file is in the old format although the
+/// vault was converted: open it as it is. It isn't converted this time.
+#[tauri::command]
+pub fn startup_open_old_format(vault: State<'_, Vault>) -> Value {
+    vault.backend().set_convert_v1(false);
+    json!({ "kind": "ready" })
+}
+
+/// The user's choice when the vault file can't be read: put back the v1
+/// file the conversion kept (the unreadable one is kept too).
+#[tauri::command]
+pub fn startup_restore_v1(store: State<'_, Arc<AppStore>>) -> Value {
+    startup::restore_kept_v1(&store).to_json()
 }
 
 /// The user's choice when the moved vault file has gone: bring back the

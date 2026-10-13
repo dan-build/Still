@@ -4,6 +4,7 @@ const invoke = vi.fn()
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(...args) }))
 
 import { createTauriVaultApi, VaultApiError } from './vaultApi'
+import { fakeWebStorage } from '@/test/fakeWebStorage'
 
 const api = createTauriVaultApi()
 
@@ -62,4 +63,23 @@ describe('the vault commands', () => {
     await expect(api.forgetLens('a')).rejects.toEqual(new VaultApiError('write-failed'))
     await expect(api.forgetLens('a')).rejects.toEqual(new VaultApiError('failed'))
   })
+
+  it('remembers an upgrade to v2 in localStorage, and hands the page only the notice', async () => {
+    const legacy = fakeWebStorage()
+    vi.stubGlobal('localStorage', legacy)
+    try {
+      const state = { status: 'unlocked', view: { lenses: [], bin: [], unreadable: 0 } }
+      const marker = '{"convertedAt":"2026-10-13T09:00:00.000Z","fingerprint":"ab"}'
+      invoke.mockResolvedValueOnce({ ok: true, state, notice: 'upgraded', marker })
+      expect(await api.unlock('pw')).toEqual({ ok: true, state, notice: 'upgraded' })
+      expect(legacy.getItem('still-converted-v2')).toBe(marker)
+
+      invoke.mockResolvedValueOnce({ ok: true, state })
+      expect(await api.unlock('pw')).toEqual({ ok: true, state })
+      expect(legacy.data.size).toBe(1)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })
+

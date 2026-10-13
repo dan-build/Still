@@ -9,6 +9,8 @@ const COMMANDS: &[&str] = &[
     "item_copy",
     "startup_open",
     "startup_use_old_copy",
+    "startup_open_old_format",
+    "startup_restore_v1",
     "vault_state",
     "vault_set_aside",
     "lens_create",

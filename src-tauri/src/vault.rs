@@ -71,9 +71,35 @@ impl Storage for FileStorage {
         self.0.store().write_v2(file).map_err(|_| StorageError)
     }
 
-    /// New vaults are created in format v2.
+    /// New vaults are created in format v2, unless a v1 file is already
+    /// there (set-aside copies, say): then in v1, converted at its first
+    /// unlock, which keeps that file as it is.
     fn creates_v2(&self) -> bool {
+        matches!(self.0.store().load(), Loaded::Nothing | Loaded::V2(_))
+    }
+
+    fn converts_v1(&self) -> bool {
         true
+    }
+
+    fn unreadable(&self) -> bool {
+        !self.0.already_open && self.0.store().load() == Loaded::Unreadable
+    }
+
+    fn convert_to_v2(
+        &mut self,
+        file: &v2::File,
+        lenses: &str,
+        bin: &str,
+    ) -> Result<(), StorageError> {
+        if self.0.already_open {
+            return Err(StorageError);
+        }
+        self.0
+            .store()
+            .convert_to_v2(file, lenses, bin)
+            .map(|_| ())
+            .map_err(|_| StorageError)
     }
 }
 

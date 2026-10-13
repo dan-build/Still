@@ -158,6 +158,32 @@ describe('after the vault moved into its file', () => {
   })
 })
 
+describe('the upgrade to the new vault format', () => {
+  it('says the vault was upgraded, until dismissed', async () => {
+    seedVault({ lenses: [fakeLens('l1', 'Alpha')] }).unlockNotice = 'upgraded'
+    await unlock()
+    const notice = await screen.findByText(/Your vault was upgraded to the new format/)
+    expect(notice.textContent).toContain('vault-v1.json')
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }))
+    expect(screen.queryByText(/Your vault was upgraded/)).toBeNull()
+  })
+
+  it('says when the upgrade failed, and still opens the vault', async () => {
+    seedVault({ lenses: [fakeLens('l1', 'Alpha')] }).unlockNotice = 'upgrade-failed'
+    await unlock()
+    await screen.findByText(/Couldn't upgrade your vault to the new format/)
+    await screen.findAllByText('Alpha')
+  })
+
+  it('offers nothing that could write over a vault file that became unreadable', async () => {
+    seedVault({ lenses: [fakeLens('l1', 'Alpha')] }).unreadableFile = true
+    render(createElement(StillHome))
+    await screen.findByText("Still can't read its vault file")
+    expect(screen.queryByLabelText('Master password')).toBeNull()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+})
+
 describe('auto-lock', () => {
   for (const [reason, message] of [
     ['idle', 'Locked after 5 minutes without activity.'],

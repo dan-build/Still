@@ -4,7 +4,7 @@ import { fakeWebStorage } from '@/test/fakeWebStorage'
 const invoke = vi.fn()
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(...args) }))
 
-import { MOVED_MARKER, openVault, restoreOldCopy } from './startup'
+import { CONVERTED_MARKER, MOVED_MARKER, openOldFormat, openVault, restoreKeptCopy, restoreOldCopy } from './startup'
 
 afterEach(() => invoke.mockReset())
 
@@ -14,7 +14,7 @@ describe('start-up, seen from the page', () => {
     invoke.mockResolvedValue({ kind: 'ready' })
     const legacy = fakeWebStorage({ 'still-salt': 's', 'still-lenses': '[]', [MOVED_MARKER]: '{"m":1}', 'unrelated-app-key': 'x' })
     expect(await openVault(legacy)).toEqual({ kind: 'ready' })
-    expect(invoke).toHaveBeenCalledWith('startup_open', { legacy: { 'still-salt': 's', 'still-lenses': '[]' }, marker: '{"m":1}' })
+    expect(invoke).toHaveBeenCalledWith('startup_open', { legacy: { 'still-salt': 's', 'still-lenses': '[]' }, marker: '{"m":1}', converted: null })
 
     await restoreOldCopy(legacy)
     expect(invoke).toHaveBeenLastCalledWith('startup_use_old_copy', { legacy: { 'still-salt': 's', 'still-lenses': '[]' } })
@@ -48,6 +48,31 @@ describe('start-up, seen from the page', () => {
     expect(invoke).toHaveBeenCalledWith('startup_open', {
       legacy: { 'still-x': 'a\uFFFDb', 'still-\uFFFD': 'pair \uD83D\uDD10 kept' },
       marker: null,
+      converted: null,
     })
+  })
+
+  it('sends Rust the conversion marker', async () => {
+    invoke.mockResolvedValue({ kind: 'ready' })
+    const converted = '{"convertedAt":"2026-10-13T09:00:00.000Z","fingerprint":"ab"}'
+    await openVault(fakeWebStorage({ [CONVERTED_MARKER]: converted }))
+    expect(invoke).toHaveBeenCalledWith('startup_open', { legacy: {}, marker: null, converted })
+  })
+
+  it('opens an old-format vault, and restores the kept copy forgetting the conversion', async () => {
+    invoke.mockResolvedValueOnce({ kind: 'ready' })
+    const legacy = fakeWebStorage({ [CONVERTED_MARKER]: '{}' })
+    expect(await openOldFormat(legacy)).toEqual({ kind: 'ready' })
+    expect(invoke).toHaveBeenLastCalledWith('startup_open_old_format', {})
+    expect(legacy.getItem(CONVERTED_MARKER)).toBe('{}')
+
+    invoke.mockResolvedValueOnce({ kind: 'failed' })
+    await restoreKeptCopy(legacy)
+    expect(legacy.getItem(CONVERTED_MARKER)).toBe('{}')
+
+    invoke.mockResolvedValueOnce({ kind: 'ready', notice: 'restored' })
+    expect(await restoreKeptCopy(legacy)).toEqual({ kind: 'ready', notice: 'restored' })
+    expect(invoke).toHaveBeenLastCalledWith('startup_restore_v1', {})
+    expect(legacy.getItem(CONVERTED_MARKER)).toBeNull()
   })
 })
