@@ -125,9 +125,9 @@ pub const ARGON2ID_MEM_SENSITIVE: u64 = ffi::crypto_pwhash_MEMLIMIT_SENSITIVE as
 pub const ARGON2ID13: u8 = ffi::crypto_pwhash_ALG_ARGON2ID13 as u8;
 
 /// Argon2id v1.3 with the given passes and memory (bytes), 32-byte output.
-/// Callers bound the limits (vault v2 allows SENSITIVE up to 16 passes and
-/// 4 GiB); libsodium refuses what it can't run. One at a time per process.
-pub fn argon2id(
+/// Only for this crate: callers bound the limits first (vault v2 allows
+/// SENSITIVE up to 16 passes and 4 GiB). One at a time per process.
+pub(crate) fn argon2id(
     out: &mut [u8; 32],
     password: &[u8],
     salt: &[u8; 16],

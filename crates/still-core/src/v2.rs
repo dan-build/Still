@@ -216,7 +216,7 @@ impl File {
             .ok_or(invalid("body"))?;
         let migrated_from = match top.get("migratedFrom") {
             None => None,
-            Some(Value::String(s)) => Some(s.clone()),
+            Some(Value::String(s)) if !s.is_empty() => Some(s.clone()),
             Some(_) => return Err(invalid("migratedFrom")),
         };
         let file = Self {
@@ -227,6 +227,11 @@ impl File {
         };
         if top["check"].as_str() != Some(file.check().as_str()) {
             return Err(invalid("check"));
+        }
+        // Exactly as v2 writes it: no other spacing, order, escapes or
+        // repeated keys, so every reader agrees on what the file says.
+        if file.to_json() != text {
+            return Err(invalid("not as v2 writes it"));
         }
         Ok(file)
     }
@@ -247,6 +252,10 @@ impl File {
 
     /// The file as v2 writes it (pretty JSON, a final newline).
     pub fn to_json(&self) -> String {
+        debug_assert!(
+            self.kdf.check_limits().is_ok(),
+            "a v2 file with settings it would refuse to read"
+        );
         let mut file = json!({
             "format": FORMAT,
             "formatVersion": FORMAT_VERSION,
@@ -282,7 +291,7 @@ impl File {
     /// Reseals the body for a save; `kdf` and `masterKey` stay as they are.
     pub fn with_body(&self, body: &Body, app_key: &Key) -> Self {
         Self {
-            body: seal_body(body, &self.kdf, &self.master_key, app_key, random_nonce()),
+            body: seal_body_with_nonce(body, &self.kdf, &self.master_key, app_key, random_nonce()),
             ..self.clone()
         }
     }
@@ -302,8 +311,11 @@ fn body_ad(kdf: &Kdf, master_key: &[u8; MASTER_KEY_BYTES]) -> Vec<u8> {
     [BODY_AD, &kdf.block(), master_key].concat()
 }
 
-/// Wraps the app key under the password key, bound to the KDF settings.
-pub fn wrap_master_key(
+/// Wraps the app key under the password key, bound to the KDF settings,
+/// with the given nonce. Exposed for the fixture and vectors; everything
+/// else goes through `seal_file`, which uses a random nonce.
+#[doc(hidden)]
+pub fn wrap_master_key_with_nonce(
     app_key: &Key,
     password_key: &Key,
     kdf: &Kdf,
@@ -379,53 +391,90 @@ impl std::fmt::Debug for Body {
 
 impl Body {
     /// `[u32 LE length][JSON][zeros to a multiple of 4096]`, the JSON being
-    /// `{"lenses":"…","bin":"…"}` with the two lists as strings.
+    /// `{"lenses":"…","bin":"…"}` with the two lists as strings. Written
+    /// straight into one buffer of the final size, so no partial copy of the
+    /// lists is left behind.
     pub fn frame(&self) -> Vec<u8> {
-        let mut json = format!(
-            "{{\"lenses\":{},\"bin\":{}}}",
-            serde_json::to_string(&self.lenses).expect("strings serialise"),
-            serde_json::to_string(&self.bin).expect("strings serialise"),
-        );
-        let length = u32::try_from(json.len()).expect("a vault fits in 4 GiB");
-        let total = (4 + json.len()).div_ceil(BODY_PADDING) * BODY_PADDING;
+        let mut counter = Counter(0);
+        self.write_json(&mut counter);
+        let length = u32::try_from(counter.0).expect("a vault fits in 4 GiB");
+        let total = framed_size(counter.0);
         let mut framed = Vec::with_capacity(total);
         framed.extend_from_slice(&length.to_le_bytes());
-        framed.extend_from_slice(json.as_bytes());
+        self.write_json(&mut framed);
         framed.resize(total, 0);
-        zero_string(&mut json);
         framed
     }
 
+    fn write_json(&self, out: &mut impl std::io::Write) {
+        let mut write = || -> std::io::Result<()> {
+            out.write_all(b"{\"lenses\":")?;
+            serde_json::to_writer(&mut *out, &self.lenses)?;
+            out.write_all(b",\"bin\":")?;
+            serde_json::to_writer(&mut *out, &self.bin)?;
+            out.write_all(b"}")
+        };
+        write().expect("writing to memory doesn't fail");
+    }
+
     /// Reads a framed body. Only Still writes one (it's authenticated), so
-    /// anything unexpected is damaged data.
+    /// anything but exactly what `frame` writes is damaged data.
     pub fn unframe(framed: &[u8]) -> Result<Self, FormatError> {
         let damaged = || FormatError::DamagedBody;
         let length = framed
             .get(..4)
             .map(|l| u32::from_le_bytes(l.try_into().expect("4 bytes")) as usize)
             .ok_or_else(damaged)?;
-        let json = framed.get(4..4 + length).ok_or_else(damaged)?;
-        let padding_ok = framed[4 + length..].iter().all(|&b| b == 0)
-            && framed.len().is_multiple_of(BODY_PADDING);
-        if !padding_ok {
+        let end = length.checked_add(4).ok_or_else(damaged)?;
+        if framed.len() != framed_size(length) {
             return Err(damaged());
         }
-        let value: Value = serde_json::from_slice(json).map_err(|_| damaged())?;
+        let json = framed.get(4..end).ok_or_else(damaged)?;
+        let mut value: Value = serde_json::from_slice(json).map_err(|_| damaged())?;
         let map = value
-            .as_object()
+            .as_object_mut()
             .filter(|m| m.len() == 2)
             .ok_or_else(damaged)?;
-        let text = |key: &str| map.get(key).and_then(Value::as_str).map(str::to_owned);
-        match (text("lenses"), text("bin")) {
-            (Some(lenses), Some(bin)) => Ok(Self { lenses, bin }),
-            _ => Err(damaged()),
+        let body = match (map.remove("lenses"), map.remove("bin")) {
+            (Some(Value::String(lenses)), Some(Value::String(bin))) => Self { lenses, bin },
+            _ => return Err(damaged()),
+        };
+        // Exactly what frame writes (padding, spacing, no repeated keys).
+        let mut again = body.frame();
+        let same = again == framed;
+        sodium::memzero(&mut again);
+        if same {
+            Ok(body)
+        } else {
+            Err(damaged())
         }
     }
 }
 
+/// The framed size for a JSON length: 4 + JSON, rounded up to the padding.
+fn framed_size(json_length: usize) -> usize {
+    (4 + json_length).div_ceil(BODY_PADDING) * BODY_PADDING
+}
+
+/// Counts bytes written, to size the frame before writing it.
+struct Counter(usize);
+
+impl std::io::Write for Counter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0 += buf.len();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Seals the body under the body key, bound to the KDF settings and the
-/// wrapped app key.
-pub fn seal_body(
+/// wrapped app key, with the given nonce. Exposed for the fixture and
+/// vectors; everything else goes through `File::with_body` or `seal_file`.
+#[doc(hidden)]
+pub fn seal_body_with_nonce(
     body: &Body,
     kdf: &Kdf,
     master_key: &[u8; MASTER_KEY_BYTES],
@@ -479,8 +528,12 @@ pub fn seal_file(
     body: &Body,
     migrated_from: Option<String>,
 ) -> File {
-    let master_key = wrap_master_key(app_key, password_key, &kdf, random_nonce());
-    let body = seal_body(body, &kdf, &master_key, app_key, random_nonce());
+    debug_assert!(
+        kdf.check_limits().is_ok(),
+        "settings v2 would refuse to read"
+    );
+    let master_key = wrap_master_key_with_nonce(app_key, password_key, &kdf, random_nonce());
+    let body = seal_body_with_nonce(body, &kdf, &master_key, app_key, random_nonce());
     File {
         kdf,
         master_key,
@@ -583,86 +636,181 @@ mod tests {
         assert!(raised.open_body(&app).is_err());
     }
 
+    /// The file's JSON as v2 writes it, after an edit (the checksum isn't
+    /// recomputed: each rule below is checked before it).
+    fn edited(file: &File, edit: impl Fn(&mut Value)) -> String {
+        let mut value: Value = serde_json::from_str(&file.to_json()).unwrap();
+        edit(&mut value);
+        let mut text = serde_json::to_string_pretty(&value).unwrap();
+        text.push('\n');
+        text
+    }
+
+    // Each rule refuses on its own, with its own reason.
     #[test]
     fn refuses_any_header_that_isnt_exactly_v2() {
         let file = sample(&Key::random(), &Key::random());
-        let good: Value = serde_json::from_str(&file.to_json()).unwrap();
+        assert_eq!(File::parse(&edited(&file, |_| {})).as_ref(), Ok(&file));
         type Edit = Box<dyn Fn(&mut Value)>;
-        let edits: Vec<(&str, Edit)> = vec![
-            ("unknown field", Box::new(|v| v["extra"] = json!(1))),
-            ("format", Box::new(|v| v["format"] = json!("other"))),
-            ("version 1", Box::new(|v| v["formatVersion"] = json!(1))),
-            ("version 2.0", Box::new(|v| v["formatVersion"] = json!(2.0))),
+        let cases: Vec<(&str, Edit)> = vec![
+            ("unexpected fields", Box::new(|v| v["extra"] = json!(1))),
+            (
+                "unexpected fields",
+                Box::new(|v| {
+                    v.as_object_mut().unwrap().remove("check");
+                }),
+            ),
+            (
+                "not a Still vault",
+                Box::new(|v| v["format"] = json!("other")),
+            ),
+            ("formatVersion", Box::new(|v| v["formatVersion"] = json!(1))),
+            (
+                "formatVersion",
+                Box::new(|v| v["formatVersion"] = json!(2.0)),
+            ),
+            ("kdf fields", Box::new(|v| v["kdf"]["pepper"] = json!("x"))),
             (
                 "algorithm",
                 Box::new(|v| v["kdf"]["algorithm"] = json!("argon2i13")),
             ),
-            ("ops too low", Box::new(|v| v["kdf"]["opsLimit"] = json!(3))),
             (
-                "ops too high",
-                Box::new(|v| v["kdf"]["opsLimit"] = json!(17)),
-            ),
-            (
-                "ops as float",
-                Box::new(|v| v["kdf"]["opsLimit"] = json!(4.0)),
-            ),
-            (
-                "mem too low",
-                Box::new(|v| v["kdf"]["memLimit"] = json!(MEM_MIN - 1)),
-            ),
-            (
-                "mem too high",
-                Box::new(|v| v["kdf"]["memLimit"] = json!(MEM_MAX + 1)),
-            ),
-            (
-                "negative mem",
-                Box::new(|v| v["kdf"]["memLimit"] = json!(-1)),
-            ),
-            ("kdf extra", Box::new(|v| v["kdf"]["pepper"] = json!("x"))),
-            (
-                "short salt",
+                "salt",
                 Box::new(|v| v["kdf"]["salt"] = json!(sodium::to_base64(&[1; 15]))),
             ),
             (
-                "unpadded salt",
+                "salt",
                 Box::new(|v| v["kdf"]["salt"] = json!("BwcHBwcHBwcHBwcHBwcHBw")),
+            ),
+            ("opsLimit", Box::new(|v| v["kdf"]["opsLimit"] = json!(4.0))),
+            (
+                "opsLimit out of range",
+                Box::new(|v| v["kdf"]["opsLimit"] = json!(3)),
+            ),
+            (
+                "opsLimit out of range",
+                Box::new(|v| v["kdf"]["opsLimit"] = json!(17)),
+            ),
+            ("memLimit", Box::new(|v| v["kdf"]["memLimit"] = json!(-1))),
+            (
+                "memLimit out of range",
+                Box::new(|v| v["kdf"]["memLimit"] = json!(MEM_MIN - 1)),
+            ),
+            (
+                "memLimit out of range",
+                Box::new(|v| v["kdf"]["memLimit"] = json!(MEM_MAX + 1)),
             ),
             (
                 "masterKey",
                 Box::new(|v| v["masterKey"] = json!(sodium::to_base64(&[2; 72]))),
             ),
             (
-                "body version",
+                "masterKey",
+                Box::new(|v| v["masterKey"] = json!(sodium::to_base64(&[1; 73]))),
+            ),
+            (
+                "body",
                 Box::new(|v| v["body"] = json!(sodium::to_base64(&[1; 64]))),
             ),
+            ("migratedFrom", Box::new(|v| v["migratedFrom"] = json!(1))),
+            ("migratedFrom", Box::new(|v| v["migratedFrom"] = json!(""))),
             ("check", Box::new(|v| v["check"] = json!("00"))),
             (
-                "migratedFrom type",
-                Box::new(|v| v["migratedFrom"] = json!(1)),
-            ),
-            (
-                "missing check",
-                Box::new(|v| {
-                    v.as_object_mut().unwrap().remove("check");
-                }),
+                "check",
+                Box::new(|v| v["migratedFrom"] = json!("somewhere else")),
             ),
         ];
-        assert!(File::parse(&good.to_string()).is_ok());
-        for (what, edit) in edits {
-            let mut changed = good.clone();
-            edit(&mut changed);
-            assert!(
-                matches!(
-                    File::parse(&changed.to_string()),
-                    Err(FormatError::InvalidHeader(_))
-                ),
-                "{what}"
+        for (reason, edit) in cases {
+            assert_eq!(
+                File::parse(&edited(&file, edit)),
+                Err(FormatError::InvalidHeader(reason)),
+                "{reason}"
             );
         }
-        // An edit the checksum doesn't cover is still caught by it.
-        let mut edited = good.clone();
-        edited["migratedFrom"] = json!("somewhere else");
-        assert!(File::parse(&edited.to_string()).is_err());
+        // The same values written any other way: spacing, key order, escapes.
+        let text = file.to_json();
+        let compact: Value = serde_json::from_str(&text).unwrap();
+        let escaped = text.replace("\"still-vault\"", "\"still\\u002dvault\"");
+        for other in [compact.to_string(), text.replace("\n", "\r\n"), escaped] {
+            assert_eq!(
+                File::parse(&other),
+                Err(FormatError::InvalidHeader("not as v2 writes it"))
+            );
+        }
+    }
+
+    // The associated data, byte for byte as the design gives it.
+    #[test]
+    fn binds_exactly_the_documented_bytes() {
+        let kdf = Kdf::sensitive([0xab; 16]);
+        let mut block = vec![2u8];
+        block.extend_from_slice(&4u64.to_le_bytes());
+        block.extend_from_slice(&(1u64 << 30).to_le_bytes());
+        block.extend_from_slice(&[0xab; 16]);
+        assert_eq!(kdf.block().to_vec(), block);
+
+        let mut master = b"still-vault/2/master-key".to_vec();
+        master.push(0);
+        master.extend_from_slice(&block);
+        assert_eq!(master_key_ad(&kdf), master);
+
+        let wrapped = [7u8; MASTER_KEY_BYTES];
+        let mut body = b"still-vault/2/body".to_vec();
+        body.push(0);
+        body.extend_from_slice(&block);
+        body.extend_from_slice(&wrapped);
+        assert_eq!(body_ad(&kdf, &wrapped), body);
+    }
+
+    #[test]
+    fn reads_only_frames_exactly_as_written() {
+        let good = body("[]", "[]").frame();
+        assert_eq!(Body::unframe(&good).unwrap().lenses, "[]");
+        // A JSON that ends exactly on a 4 KiB boundary takes no extra block.
+        let fill = BODY_PADDING - 4 - r#"{"lenses":"","bin":""}"#.len();
+        let exact = body(&"x".repeat(fill), "").frame();
+        assert_eq!(exact.len(), BODY_PADDING);
+        assert!(Body::unframe(&exact).is_ok());
+
+        let frame_of = |json: &str, total: usize| {
+            let mut framed = (json.len() as u32).to_le_bytes().to_vec();
+            framed.extend_from_slice(json.as_bytes());
+            framed.resize(total, 0);
+            framed
+        };
+        for (what, framed) in [
+            (
+                "an extra block of padding",
+                frame_of(r#"{"lenses":"[]","bin":"[]"}"#, 2 * BODY_PADDING),
+            ),
+            (
+                "a repeated key",
+                frame_of(r#"{"lenses":"x","lenses":"[]","bin":"[]"}"#, BODY_PADDING),
+            ),
+            (
+                "spacing",
+                frame_of(r#"{"lenses": "[]","bin":"[]"}"#, BODY_PADDING),
+            ),
+            (
+                "another key",
+                frame_of(r#"{"lenses":"[]","other":"[]"}"#, BODY_PADDING),
+            ),
+            (
+                "a list, not a string",
+                frame_of(r#"{"lenses":[],"bin":"[]"}"#, BODY_PADDING),
+            ),
+            ("an empty JSON", frame_of("", BODY_PADDING)),
+        ] {
+            assert!(Body::unframe(&framed).is_err(), "{what}");
+        }
+        // Not UTF-8: a raw 0xff inside the JSON.
+        let mut invalid_utf8 = good.clone();
+        invalid_utf8[15] = 0xff;
+        assert!(Body::unframe(&invalid_utf8).is_err());
+        assert!(Body::unframe(&good[..3]).is_err());
+        let mut huge = good.clone();
+        huge[..4].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(Body::unframe(&huge).is_err());
     }
 
     #[test]

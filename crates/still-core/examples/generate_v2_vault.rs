@@ -52,9 +52,10 @@ fn main() {
         lenses: field("still-lenses").to_owned(),
         bin: field("still-recycle-bin").to_owned(),
     };
-    let master_key = v2::wrap_master_key(&app_key, &password_key, &kdf, MASTER_KEY_NONCE);
+    let master_key =
+        v2::wrap_master_key_with_nonce(&app_key, &password_key, &kdf, MASTER_KEY_NONCE);
     let file = File {
-        body: v2::seal_body(&body, &kdf, &master_key, &app_key, BODY_NONCE),
+        body: v2::seal_body_with_nonce(&body, &kdf, &master_key, &app_key, BODY_NONCE),
         kdf: kdf.clone(),
         master_key,
         migrated_from: Some("vault-v1".into()),
@@ -76,7 +77,8 @@ fn main() {
         lenses: "[]".into(),
         bin: "[]".into(),
     };
-    let fixed_master = v2::wrap_master_key(&fixed_app, &fixed_password_key, &kdf, MASTER_KEY_NONCE);
+    let fixed_master =
+        v2::wrap_master_key_with_nonce(&fixed_app, &fixed_password_key, &kdf, MASTER_KEY_NONCE);
     let vectors = json!({
         "comment": "Vault format v2 vectors (docs/vault-format-v2.md). Raw bytes in hex. Generated once by crates/still-core/examples/generate_v2_vault.rs. Do not edit.",
         "kdf": { "opsLimit": kdf.ops_limit, "memLimit": kdf.mem_limit, "salt": hex(&SALT), "block": hex(&kdf.block()) },
@@ -86,7 +88,7 @@ fn main() {
         "masterKeyNonce": hex(&MASTER_KEY_NONCE),
         "masterKey": hex(&fixed_master),
         "bodyNonce": hex(&BODY_NONCE),
-        "body": { "lenses": "[]", "bin": "[]", "framed": hex(&small.frame()), "sealed": hex(&v2::seal_body(&small, &kdf, &fixed_master, &fixed_app, BODY_NONCE)) },
+        "body": { "lenses": "[]", "bin": "[]", "framed": hex(&small.frame()), "sealed": hex(&v2::seal_body_with_nonce(&small, &kdf, &fixed_master, &fixed_app, BODY_NONCE)) },
         "goldenPasswordKey": hex(password_key.expose()),
     });
 

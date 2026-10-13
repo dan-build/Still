@@ -61,6 +61,18 @@ fn opens_the_golden_v2_vault_to_the_golden_v1_contents() {
     }
     assert!(revealed > 0);
 
+    // Sealing the same lists with the same nonce gives the committed body,
+    // so the framing of real lists (with all their escapes) is pinned too.
+    let vectors = fixture("vault-v2/vectors.json");
+    let resealed = v2::seal_body_with_nonce(
+        &body,
+        &file.kdf,
+        &file.master_key,
+        &app_key,
+        common::array(&vectors["bodyNonce"]),
+    );
+    assert_eq!(resealed, file.body);
+
     // A wrong password is a wrong key; it never opens the body.
     let wrong = file.kdf.password_key(&format!("{password}x")).unwrap();
     assert_eq!(file.open_master_key(&wrong).err(), Some(Error::WrongKey));
@@ -81,7 +93,7 @@ fn reproduces_every_vector() {
         hex(&vectors["bodyKey"])
     );
 
-    let master_key = v2::wrap_master_key(
+    let master_key = v2::wrap_master_key_with_nonce(
         &app_key,
         &password_key,
         &kdf,
@@ -94,7 +106,7 @@ fn reproduces_every_vector() {
         bin: vectors["body"]["bin"].as_str().unwrap().into(),
     };
     assert_eq!(body.frame(), hex(&vectors["body"]["framed"]));
-    let sealed = v2::seal_body(
+    let sealed = v2::seal_body_with_nonce(
         &body,
         &kdf,
         &master_key,
