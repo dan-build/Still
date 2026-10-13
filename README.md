@@ -20,24 +20,19 @@ No account, no sync, no telemetry. Still never connects to the internet.
 - **Offline by design.** No servers, no accounts and no analytics. Your vault is a single private file on your Mac.
 - **Open source** under the MIT licence. Read the code, or build it yourself instead of trusting a download.
 
-Not there yet: editing a saved secret, renaming a Lens, and search.
-
 ## What's encrypted
 
 Still uses [libsodium](https://doc.libsodium.org/), a widely used and audited crypto library, from its Rust code. It doesn't implement any cryptography of its own, and its encryption keys never enter the app's web page.
 
-**Encrypted:** every secret value, meaning the password, key or note itself.
-- Your master password unlocks an app key using Argon2id.
-- The app key unlocks a separate key for each Lens.
-- Each secret is encrypted with its own key derived from that Lens key, using XChaCha20-Poly1305.
+**Encrypted:** everything in your vault.
+- Your master password unlocks an app key using Argon2id. The vault file records the Argon2id settings, so they can be raised later.
+- The app key unlocks a separate key for each Lens, and each secret is encrypted with its own key derived from that Lens key, using XChaCha20-Poly1305.
+- Everything else (Lens names, secret labels and types, dates and counts) is encrypted together as one block, with the secrets inside.
+- Every part of the vault file is tied to the rest, so any change to it is detected: Still reports damaged data and changes nothing.
 
-**Not encrypted yet:**
-- Lens names
-- secret labels (such as "Bank login")
-- secret types
-- dates and item counts
+Anyone who can read your Mac's files sees only the Argon2id settings and roughly how large the vault is.
 
-Anyone who can read your Mac's files can see those, but not the secret values.
+**Upgrading from v0.5.0 or older:** the first time you unlock, Still upgrades your vault to this format (it takes a few seconds longer, once) and keeps the previous file as `vault-v1.json` next to it. Older versions of Still can't open the upgraded vault; they say so and change nothing. To go back to one, you'd use `vault-v1.json`, which doesn't include anything changed after the upgrade.
 
 [SECURITY.md](SECURITY.md) lists the other current limits and explains how to report a vulnerability privately.
 
@@ -56,7 +51,7 @@ Anyone who can read your Mac's files can see those, but not the secret values.
 
 Still open in **v0.5.0**:
 
-- **Lens names, labels, types and dates aren't encrypted yet.** See [What's encrypted](#whats-encrypted).
+- **Don't go back to v0.5.0 or older after upgrading.** See [What's encrypted](#whats-encrypted).
 - **Clipboard-history apps may still record a copied secret.** Still asks them not to, and most respect that, but not all do.
 - **Don't go back to v0.1.x after upgrading.** See [Upgrading from v0.1.x](#upgrading-from-v01x).
 

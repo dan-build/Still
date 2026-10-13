@@ -137,7 +137,7 @@ On the first successful unlock of a v1 vault, before anything else is saved. All
    2. link it to `vault-v1.json` without replacing anything (`link()`, or `renamex_np` with `RENAME_EXCL` on macOS; the matching calls on Windows and Linux), then flush the folder;
    3. read it back and compare with the buffer.
    - If `vault-v1.json` already exists and is byte-identical, carry on.
-   - If it exists and differs, use `vault-v1-<time>.json`. Never write over a kept copy, and never stop for good because one exists.
+   - If it exists and differs, use the first free `vault-v1-2.json`, `vault-v1-3.json`, and so on. (Numbers rather than the time: a time has `:`, which Windows file names can't.) Never write over a kept copy, and never stop for good because one exists.
 5. Write the v2 file atomically over `vault.json`, as every write does today: temp file, flush, rename, flush the folder.
 6. Read the file back and open it with the keys in memory. If it doesn't open to the same lists, restore the kept v1 file over `vault.json` and report the failure.
 7. Record the **conversion marker** (see "Older copies" below).

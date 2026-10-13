@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **Everything in your vault is now encrypted, and any change to the file is detected** (vault format v2). Lens names, secret labels and types, dates and counts were readable in the vault file; now only the Argon2id settings and the file's rough size are. Every part of the file is tied to the rest, so a swapped, edited or spliced value is reported as damaged data instead of being used. The Argon2id settings are recorded in the file, so they can be raised later.
+- **Your vault upgrades the first time you unlock it.** It takes a few seconds longer, once, and the previous file is kept as `vault-v1.json`. Nothing about your password or secrets changes. Older versions of Still can't open the upgraded vault; they say so and change nothing.
+- **New vaults are created in the new format.**
+
+### Added
+
+- **If an old-format file is put in place of an upgraded vault**, Still asks before opening it.
+- **If the vault file can't be read** and the file from before the upgrade is there, Still offers to put it back. The unreadable file is kept too.
+
+### Fixed
+
+- **Readme:** editing, renaming and search are no longer listed as missing.
+
 ## [0.5.0] - 2026-10-08
 
 ### Changed
