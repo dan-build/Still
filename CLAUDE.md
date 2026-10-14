@@ -54,7 +54,7 @@ A known bug gets an `it.fails` test (or, in Rust, a test of the right behaviour 
 Backend rules; the tests (and `fixtures/vault-behaviour-v1`) depend on them:
 - **Every change is written before it becomes visible,** as one all-or-nothing `Storage::write`. A Lens moving between lists is saved in both lists in that one write.
 - **A failed write changes nothing** (`write-failed`).
-- **Lenses are kept exactly as stored,** wrapped key and unknown fields included. Unlocking writes nothing but the Archive purge, and a Lens whose key can't be unwrapped is kept unchanged but hidden (`view.unreadable`).
+- **Lenses are kept exactly as stored,** wrapped key and unknown fields included. Unlocking writes nothing but the Archive purge, and a Lens whose key can't be unwrapped is kept unchanged but hidden (`view.unreadable`), and every change to one is refused (`unknown-lens`), as if it didn't exist. Reveal and copy refuse too, as recorded (`crypto-unknown-lens`).
 - **A stored list that can't be read blocks unlocking** (`unreadable-data`), because any save would overwrite it.
 - **Vault data without its key is orphaned.** `create` refuses to run, and the UI shows the recovery screen (`set_aside` copies everything to `still-set-aside-<time>-` keys first, adding a number if that prefix is taken).
 - **Lock clears the lists and drops the keys at once,** and every change refuses while locked.

@@ -415,6 +415,10 @@ fn without_lone_surrogates(json: &str) -> String {
     out
 }
 
+/// Scenarios Rust changed on purpose after the recording (the fixture marks
+/// only the earlier ones, with "rust"). Each has its own test below.
+const CHANGED_SINCE: [&str; 1] = ["unreadable-lenses"];
+
 fn scenario(name: &str) -> Value {
     scenarios().into_iter().find(|s| s["name"] == name).unwrap()
 }
@@ -424,20 +428,55 @@ fn replays_every_scenario_the_typescript_backend_recorded() {
     let mut replayed = 0;
     for scenario in scenarios() {
         // These differ on purpose; their own tests below cover them.
-        if scenario.get("rust").is_some() {
+        if scenario.get("rust").is_some()
+            || CHANGED_SINCE.contains(&scenario["name"].as_str().unwrap())
+        {
             continue;
         }
         assert_eq!(replay::<FastKeys>(&scenario, |_, _| false), None);
         replayed += 1;
     }
-    assert_eq!(replayed, 15);
+    assert_eq!(replayed, 14);
 }
 
 #[test]
 fn replays_scenarios_with_the_real_keys_too() {
-    for name in ["lenses-and-items", "unreadable-lenses"] {
-        assert_eq!(replay::<Unlocked>(&scenario(name), |_, _| false), None);
+    assert_eq!(
+        replay::<Unlocked>(&scenario("lenses-and-items"), |_, _| false),
+        None
+    );
+    assert_eq!(
+        replay::<Unlocked>(&scenario("unreadable-lenses"), refuses_hidden_lens),
+        Some(15)
+    );
+}
+
+/// TypeScript let a change reach a Lens whose key didn't open, given its id
+/// (the page no longer gets those ids). Rust refuses every change to one with
+/// unknown-lens and writes nothing; backend_v1.rs tests each change, and that
+/// the Lenses are kept exactly as stored.
+fn refuses_hidden_lens(step: &Value, actual: &Value) -> bool {
+    let hidden = ["broken", "no-items", "binned"].contains(&step["lens"].as_str().unwrap_or(""));
+    let reads = ["revealItem", "copyItem"].contains(&step["op"].as_str().unwrap());
+    hidden && !reads && {
+        assert_eq!(
+            actual["result"],
+            json!({ "error": "unknown-lens" }),
+            "{step}"
+        );
+        assert_eq!(actual["writes"], json!([]));
+        assert!(actual.get("stored").is_none());
+        true
     }
+}
+
+#[test]
+fn refuses_changes_to_a_lens_whose_key_did_not_open() {
+    // Steps 1-14 match the recording, reveal and copy of a hidden Lens included.
+    assert_eq!(
+        replay::<FastKeys>(&scenario("unreadable-lenses"), refuses_hidden_lens),
+        Some(15)
+    );
 }
 
 // TypeScript could read back a lone UTF-16 surrogate and write it again;

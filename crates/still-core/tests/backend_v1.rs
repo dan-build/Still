@@ -316,7 +316,7 @@ fn leaves_a_lens_stored_without_items_as_it_was_when_deleting_from_it() {
     vault.unlock(&secret("pw")).unwrap();
     assert_eq!(
         vault.delete_item("bare", "anything"),
-        Err(VaultError::UnknownItem)
+        Err(VaultError::UnknownLens)
     );
     assert_eq!(disk.0.borrow().data["still-lenses"], with_bare);
 }
@@ -376,7 +376,6 @@ fn every_change(
 // Hidden Lenses' ids never reach the page, but the backend holds to the rule
 // itself: a Lens it can't read is kept exactly as stored.
 #[test]
-#[should_panic(expected = "changed a hidden Lens")]
 fn refuses_every_change_to_a_lens_whose_key_did_not_open() {
     let (disk, mut vault, _, _) = vault_with_hidden_lenses();
     let before = disk.0.borrow().data.clone();
@@ -391,6 +390,13 @@ fn refuses_every_change_to_a_lens_whose_key_did_not_open() {
     }
     assert_eq!(disk.0.borrow().data, before);
     assert_eq!(vault.view().unreadable, 2);
+
+    // And after a restart, still exactly as stored.
+    vault.lock();
+    let mut again = backend::<FastKeys>(&disk);
+    again.unlock(&secret("pw")).unwrap();
+    assert_eq!(again.view().unreadable, 2);
+    assert_eq!(disk.0.borrow().data, before);
 }
 
 #[test]

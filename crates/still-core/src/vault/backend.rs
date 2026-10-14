@@ -846,6 +846,21 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         self.keys.as_ref().ok_or(VaultError::Locked)
     }
 
+    /// Refuses a change to a stored Lens whose key didn't open, as if it
+    /// didn't exist: it's kept exactly as stored. Checked before every change.
+    fn readable_lens(&self, lens_id: &str) -> Result<(), VaultError> {
+        let stored = self
+            .lists
+            .lenses
+            .iter()
+            .chain(&self.lists.bin)
+            .any(|l| id_of(l) == Some(lens_id));
+        if stored && !self.readable.contains(lens_id) {
+            return Err(VaultError::UnknownLens);
+        }
+        Ok(())
+    }
+
     fn active_lens(&self, lens_id: &str) -> Option<&Value> {
         self.lists.lenses.iter().find(|l| id_of(l) == Some(lens_id))
     }
@@ -943,6 +958,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         value: &SecretText,
     ) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         let lens = self.active_lens(lens_id).ok_or(VaultError::UnknownLens)?;
         let encrypted_value = self.encrypt(lens_id, value)?;
         let mut items = items_of(lens).to_vec();
@@ -966,6 +982,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         value: Option<&SecretText>,
     ) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         let lens = self.active_lens(lens_id);
         let items = lens.map(items_of).unwrap_or_default();
         let item = items
@@ -996,9 +1013,10 @@ impl<S: Storage, K: Keys> Backend<S, K> {
 
     pub fn delete_item(&mut self, lens_id: &str, item_id: &str) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         let lens = self.active_lens(lens_id).ok_or(VaultError::UnknownLens)?;
-        // A Lens stored without an items list (only an unreadable one can be)
-        // stays exactly as stored.
+        // A Lens stored without an items list stays exactly as stored. (Only
+        // an unreadable one can be, and those are refused above.)
         if !lens.get("items").is_some_and(Value::is_array) {
             return Err(VaultError::UnknownItem);
         }
@@ -1012,6 +1030,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
 
     pub fn rename_lens(&mut self, lens_id: &str, name: &str) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         self.active_lens(lens_id).ok_or(VaultError::UnknownLens)?;
         if js_trim(name).is_empty() {
             return Err(VaultError::EmptyName);
@@ -1021,16 +1040,19 @@ impl<S: Storage, K: Keys> Backend<S, K> {
 
     pub fn forget_lens(&mut self, lens_id: &str) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         self.write(model::forget_lens(&self.lists, lens_id, (self.clock)()))
     }
 
     pub fn restore_lens(&mut self, lens_id: &str) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         self.write(model::restore_lens(&self.lists, lens_id))
     }
 
     pub fn delete_lens_forever(&mut self, lens_id: &str) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         self.write(model::delete_lens_forever(&self.lists, lens_id))
     }
 

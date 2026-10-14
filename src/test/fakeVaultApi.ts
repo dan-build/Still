@@ -113,6 +113,11 @@ export class FakeVault implements VaultApi {
     return lens
   }
 
+  /** As in Rust: a change to a Lens whose key never opened is refused, as if it didn't exist. */
+  private refuseHidden(lensId: string) {
+    if ([...this.lenses, ...this.bin].some((l) => l.id === lensId && l.unreadable)) throw new VaultApiError('unknown-lens')
+  }
+
   private item(lensId: string, itemId: string): FakeItem {
     const lens = [...this.lenses, ...this.bin].find((l) => l.id === lensId)
     const item = lens?.items.find((i) => i.id === itemId)
@@ -193,6 +198,7 @@ export class FakeVault implements VaultApi {
 
   restoreLens(lensId: string) {
     return this.change('restoreLens', () => {
+      this.refuseHidden(lensId)
       const lens = this.bin.find((l) => l.id === lensId)
       if (!lens) return
       const { deletedAt: _deletedAt, ...restored } = lens
@@ -203,6 +209,7 @@ export class FakeVault implements VaultApi {
 
   deleteLensForever(lensId: string) {
     return this.change('deleteLensForever', () => {
+      this.refuseHidden(lensId)
       this.bin = this.bin.filter((l) => l.id !== lensId)
     })
   }
