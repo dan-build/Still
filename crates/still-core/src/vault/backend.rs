@@ -499,7 +499,8 @@ pub enum Notice {
     /// page keeps `marker` (localStorage `still-converted-v2`), so an old v1
     /// copy asks before it opens.
     Upgraded { marker: String, kept: String },
-    /// Converting failed; the vault is unchanged (v1) and is tried again next time.
+    /// Converting failed; the vault is unchanged (v1), and converting is
+    /// tried again only after a restart (a new backend).
     UpgradeFailed,
 }
 
