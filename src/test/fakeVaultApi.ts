@@ -6,7 +6,9 @@
 // fixtures/vault-behaviour-v1.
 
 import { VaultApiError, type VaultApi } from '@/platform/tauri/vaultApi'
-import type { ItemType, LensView, VaultState, VaultStatus } from '@/features/vault/model/types'
+import { RECYCLE_DAYS, type ItemType, type LensView, type VaultState, type VaultStatus } from '@/features/vault/model/types'
+
+const DAY_MS = 24 * 60 * 60 * 1000
 
 export interface FakeItem {
   id: string
@@ -86,13 +88,19 @@ export class FakeVault implements VaultApi {
       items: lens.items.map(({ id, label, type }) => ({ id, label, type })),
       ...(lens.deletedAt ? { deletedAt: lens.deletedAt } : {}),
     })
+    // As in Rust, Archive entries say when the purge deletes them.
+    const binView = (lens: FakeLens): LensView => {
+      const deleted = lens.deletedAt ? Date.parse(lens.deletedAt) : NaN
+      const purgeAt = Number.isNaN(deleted) ? null : new Date(deleted + RECYCLE_DAYS * DAY_MS).toISOString()
+      return { ...view(lens), purgeAt }
+    }
     if (!this.unlocked) return { status: this.status(), view: { lenses: [], bin: [], unreadable: 0 } }
     const readable = (lens: FakeLens) => !lens.unreadable
     return {
       status: 'unlocked',
       view: {
         lenses: this.lenses.filter(readable).map(view),
-        bin: this.bin.filter(readable).map(view),
+        bin: this.bin.filter(readable).map(binView),
         unreadable: [...this.lenses, ...this.bin].filter((lens) => !readable(lens)).length,
       },
     }

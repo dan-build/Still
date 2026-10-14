@@ -21,6 +21,11 @@ export interface LensView {
   items: ItemView[]
   /** Set only for Lenses in the Archive. */
   deletedAt?: string
+  /**
+   * Set only for Lenses in the Archive: when the purge deletes it for good, or
+   * null if its date can't be read, so it's kept until deleted by hand.
+   */
+  purgeAt?: string | null
 }
 
 export interface VaultView {

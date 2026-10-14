@@ -274,6 +274,8 @@ pub struct View {
     /// Each readable Lens as {id, name, createdAt, itemCount, items: [{id,
     /// label, type}], deletedAt?}, with values exactly as stored.
     pub lenses: Vec<Value>,
+    /// The same, plus purgeAt: when the Archive purge will delete it (ISO),
+    /// or null if its deletedAt can't be read, so it's kept until deleted.
     pub bin: Vec<Value>,
     /// Lenses whose key could not be unwrapped. They are kept, unchanged, but not shown.
     pub unreadable: usize,
@@ -815,7 +817,12 @@ impl<S: Storage, K: Keys> Backend<S, K> {
                 .bin
                 .iter()
                 .filter(readable)
-                .map(to_view)
+                .map(|lens| {
+                    let mut view = to_view(lens);
+                    view["purgeAt"] =
+                        model::purge_at(lens).map_or(Value::Null, |ms| time::to_iso(ms).into());
+                    view
+                })
                 .collect(),
             unreadable: all.filter(|lens| !readable(lens)).count(),
         }

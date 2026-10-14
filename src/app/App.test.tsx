@@ -544,6 +544,15 @@ describe('the Archive', () => {
     await screen.findByText('Old')
     expect(screen.getByText(/2 days/)).toBeTruthy()
   })
+
+  it('says a Lens whose date could not be read is kept until deleted', async () => {
+    seedVault({ lenses: [fakeLens('l1', 'Keep')], bin: [fakeLens('b1', 'Undated', { deletedAt: 'yesterday' })] })
+    await unlock()
+    await openArchive()
+    await screen.findByText('Undated')
+    expect(screen.getByText('Kept until you delete it')).toBeTruthy()
+    expect(screen.queryByText(/days? left/)).toBeNull()
+  })
 })
 
 describe('Lenses that cannot be opened (B2)', () => {

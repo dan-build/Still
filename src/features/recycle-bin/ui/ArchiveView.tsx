@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { RECYCLE_DAYS, type LensView as Lens } from '@/features/vault/model/types'
+import type { LensView as Lens } from '@/features/vault/model/types'
 import { Button, IconButton } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Dialog'
 import { Icon } from '@/shared/ui/Icon'
@@ -9,12 +9,13 @@ const DAY_MS = 24 * 60 * 60 * 1000
 /**
  * Whole days until a forgotten Lens is purged, at least 1: purging happens
  * when the vault is unlocked, so an entry that runs out while it's open stays
- * until then.
+ * until then. Null when it won't be purged: Rust couldn't read its date, so
+ * it's kept until deleted by hand.
  */
-export function daysLeft(deletedAt: string | undefined, now: Date): number {
-  const deleted = deletedAt ? Date.parse(deletedAt) : NaN
-  if (Number.isNaN(deleted)) return RECYCLE_DAYS
-  return Math.max(1, Math.ceil((deleted + RECYCLE_DAYS * DAY_MS - now.getTime()) / DAY_MS))
+export function daysLeft(purgeAt: string | null | undefined, now: Date): number | null {
+  const purge = purgeAt ? Date.parse(purgeAt) : NaN
+  if (Number.isNaN(purge)) return null
+  return Math.max(1, Math.ceil((purge - now.getTime()) / DAY_MS))
 }
 
 interface ArchiveViewProps {
@@ -54,7 +55,7 @@ export default function ArchiveView({ bin, onRestore, onDeleteForever, now = new
           </p>
           <ul aria-label="Forgotten Lenses" className="px-3 pb-2">
             {bin.map((lens) => {
-              const days = daysLeft(lens.deletedAt, now)
+              const days = daysLeft(lens.purgeAt, now)
               return (
                 <li
                   key={lens.id}
@@ -66,8 +67,8 @@ export default function ArchiveView({ bin, onRestore, onDeleteForever, now = new
                     {lens.itemCount === 1 ? '1 secret' : `${lens.itemCount} secrets`}
                   </span>
                   {/* The last day turns amber. */}
-                  <span className={`w-[90px] text-12 tabular-nums ${days <= 1 ? 'text-warning' : 'text-g4'}`}>
-                    {days === 1 ? '1 day left' : `${days} days left`}
+                  <span className={`min-w-[90px] text-12 whitespace-nowrap tabular-nums ${days !== null && days <= 1 ? 'text-warning' : 'text-g4'}`}>
+                    {days === null ? 'Kept until you delete it' : days === 1 ? '1 day left' : `${days} days left`}
                   </span>
                   <span className="flex items-center gap-1.5">
                     <Button icon="restore" aria-label={`Restore ${lens.name}`} onClick={() => onRestore(lens)}>

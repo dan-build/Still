@@ -348,7 +348,7 @@ fn replay<K: Keys>(scenario: &Value, differs: impl Fn(&Value, &Value) -> Differs
         let (result, clipboard) = run.step(step);
         let data = run.disk.0.borrow().data.clone();
         masker.learn((step["op"] == "createLens").then_some(&result), &data);
-        let view = masker.mask_deep(&run.backend.view().to_json());
+        let view = masker.mask_deep(&without_purge_at(run.backend.view().to_json()));
         let stored = masker.mask_deep(&json!(data));
         let mut actual = Map::new();
         actual.insert("result".into(), masker.mask_deep(&result));
@@ -380,6 +380,20 @@ fn replay<K: Keys>(scenario: &Value, differs: impl Fn(&Value, &Value) -> Differs
         (last_view, last_stored) = (view, stored);
     }
     None
+}
+
+/// The view as TypeScript sent it: Rust adds purgeAt to each Archive entry,
+/// which is checked here, then removed.
+fn without_purge_at(mut view: Value) -> Value {
+    for lens in view["bin"].as_array_mut().unwrap() {
+        let purge_at = lens.as_object_mut().unwrap().remove("purgeAt").unwrap();
+        let deleted_at = lens
+            .get("deletedAt")
+            .and_then(|v| time::js_date_value(Some(v)));
+        let expected = deleted_at.map(|ms| time::to_iso(ms + 7 * 86_400_000));
+        assert_eq!(purge_at, json!(expected), "purgeAt of {lens}");
+    }
+    view
 }
 
 fn scenarios() -> Vec<Value> {
