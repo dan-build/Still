@@ -228,6 +228,12 @@ pub fn move_old_copy(store: &AppStore, legacy: Values, now_ms: i64) -> Startup {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use still_core::session::SecretText;
+    use still_core::vault::backend::Notice;
+
+    use crate::vault::{FileStorage, Vault};
 
     const NOW: i64 = 1_791_194_400_000; // 2026-10-05T10:00:00.000Z
 
@@ -362,6 +368,58 @@ mod tests {
             NOW,
         );
         assert_eq!(again.to_json(), json!({ "kind": "ready" }));
+    }
+
+    // Someone still on v0.1.x who installs this version does both upgrades in
+    // one go: the move into the file at start-up, then the conversion to v2 at
+    // the first unlock. Each has its own tests; this runs them back to back
+    // through the real vault file, with the real keys.
+    #[test]
+    fn upgrades_a_v0_1_vault_in_one_go_moving_it_then_converting_it() {
+        let tmp = TempDir::new();
+        let store = Arc::new(tmp.store());
+        let legacy = real_vault();
+        let started = open(&store, legacy.clone(), None, None, NOW);
+        assert_eq!(started.to_json()["notice"], "moved");
+
+        let vault = Vault::new(FileStorage(store.clone()));
+        let mut backend = vault.backend();
+        let expected: Value =
+            serde_json::from_str(include_str!("../../fixtures/vault-v1-real/expected.json"))
+                .unwrap();
+        let password = SecretText::from(expected["password"].as_str().unwrap().to_owned());
+        backend.unlock(&password).unwrap();
+        let Some(Notice::Upgraded { kept, .. }) = backend.take_notice() else {
+            panic!("the moved vault is converted at its first unlock");
+        };
+
+        // The v1 file the move wrote is kept, and the vault file is now v2.
+        let kept: Values =
+            serde_json::from_slice(&std::fs::read(tmp.0.join("vault").join(&kept)).unwrap())
+                .map(|file: Value| serde_json::from_value(file["data"].clone()).unwrap())
+                .unwrap();
+        assert_eq!(kept, legacy);
+        assert!(matches!(store.store().load(), Loaded::V2(_)));
+
+        // Every secret in the Lenses reads back exactly. (The Archive's entry
+        // is older than 7 days by the system clock, so the unlock purged it.)
+        let view = backend.view();
+        for (lens_id, lens) in expected["lenses"].as_object().unwrap() {
+            let shown = view.lenses.iter().find(|l| l["id"] == *lens_id).unwrap();
+            assert_eq!(shown["name"], lens["name"]);
+            for (item_id, value) in lens["items"].as_object().unwrap() {
+                let revealed = backend.reveal_item(lens_id, item_id).unwrap();
+                assert_eq!(revealed.expose(), value.as_str().unwrap());
+            }
+        }
+
+        // And after a restart, it opens as v2 with nothing more to convert.
+        drop(backend);
+        let reopened = Vault::new(FileStorage(store));
+        let mut backend = reopened.backend();
+        backend.unlock(&password).unwrap();
+        assert_eq!(backend.take_notice(), None);
+        assert_eq!(backend.view().lenses.len(), view.lenses.len());
     }
 
     #[test]
