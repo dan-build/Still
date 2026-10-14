@@ -10,62 +10,65 @@ No account, no sync, no telemetry. Still never connects to the internet.
 
 ## Features
 
-- **One master password.** It unlocks everything. The key is derived with Argon2id at libsodium's highest-cost ("sensitive") setting, which makes guessing the password slow and expensive.
-- **Lenses.** Separate collections for different parts of your life, such as work, personal or banking. Each Lens has its own encryption key.
-- **Three kinds of secret:** passwords, API keys or tokens, and multi-line secure notes. Reveal, copy, edit or delete a secret, and rename a Lens. A copied secret is cleared from the clipboard after 30 seconds.
+- **One master password** unlocks everything. It goes through Argon2id at libsodium's highest-cost ("sensitive") setting, which makes guessing it slow and expensive.
+- **Lenses:** separate collections for different parts of your life, such as work, personal or banking. Each Lens has its own encryption key.
+- **Three kinds of secret:** passwords, API keys or tokens, and multi-line notes. Reveal, copy, edit or delete a secret, and rename a Lens.
+- **Copy without leaving a trace.** A copied secret is cleared from the clipboard after 30 seconds, when the vault locks, and when Still quits.
 - **Search** every Lens by label or Lens name with ⌘F. Values stay encrypted and are never searched.
 - **A 7-day Archive.** A Lens you forget moves to the Archive for 7 days, where you can restore it or delete it for good.
-- **Lock and auto-lock.** One click, or ⌘L, returns Still to the password screen and wipes its keys from memory. Still also locks itself after 5 minutes without activity, and whenever your Mac goes to sleep.
+- **Lock and auto-lock.** One click, or ⌘L, returns to the password screen and wipes the keys from memory. Still also locks itself after 5 minutes without activity, and whenever your Mac sleeps.
 - **Light and dark,** following your Mac's appearance, and usable with the keyboard and screen readers.
 - **Offline by design.** No servers, no accounts and no analytics. Your vault is a single private file on your Mac.
 - **Open source** under the MIT licence. Read the code, or build it yourself instead of trusting a download.
 
-## What's encrypted
+## How Still protects your secrets
 
-Still uses [libsodium](https://doc.libsodium.org/), a widely used and audited crypto library, from its Rust code. It doesn't implement any cryptography of its own, and its encryption keys never enter the app's web page.
-
-**Encrypted:** everything in your vault.
+**Everything in your vault is encrypted.** Still uses [libsodium](https://doc.libsodium.org/), a widely used and audited crypto library, and implements no cryptography of its own.
 - Your master password unlocks an app key using Argon2id. The vault file records the Argon2id settings, so they can be raised later.
-- The app key unlocks a separate key for each Lens, and each secret is encrypted with its own key derived from that Lens key, using XChaCha20-Poly1305.
-- Everything else (Lens names, secret labels and types, dates and counts) is encrypted together as one block, with the secrets inside.
-- Every part of the vault file is tied to the rest, so any change to it is detected: Still reports damaged data and changes nothing.
+- The app key unlocks a separate key for each Lens, and each secret is encrypted with its own key derived from its Lens's key, using XChaCha20-Poly1305.
+- Everything else (Lens names, secret labels and types, dates and counts) is encrypted too, as one block with the secrets inside.
+- Every part of the file is tied to the rest, so any change to it is detected: Still reports damaged data and changes nothing.
 
 Anyone who can read your Mac's files sees only the Argon2id settings and roughly how large the vault is.
 
-**Upgrading from v0.5.0 or older:** the first time you unlock, Still upgrades your vault to this format (it takes a few seconds longer, once) and keeps the previous file as `vault-v1.json` next to it. Older versions of Still can't open the upgraded vault; they say so and change nothing. To go back to one, you'd use `vault-v1.json`, which doesn't include anything changed after the upgrade.
+**Your secrets stay out of the app's window.** Still's window is a web page, and its Rust code does everything else: it holds the keys, encrypts and decrypts, and alone reads and writes the vault file. While the vault is unlocked, the window sees only Lens names and secret labels. A secret's value passes through it only while you type or reveal it. Copying goes from Rust straight to the clipboard.
 
-[SECURITY.md](SECURITY.md) lists the other current limits and explains how to report a vulnerability privately.
+**Still is careful with your vault file.**
+- A save happens completely or not at all, even if your Mac crashes or loses power, and the previous version is kept as a backup.
+- If the file can't be read, Still writes nothing over it, and offers to put back the newest copy it kept.
+- When the vault format changes, the old file is kept beside the new one.
+- Only one copy of Still uses the vault at a time.
 
-## Known issues
-
-In **v0.6.1**:
-
-- **Don't go back to v0.5.0 or older after upgrading.** See [What's encrypted](#whats-encrypted).
-- **Clipboard-history apps may still record a copied secret.** Still asks them not to, and most respect that, but not all do.
-- **Don't go back to v0.1.x after upgrading.** See [Upgrading from v0.1.x](#upgrading-from-v01x).
-- **If you used v0.1.0:** it removed spaces and line breaks at the start or end of a secret before saving. Still can't detect or restore those characters. If a saved secret doesn't work and the real one starts or ends with a space or line break, delete it and add it again.
-
-Issues fixed in earlier versions are listed in the [CHANGELOG](CHANGELOG.md).
+[SECURITY.md](SECURITY.md) lists what Still doesn't protect against yet, and explains how to report a vulnerability privately.
 
 ## Download and install
 
-Still is a macOS app. The current release, v0.6.1, is a pre-release. It's a universal build that runs natively on both Intel and Apple Silicon Macs. It needs **Safari 15.4 or newer**, because macOS draws Still's window with Safari's engine: any Mac on macOS 10.15 or later with Safari updates installed is fine.
+Still is a macOS app. The current release is a pre-release: a universal build that runs natively on both Intel and Apple Silicon Macs. It needs **Safari 15.4 or newer**, because macOS draws Still's window with Safari's engine: any Mac on macOS 10.15 or later with Safari updates installed is fine.
 
 1. From the [Releases page](https://github.com/dan-build/Still/releases), download the `.dmg` and `SHA256SUMS.txt`.
 2. Optional but recommended: check the download. In Terminal, run `cd ~/Downloads && shasum -a 256 -c SHA256SUMS.txt`. It should print the `.dmg`'s name followed by `OK`.
 3. Open the `.dmg` and drag **Still** into your **Applications** folder.
 4. The app isn't signed with an Apple Developer ID yet, so macOS blocks it the first time you open it. Go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the message about Still.
 
-Your vault is the file `~/Library/Application Support/com.still.app/vault.json`, with the previous version kept as `vault.json.bak`. Deleting them deletes your vault. To back it up, quit Still and copy both files somewhere safe.
-
-### Upgrading from v0.1.x
-
-Install v0.2.0 over the old version. The first time it opens, Still copies your vault, unchanged, into its new file and tells you so. Your password and secrets stay the same.
-
-- The old copy stays where v0.1.x kept it (`~/Library/WebKit/com.still.app/`). Still never changes or deletes it.
-- **Don't go back to v0.1.x afterwards.** It only sees that old copy, so anything you change in v0.2.0 would seem to be missing. If an old version does change the old copy, v0.2.0 tells you, and both are kept.
+**Where your vault lives:** `~/Library/Application Support/com.still.app/vault.json`, with the previous version kept as `vault.json.bak`. Deleting them deletes your vault. To back it up, quit Still and copy both files somewhere safe.
 
 There are no Windows or Linux downloads yet. Still's tests pass on both, but it hasn't been tested there as an installed app.
+
+## Upgrading
+
+Install the new version over the old one. Your password and secrets stay the same, and Still tells you what it did.
+
+- **From v0.5.0 or older:** the first time you unlock, Still upgrades your vault to the current format. It takes a few seconds longer, once, and the previous file is kept as `vault-v1.json` next to it. If the upgrade can't finish, your vault stays as it was and Still tries again the next time it starts.
+- **From v0.1.x:** those versions kept the vault inside macOS's web storage (`~/Library/WebKit/com.still.app/`). The first time it opens, Still copies it, unchanged, into the vault file, then upgrades it when you unlock. Still never changes or deletes that old copy.
+
+**Don't go back to an older version afterwards.** Versions before v0.6.0 can't open the upgraded vault; they say so and change nothing. To go back, you'd use `vault-v1.json`, which doesn't include anything changed since the upgrade. v0.1.x only sees its old copy, so everything since would seem to be missing.
+
+## Known issues
+
+- **Clipboard-history apps may still record a copied secret.** Still asks them not to, and most respect that, but not all do.
+- **If you used v0.1.0:** it removed spaces and line breaks at the start or end of a secret before saving. Still can't detect or restore those characters. If a saved secret doesn't work and the real one starts or ends with a space or line break, delete it and add it again.
+
+Issues fixed in earlier versions are listed in the [CHANGELOG](CHANGELOG.md).
 
 ## Build from source
 
@@ -93,14 +96,10 @@ Development builds keep their own separate vault, so they never touch your real 
 
 ## Roadmap
 
-1. ~~**v0.1.1: fix the data-loss issues**~~ Done in v0.1.1, together with the first universal macOS build, built in GitHub Actions from the public source.
-2. ~~**Move encryption and key handling into Rust**~~ Done in v0.2.0: keys stay out of the app's web page, unlocking no longer freezes the window, copied secrets are cleared after 30 seconds, and the vault locks itself.
-3. ~~**Store the vault in its own file**~~ Done in v0.2.0: existing vaults move across on first launch, and the old copy is kept.
-4. **A refreshed design.** A calmer, more polished look and feel.
-5. **Encrypt Lens names and labels as well.** Older vaults will keep opening.
-6. **Signed and notarised releases,** so macOS opens Still without the "Open Anyway" step.
+- **Signed and notarised releases,** so macOS opens Still without the "Open Anyway" step.
+- **Windows and Linux packages.**
 
-Each step keeps existing vaults working. Tests that must open real vaults made by earlier versions check this.
+Every release keeps existing vaults working: tests open real vaults made by earlier versions, and the format only changes with a tested upgrade path.
 
 ## Contributing and security
 
