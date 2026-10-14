@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-14
+
+### Fixed
+
+- **A Lens Still can't open can no longer be changed.** A Lens whose key doesn't open is hidden and kept exactly as stored, but the vault's code would still rename, edit, forget or delete one if asked for it by its id. The app never asked, since those ids never reach the window; the vault's code now refuses on its own.
+- **The Archive no longer deletes a Lens whose date it can't read.** A forgotten Lens with a missing or damaged date was deleted for good the next time you unlocked. It now stays in the Archive, marked "Kept until you delete it", until you delete it yourself. Still has only ever written dates it can read, so this takes a damaged or hand-edited file.
+- **A failed upgrade to the new vault format is tried again only when Still starts again,** instead of on every unlock, where each try made unlocking take about twice as long and showed an error. Your vault stays in the old format, and works as before, until the upgrade succeeds.
+
 ## [0.6.0] - 2026-10-13
 
 ### Changed
