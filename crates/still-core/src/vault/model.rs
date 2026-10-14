@@ -151,19 +151,21 @@ pub fn delete_lens_forever(lists: &Lists, lens_id: &str) -> Change {
     }
 }
 
-/// Removes bin entries deleted more than RECYCLE_DAYS ago (same rule as
-/// v0.1.0): an entry is kept only if its `deletedAt` is a valid time after
-/// the cutoff, so one without a valid `deletedAt` counts as expired. (A
-/// null entry, which made JavaScript throw, never gets here: the backend
-/// refuses to unlock with one.)
+/// When a bin entry will be purged: RECYCLE_DAYS after its `deletedAt`, read
+/// as `new Date(deletedAt)` reads the ISO format. None if there is no
+/// readable date (missing, null or anything else).
+pub fn purge_at(lens: &Value) -> Option<i64> {
+    let deleted_at = lens.get("deletedAt").filter(|v| !v.is_null());
+    time::js_date_value(deleted_at).map(|ms| ms + RECYCLE_DAYS * DAY_MS)
+}
+
+/// Removes bin entries deleted RECYCLE_DAYS ago or more. Deleting can't be
+/// undone, so a Lens whose date can't be read is kept until it's deleted by
+/// hand. (v0.1.0 purged those; Still has only ever written ISO dates.) An
+/// entry that isn't an object holds no Lens and goes, as it always did.
 pub fn purge_expired(bin: &[Value], now_ms: i64) -> Vec<Value> {
-    let cutoff = now_ms - RECYCLE_DAYS * DAY_MS;
     bin.iter()
-        .filter(|lens| {
-            // JavaScript reads `new Date(lens.deletedAt ?? '')`: null counts as missing.
-            let deleted_at = lens.get("deletedAt").filter(|v| !v.is_null());
-            time::js_date_value(deleted_at).is_some_and(|ms| ms > cutoff)
-        })
+        .filter(|lens| lens.is_object() && purge_at(lens).is_none_or(|at| at > now_ms))
         .cloned()
         .collect()
 }
@@ -374,38 +376,21 @@ mod tests {
         assert_eq!(ids(&purge_expired(&bin, NOW)), ["recent"]);
     }
 
-    // Same rule as v0.1.0: an entry without a valid deletedAt counts as expired.
-    #[test]
-    fn removes_bin_entries_without_a_valid_deleted_at() {
-        let bin = [
-            lens("none"),
-            lens_with("bad", "deletedAt", json!("not a date")),
-            lens_with("null", "deletedAt", Value::Null),
-            json!(1),
-            lens_with("future", "deletedAt", json!("2027-01-01T00:00:00.000Z")),
-            lens_with("empty", "deletedAt", json!("")),
-            lens_with("number-old", "deletedAt", json!(NOW - 8 * DAY_MS)),
-            lens_with("number-new", "deletedAt", json!(NOW - DAY_MS)),
-        ];
-        assert_eq!(ids(&purge_expired(&bin, NOW)), ["future", "number-new"]);
-    }
-
     // Deleting can't be undone, so an entry is purged only when its date can
     // be read and is old enough. Still has only ever written ISO dates.
     #[test]
-    #[should_panic(expected = "purged an entry whose date can't be read")]
     fn keeps_bin_entries_whose_deleted_at_cannot_be_read() {
         let bin = [
             lens("none"),
             lens_with("bad", "deletedAt", json!("not a date")),
             lens_with("null", "deletedAt", Value::Null),
-            json!(1),
             lens_with("empty", "deletedAt", json!("")),
             lens_with("number-old", "deletedAt", json!(NOW - 8 * DAY_MS)),
             lens_with("old", "deletedAt", json!(days_ago(7.1))),
+            json!(1),
         ];
         let kept = purge_expired(&bin, NOW);
-        assert_eq!(kept, bin[..5], "purged an entry whose date can't be read");
+        assert_eq!(kept, bin[..4], "purged an entry whose date can't be read");
     }
 
     #[test]

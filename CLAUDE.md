@@ -78,7 +78,7 @@ Older versions kept the vault in localStorage, which belongs to one origin and o
 - **Release or bundled build:** origin `tauri://localhost`, data in `~/Library/WebKit/com.still.app/`. Both this folder and the vault file's come from `identifier`, so never change `identifier`.
 - **`npm run tauri:dev`:** origin `http://localhost:3000`. The binary isn't bundled, so its data lives in `~/Library/WebKit/still/`, named after the executable. Keep the dev port at 3000; Vite uses `strictPort`, and tests pin both the port and `identifier`.
 
-Recycle-bin entries older than 7 days are purged when the vault is unlocked. New ids are 128 random bits in hex. v0.1.0's ids were `Date.now().toString(36)`; they're kept as they are.
+Recycle-bin entries older than 7 days are purged when the vault is unlocked. One whose `deletedAt` can't be read (missing, null or not a date) is kept until deleted by hand, since deleting can't be undone; v0.1.0 to v0.6.0 purged those. Entries that aren't objects hold no Lens and are purged. New ids are 128 random bits in hex. v0.1.0's ids were `Date.now().toString(36)`; they're kept as they are.
 
 **Rust core.** [crates/still-core](crates/still-core) implements the v1 format byte for byte like the JavaScript `crypto.ts` that v0.1.x shipped, on libsodium 1.0.22, the same release v0.1.x shipped, and the vault backend (`src/vault/`, described above).
 - `sodium.rs` is the only `unsafe` code. Argon2id runs one at a time per process (a 1 GiB lock), so tests need no guard of their own.
