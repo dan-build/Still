@@ -366,7 +366,6 @@ fn leaves_the_vault_as_it_was_when_converting_fails_and_tries_again() {
 // Each try runs a second Argon2id step and shows an error, so a failed
 // conversion isn't tried again until Still starts again (a new backend).
 #[test]
-#[should_panic(expected = "tried converting again")]
 fn tries_converting_again_only_after_a_restart() {
     let (disk, before) = v1_vault();
     disk.0.borrow_mut().fail_keys.insert("convert".into());

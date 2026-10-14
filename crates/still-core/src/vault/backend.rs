@@ -719,7 +719,9 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         self.v2_file = v2_file;
         self.keys = Some(opened.keys);
         // Convert before anything is saved, so the Archive purge below is
-        // already saved in v2. A failure leaves the vault as it was (v1).
+        // already saved in v2. A failure leaves the vault as it was (v1), and
+        // isn't tried again until Still starts again: each try costs a second
+        // Argon2id step and shows an error.
         self.notice = match opened.converted {
             None => None,
             Some(Ok((file, body))) => match self.storage.convert_to_v2(&file, &expected) {
@@ -734,6 +736,9 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             },
             Some(Err(_)) => Some(Notice::UpgradeFailed),
         };
+        if self.notice == Some(Notice::UpgradeFailed) {
+            self.convert_v1 = false;
+        }
         self.open_lists(opened.stored, &opened.opened);
         Ok(())
     }

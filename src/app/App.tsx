@@ -188,7 +188,7 @@ export default function StillHome({ notice }: StillHomeProps) {
       setShownNotice('upgraded')
     }
     if (result.notice === 'upgrade-failed') {
-      showToast({ message: "Couldn't upgrade your vault to the new format. It's unchanged, and Still will try again next time.", tone: 'error' })
+      showToast({ message: "Couldn't upgrade your vault to the new format. It's unchanged, and Still will try again the next time it starts.", tone: 'error' })
     }
     return 'ok'
   }
