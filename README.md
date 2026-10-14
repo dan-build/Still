@@ -38,22 +38,14 @@ Anyone who can read your Mac's files sees only the Argon2id settings and roughly
 
 ## Known issues
 
-**Fixed in v0.3.0:** deleting a secret, or a Lens in the Archive, happened with one click and couldn't be undone; it now asks first. Dialogs and buttons now work with the keyboard and screen readers.
-
-**Fixed in v0.2.0:**
-- unlocking froze the window for a few seconds;
-- copied secrets stayed on the clipboard;
-- Still didn't lock itself when left alone.
-
-**Fixed in v0.1.1:** forgetting your only Lens, and changes to the last item in the Archive, weren't saved; a Lens that couldn't be read could be erased; spaces at the start or end of a secret were removed. The PIN, which never worked, is gone. The [CHANGELOG](CHANGELOG.md) has the full list.
-
-**If you used v0.1.0:** it removed spaces and line breaks at the start or end of a secret before saving. Still can't detect or restore those characters. If a saved secret doesn't work and the real one starts or ends with a space or line break, delete it and add it again.
-
-Still open in **v0.6.1**:
+In **v0.6.1**:
 
 - **Don't go back to v0.5.0 or older after upgrading.** See [What's encrypted](#whats-encrypted).
 - **Clipboard-history apps may still record a copied secret.** Still asks them not to, and most respect that, but not all do.
 - **Don't go back to v0.1.x after upgrading.** See [Upgrading from v0.1.x](#upgrading-from-v01x).
+- **If you used v0.1.0:** it removed spaces and line breaks at the start or end of a secret before saving. Still can't detect or restore those characters. If a saved secret doesn't work and the real one starts or ends with a space or line break, delete it and add it again.
+
+Issues fixed in earlier versions are listed in the [CHANGELOG](CHANGELOG.md).
 
 ## Download and install
 
