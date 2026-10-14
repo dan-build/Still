@@ -390,6 +390,24 @@ mod tests {
         assert_eq!(ids(&purge_expired(&bin, NOW)), ["future", "number-new"]);
     }
 
+    // Deleting can't be undone, so an entry is purged only when its date can
+    // be read and is old enough. Still has only ever written ISO dates.
+    #[test]
+    #[should_panic(expected = "purged an entry whose date can't be read")]
+    fn keeps_bin_entries_whose_deleted_at_cannot_be_read() {
+        let bin = [
+            lens("none"),
+            lens_with("bad", "deletedAt", json!("not a date")),
+            lens_with("null", "deletedAt", Value::Null),
+            json!(1),
+            lens_with("empty", "deletedAt", json!("")),
+            lens_with("number-old", "deletedAt", json!(NOW - 8 * DAY_MS)),
+            lens_with("old", "deletedAt", json!(days_ago(7.1))),
+        ];
+        let kept = purge_expired(&bin, NOW);
+        assert_eq!(kept, bin[..5], "purged an entry whose date can't be read");
+    }
+
     #[test]
     fn counts_a_time_zone_offset_at_the_cutoff() {
         // 7 days ago at 12:00Z is 14:00+02:00; a minute either side decides.
