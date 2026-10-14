@@ -363,6 +363,24 @@ fn leaves_the_vault_as_it_was_when_converting_fails_and_tries_again() {
     assert!(stored_lists(&disk, "pw").lenses.contains("Still v1"));
 }
 
+// Each try runs a second Argon2id step and shows an error, so a failed
+// conversion isn't tried again until Still starts again (a new backend).
+#[test]
+#[should_panic(expected = "tried converting again")]
+fn tries_converting_again_only_after_a_restart() {
+    let (disk, before) = v1_vault();
+    disk.0.borrow_mut().fail_keys.insert("convert".into());
+    let mut vault = backend::<FastKeys>(&disk);
+    vault.unlock(&secret("pw")).unwrap();
+    assert_eq!(vault.take_notice(), Some(Notice::UpgradeFailed));
+
+    vault.lock();
+    vault.unlock(&secret("pw")).unwrap();
+    assert_eq!(vault.take_notice(), None, "tried converting again");
+    assert_eq!(disk.0.borrow().data, before);
+    assert!(disk.0.borrow().v2.is_none());
+}
+
 #[test]
 fn opens_an_old_copy_as_it_is_when_told_to() {
     let (disk, before) = v1_vault();
