@@ -389,6 +389,7 @@ fn without_purge_at(mut view: Value) -> Value {
         let purge_at = lens.as_object_mut().unwrap().remove("purgeAt").unwrap();
         let deleted_at = lens
             .get("deletedAt")
+            .filter(|v| v.is_string() || v.is_number())
             .and_then(|v| time::js_date_value(Some(v)));
         let expected = deleted_at.map(|ms| time::to_iso(ms + 7 * 86_400_000));
         assert_eq!(purge_at, json!(expected), "purgeAt of {lens}");

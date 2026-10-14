@@ -151,11 +151,14 @@ pub fn delete_lens_forever(lists: &Lists, lens_id: &str) -> Change {
     }
 }
 
-/// When a bin entry will be purged: RECYCLE_DAYS after its `deletedAt`, read
-/// as `new Date(deletedAt)` reads the ISO format. None if there is no
-/// readable date (missing, null or anything else).
+/// When a bin entry will be purged: RECYCLE_DAYS after its `deletedAt`, a
+/// string read as `new Date(deletedAt)` reads the ISO format, or a number of
+/// milliseconds. None if there is no readable date (missing, null, true or
+/// anything else).
 pub fn purge_at(lens: &Value) -> Option<i64> {
-    let deleted_at = lens.get("deletedAt").filter(|v| !v.is_null());
+    let deleted_at = lens
+        .get("deletedAt")
+        .filter(|v| v.is_string() || v.is_number());
     time::js_date_value(deleted_at).map(|ms| ms + RECYCLE_DAYS * DAY_MS)
 }
 
@@ -372,8 +375,13 @@ mod tests {
             lens_with("recent", "deletedAt", json!(days_ago(6.9))),
             lens_with("old", "deletedAt", json!(days_ago(7.1))),
             lens_with("edge", "deletedAt", json!(days_ago(7.0))),
+            lens_with("future", "deletedAt", json!("2027-01-01T00:00:00.000Z")),
+            lens_with("number-new", "deletedAt", json!(NOW - DAY_MS)),
         ];
-        assert_eq!(ids(&purge_expired(&bin, NOW)), ["recent"]);
+        assert_eq!(
+            ids(&purge_expired(&bin, NOW)),
+            ["recent", "future", "number-new"]
+        );
     }
 
     // Deleting can't be undone, so an entry is purged only when its date can
@@ -385,12 +393,14 @@ mod tests {
             lens_with("bad", "deletedAt", json!("not a date")),
             lens_with("null", "deletedAt", Value::Null),
             lens_with("empty", "deletedAt", json!("")),
+            lens_with("true", "deletedAt", json!(true)),
+            lens_with("list", "deletedAt", json!([NOW])),
             lens_with("number-old", "deletedAt", json!(NOW - 8 * DAY_MS)),
             lens_with("old", "deletedAt", json!(days_ago(7.1))),
             json!(1),
         ];
         let kept = purge_expired(&bin, NOW);
-        assert_eq!(kept, bin[..4], "purged an entry whose date can't be read");
+        assert_eq!(kept, bin[..6], "purged an entry whose date can't be read");
     }
 
     #[test]
