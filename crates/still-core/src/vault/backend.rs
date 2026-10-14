@@ -274,6 +274,8 @@ pub struct View {
     /// Each readable Lens as {id, name, createdAt, itemCount, items: [{id,
     /// label, type}], deletedAt?}, with values exactly as stored.
     pub lenses: Vec<Value>,
+    /// The same, plus purgeAt: when the Archive purge will delete it (ISO),
+    /// or null if its deletedAt can't be read, so it's kept until deleted.
     pub bin: Vec<Value>,
     /// Lenses whose key could not be unwrapped. They are kept, unchanged, but not shown.
     pub unreadable: usize,
@@ -717,7 +719,9 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         self.v2_file = v2_file;
         self.keys = Some(opened.keys);
         // Convert before anything is saved, so the Archive purge below is
-        // already saved in v2. A failure leaves the vault as it was (v1).
+        // already saved in v2. A failure leaves the vault as it was (v1), and
+        // isn't tried again until Still starts again: each try costs a second
+        // Argon2id step and shows an error.
         self.notice = match opened.converted {
             None => None,
             Some(Ok((file, body))) => match self.storage.convert_to_v2(&file, &expected) {
@@ -732,6 +736,9 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             },
             Some(Err(_)) => Some(Notice::UpgradeFailed),
         };
+        if self.notice == Some(Notice::UpgradeFailed) {
+            self.convert_v1 = false;
+        }
         self.open_lists(opened.stored, &opened.opened);
         Ok(())
     }
@@ -815,7 +822,12 @@ impl<S: Storage, K: Keys> Backend<S, K> {
                 .bin
                 .iter()
                 .filter(readable)
-                .map(to_view)
+                .map(|lens| {
+                    let mut view = to_view(lens);
+                    view["purgeAt"] =
+                        model::purge_at(lens).map_or(Value::Null, |ms| time::to_iso(ms).into());
+                    view
+                })
                 .collect(),
             unreadable: all.filter(|lens| !readable(lens)).count(),
         }
@@ -844,6 +856,21 @@ impl<S: Storage, K: Keys> Backend<S, K> {
 
     fn keys(&self) -> Result<&K, VaultError> {
         self.keys.as_ref().ok_or(VaultError::Locked)
+    }
+
+    /// Refuses a change to a stored Lens whose key didn't open, as if it
+    /// didn't exist: it's kept exactly as stored. Checked before every change.
+    fn readable_lens(&self, lens_id: &str) -> Result<(), VaultError> {
+        let stored = self
+            .lists
+            .lenses
+            .iter()
+            .chain(&self.lists.bin)
+            .any(|l| id_of(l) == Some(lens_id));
+        if stored && !self.readable.contains(lens_id) {
+            return Err(VaultError::UnknownLens);
+        }
+        Ok(())
     }
 
     fn active_lens(&self, lens_id: &str) -> Option<&Value> {
@@ -943,6 +970,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         value: &SecretText,
     ) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         let lens = self.active_lens(lens_id).ok_or(VaultError::UnknownLens)?;
         let encrypted_value = self.encrypt(lens_id, value)?;
         let mut items = items_of(lens).to_vec();
@@ -966,6 +994,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         value: Option<&SecretText>,
     ) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         let lens = self.active_lens(lens_id);
         let items = lens.map(items_of).unwrap_or_default();
         let item = items
@@ -996,9 +1025,10 @@ impl<S: Storage, K: Keys> Backend<S, K> {
 
     pub fn delete_item(&mut self, lens_id: &str, item_id: &str) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         let lens = self.active_lens(lens_id).ok_or(VaultError::UnknownLens)?;
-        // A Lens stored without an items list (only an unreadable one can be)
-        // stays exactly as stored.
+        // A Lens stored without an items list stays exactly as stored. (Only
+        // an unreadable one can be, and those are refused above.)
         if !lens.get("items").is_some_and(Value::is_array) {
             return Err(VaultError::UnknownItem);
         }
@@ -1012,6 +1042,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
 
     pub fn rename_lens(&mut self, lens_id: &str, name: &str) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         self.active_lens(lens_id).ok_or(VaultError::UnknownLens)?;
         if js_trim(name).is_empty() {
             return Err(VaultError::EmptyName);
@@ -1021,16 +1052,19 @@ impl<S: Storage, K: Keys> Backend<S, K> {
 
     pub fn forget_lens(&mut self, lens_id: &str) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         self.write(model::forget_lens(&self.lists, lens_id, (self.clock)()))
     }
 
     pub fn restore_lens(&mut self, lens_id: &str) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         self.write(model::restore_lens(&self.lists, lens_id))
     }
 
     pub fn delete_lens_forever(&mut self, lens_id: &str) -> Result<(), VaultError> {
         self.keys()?;
+        self.readable_lens(lens_id)?;
         self.write(model::delete_lens_forever(&self.lists, lens_id))
     }
 

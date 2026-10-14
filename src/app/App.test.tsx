@@ -171,7 +171,9 @@ describe('the upgrade to the new vault format', () => {
   it('says when the upgrade failed, and still opens the vault', async () => {
     seedVault({ lenses: [fakeLens('l1', 'Alpha')] }).unlockNotice = 'upgrade-failed'
     await unlock()
-    await screen.findByText(/Couldn't upgrade your vault to the new format/)
+    const toast = await screen.findByText(/Couldn't upgrade your vault to the new format/)
+    // Rust tries again only after a restart, not at the next unlock.
+    expect(toast.textContent).toContain('the next time it starts')
     await screen.findAllByText('Alpha')
   })
 
@@ -543,6 +545,15 @@ describe('the Archive', () => {
     await openArchive()
     await screen.findByText('Old')
     expect(screen.getByText(/2 days/)).toBeTruthy()
+  })
+
+  it('says a Lens whose date could not be read is kept until deleted', async () => {
+    seedVault({ lenses: [fakeLens('l1', 'Keep')], bin: [fakeLens('b1', 'Undated', { deletedAt: 'yesterday' })] })
+    await unlock()
+    await openArchive()
+    await screen.findByText('Undated')
+    expect(screen.getByText('Kept until you delete it')).toBeTruthy()
+    expect(screen.queryByText(/days? left/)).toBeNull()
   })
 })
 

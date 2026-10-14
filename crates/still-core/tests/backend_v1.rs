@@ -316,7 +316,102 @@ fn leaves_a_lens_stored_without_items_as_it_was_when_deleting_from_it() {
     vault.unlock(&secret("pw")).unwrap();
     assert_eq!(
         vault.delete_item("bare", "anything"),
-        Err(VaultError::UnknownItem)
+        Err(VaultError::UnknownLens)
     );
     assert_eq!(disk.0.borrow().data["still-lenses"], with_bare);
+}
+
+/// A wrapped key in the right shape that no app key opens.
+const FOREIGN_KEY: &str = "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJBwcHBwcHBwcHBwcHBwcHBw==";
+
+/// `small_vault`, unlocked, with a Lens whose key doesn't open in each list:
+/// `hidden` in the Lenses and `binned` in the Archive.
+fn vault_with_hidden_lenses() -> (Memory, Backend<Memory, FastKeys>, String, String) {
+    let (disk, lens, item) = small_vault();
+    let hidden = format!(
+        "{{\"id\":\"hidden\",\"name\":\"Hidden\",\"encryptedMasterKey\":\"{FOREIGN_KEY}\",\
+         \"items\":[{{\"id\":\"i\",\"label\":\"x\",\"type\":\"note\",\"encryptedValue\":\"opaque\"}}]}}"
+    );
+    let binned = format!(
+        "[{{\"id\":\"binned\",\"name\":\"Binned\",\"encryptedMasterKey\":\"{FOREIGN_KEY}\",\
+         \"items\":[],\"deletedAt\":\"{}\"}}]",
+        "2026-09-27T00:00:00.000Z"
+    );
+    {
+        let mut stored = disk.0.borrow_mut();
+        let lenses = stored.data["still-lenses"].replacen('[', &format!("[{hidden},"), 1);
+        stored.data.insert("still-lenses".into(), lenses);
+        stored.data.insert("still-recycle-bin".into(), binned);
+    }
+    let mut vault = backend::<FastKeys>(&disk);
+    vault.unlock(&secret("pw")).unwrap();
+    assert_eq!(vault.view().unreadable, 2);
+    (disk, vault, lens, item)
+}
+
+/// Every change, by Lens id, as the commands make them.
+fn every_change(
+    vault: &mut Backend<Memory, FastKeys>,
+    lens: &str,
+    item: &str,
+) -> Vec<(&'static str, Result<(), VaultError>)> {
+    vec![
+        ("add_item", vault.add_item(lens, "X", "note", &secret("v"))),
+        (
+            "update_item",
+            vault.update_item(lens, item, "X", "note", Some(&secret("v"))),
+        ),
+        (
+            "update_item (label only)",
+            vault.update_item(lens, item, "Relabelled", "note", None),
+        ),
+        ("rename_lens", vault.rename_lens(lens, "Renamed")),
+        ("delete_item", vault.delete_item(lens, item)),
+        ("forget_lens", vault.forget_lens(lens)),
+        ("restore_lens", vault.restore_lens(lens)),
+        ("delete_lens_forever", vault.delete_lens_forever(lens)),
+    ]
+}
+
+// Hidden Lenses' ids never reach the page, but the backend holds to the rule
+// itself: a Lens it can't read is kept exactly as stored.
+#[test]
+fn refuses_every_change_to_a_lens_whose_key_did_not_open() {
+    let (disk, mut vault, _, _) = vault_with_hidden_lenses();
+    let before = disk.0.borrow().data.clone();
+    for id in ["hidden", "binned"] {
+        for (change, result) in every_change(&mut vault, id, "i") {
+            assert_eq!(
+                result,
+                Err(VaultError::UnknownLens),
+                "{change} changed a hidden Lens ({id})"
+            );
+        }
+    }
+    assert_eq!(disk.0.borrow().data, before);
+    assert_eq!(vault.view().unreadable, 2);
+
+    // And after a restart, still exactly as stored.
+    vault.lock();
+    let mut again = backend::<FastKeys>(&disk);
+    again.unlock(&secret("pw")).unwrap();
+    assert_eq!(again.view().unreadable, 2);
+    assert_eq!(disk.0.borrow().data, before);
+}
+
+#[test]
+fn makes_the_same_changes_to_a_readable_lens_next_to_hidden_ones() {
+    let (disk, mut vault, lens, item) = vault_with_hidden_lenses();
+    for (change, result) in every_change(&mut vault, &lens, &item) {
+        assert_eq!(result, Ok(()), "{change}");
+    }
+    // Added, edited, renamed, emptied, forgotten, restored, then deleted from
+    // the (already empty) Archive: the Lens is back, and the hidden ones kept.
+    let view = vault.view();
+    assert_eq!(view.lenses.len(), 1);
+    assert_eq!(view.lenses[0]["name"], "Renamed");
+    assert_eq!(view.unreadable, 2);
+    let stored = disk.0.borrow();
+    assert!(stored.data["still-lenses"].contains("\"id\":\"hidden\""));
+    assert!(stored.data["still-recycle-bin"].contains("\"id\":\"binned\""));
 }

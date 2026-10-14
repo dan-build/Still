@@ -325,9 +325,20 @@ impl<K: Keys> Run<K> {
     }
 }
 
-/// Replays one scenario, comparing every step. Stops early, and returns the
-/// step number, at a step `stop_at` accepts (a documented Rust difference).
-fn replay<K: Keys>(scenario: &Value, stop_at: impl Fn(&Value, &Value) -> bool) -> Option<usize> {
+/// What a test makes of a step where Rust differs on purpose from the recording.
+#[derive(PartialEq)]
+enum Differs {
+    /// Not here: compare the step with the recording.
+    No,
+    /// Checked; the rest of the scenario no longer applies.
+    Stop,
+    /// Checked; go on comparing from the next step.
+    Go,
+}
+
+/// Replays one scenario, comparing every step except those `differs` takes
+/// over (a documented Rust difference). Returns the step number it stopped at.
+fn replay<K: Keys>(scenario: &Value, differs: impl Fn(&Value, &Value) -> Differs) -> Option<usize> {
     let name = scenario["name"].as_str().unwrap();
     let mut run = Run::<K>::new();
     let mut masker = Masker::default();
@@ -337,7 +348,7 @@ fn replay<K: Keys>(scenario: &Value, stop_at: impl Fn(&Value, &Value) -> bool) -
         let (result, clipboard) = run.step(step);
         let data = run.disk.0.borrow().data.clone();
         masker.learn((step["op"] == "createLens").then_some(&result), &data);
-        let view = masker.mask_deep(&run.backend.view().to_json());
+        let view = masker.mask_deep(&without_purge_at(run.backend.view().to_json()));
         let stored = masker.mask_deep(&json!(data));
         let mut actual = Map::new();
         actual.insert("result".into(), masker.mask_deep(&result));
@@ -353,8 +364,13 @@ fn replay<K: Keys>(scenario: &Value, stop_at: impl Fn(&Value, &Value) -> bool) -
             actual.insert("clipboard".into(), json!(clipboard));
         }
         let actual = Value::Object(actual);
-        if stop_at(step, &actual) {
-            return Some(n + 1);
+        match differs(step, &actual) {
+            Differs::Stop => return Some(n + 1),
+            Differs::Go => {
+                (last_view, last_stored) = (view, stored);
+                continue;
+            }
+            Differs::No => {}
         }
         assert_eq!(actual, step["expect"], "{name}, step {}: {}", n + 1, {
             let mut shown = step.clone();
@@ -364,6 +380,21 @@ fn replay<K: Keys>(scenario: &Value, stop_at: impl Fn(&Value, &Value) -> bool) -
         (last_view, last_stored) = (view, stored);
     }
     None
+}
+
+/// The view as TypeScript sent it: Rust adds purgeAt to each Archive entry,
+/// which is checked here, then removed.
+fn without_purge_at(mut view: Value) -> Value {
+    for lens in view["bin"].as_array_mut().unwrap() {
+        let purge_at = lens.as_object_mut().unwrap().remove("purgeAt").unwrap();
+        let deleted_at = lens
+            .get("deletedAt")
+            .filter(|v| v.is_string() || v.is_number())
+            .and_then(|v| time::js_date_value(Some(v)));
+        let expected = deleted_at.map(|ms| time::to_iso(ms + 7 * 86_400_000));
+        assert_eq!(purge_at, json!(expected), "purgeAt of {lens}");
+    }
+    view
 }
 
 fn scenarios() -> Vec<Value> {
@@ -415,6 +446,10 @@ fn without_lone_surrogates(json: &str) -> String {
     out
 }
 
+/// Scenarios Rust changed on purpose after the recording (the fixture marks
+/// only the earlier ones, with "rust"). Each has its own test below.
+const CHANGED_SINCE: [&str; 2] = ["unreadable-lenses", "purge"];
+
 fn scenario(name: &str) -> Value {
     scenarios().into_iter().find(|s| s["name"] == name).unwrap()
 }
@@ -424,20 +459,56 @@ fn replays_every_scenario_the_typescript_backend_recorded() {
     let mut replayed = 0;
     for scenario in scenarios() {
         // These differ on purpose; their own tests below cover them.
-        if scenario.get("rust").is_some() {
+        if scenario.get("rust").is_some()
+            || CHANGED_SINCE.contains(&scenario["name"].as_str().unwrap())
+        {
             continue;
         }
-        assert_eq!(replay::<FastKeys>(&scenario, |_, _| false), None);
+        assert_eq!(replay::<FastKeys>(&scenario, |_, _| Differs::No), None);
         replayed += 1;
     }
-    assert_eq!(replayed, 15);
+    assert_eq!(replayed, 13);
 }
 
 #[test]
 fn replays_scenarios_with_the_real_keys_too() {
-    for name in ["lenses-and-items", "unreadable-lenses"] {
-        assert_eq!(replay::<Unlocked>(&scenario(name), |_, _| false), None);
+    assert_eq!(
+        replay::<Unlocked>(&scenario("lenses-and-items"), |_, _| Differs::No),
+        None
+    );
+    assert_eq!(
+        replay::<Unlocked>(&scenario("unreadable-lenses"), refuses_hidden_lens),
+        Some(15)
+    );
+}
+
+/// TypeScript let a change reach a Lens whose key didn't open, given its id
+/// (the page no longer gets those ids). Rust refuses every change to one with
+/// unknown-lens and writes nothing; backend_v1.rs tests each change, and that
+/// the Lenses are kept exactly as stored.
+fn refuses_hidden_lens(step: &Value, actual: &Value) -> Differs {
+    let hidden = ["broken", "no-items", "binned"].contains(&step["lens"].as_str().unwrap_or(""));
+    let reads = ["revealItem", "copyItem"].contains(&step["op"].as_str().unwrap());
+    if !hidden || reads {
+        return Differs::No;
     }
+    assert_eq!(
+        actual["result"],
+        json!({ "error": "unknown-lens" }),
+        "{step}"
+    );
+    assert_eq!(actual["writes"], json!([]));
+    assert!(actual.get("stored").is_none());
+    Differs::Stop
+}
+
+#[test]
+fn refuses_changes_to_a_lens_whose_key_did_not_open() {
+    // Steps 1-14 match the recording, reveal and copy of a hidden Lens included.
+    assert_eq!(
+        replay::<FastKeys>(&scenario("unreadable-lenses"), refuses_hidden_lens),
+        Some(15)
+    );
 }
 
 // TypeScript could read back a lone UTF-16 surrogate and write it again;
@@ -445,16 +516,62 @@ fn replays_scenarios_with_the_real_keys_too() {
 #[test]
 fn refuses_a_list_with_a_lone_surrogate_instead_of_changing_it() {
     let stopped = replay::<FastKeys>(&scenario("lone-surrogate"), |step, actual| {
-        step["op"] == "unlock" && step["expect"]["result"]["ok"] == true && {
-            assert_eq!(
-                actual["result"],
-                json!({ "ok": false, "reason": "unreadable-data" })
-            );
-            assert_eq!(actual["status"], "locked");
-            assert_eq!(actual["writes"], json!([]));
-            assert!(actual.get("stored").is_none());
-            true
+        if step["op"] != "unlock" || step["expect"]["result"]["ok"] != true {
+            return Differs::No;
         }
+        assert_eq!(
+            actual["result"],
+            json!({ "ok": false, "reason": "unreadable-data" })
+        );
+        assert_eq!(actual["status"], "locked");
+        assert_eq!(actual["writes"], json!([]));
+        assert!(actual.get("stored").is_none());
+        Differs::Stop
     });
     assert_eq!(stopped, Some(6));
+}
+
+/// TypeScript (like v0.1.0) purged an Archive entry whose deletedAt was
+/// missing, null or unreadable. Rust keeps it, exactly as stored, until it's
+/// deleted by hand: deleting can't be undone. Everything else in the purge
+/// scenario, the 7-day boundary, offsets and a failed purge, is as recorded.
+#[test]
+fn keeps_archive_entries_whose_date_cannot_be_read() {
+    const UNDATED: [&str; 3] = ["no-date", "bad-date", "null-date"];
+    let without_undated = |list: &Value| -> Vec<Value> {
+        let list = list.as_array().unwrap();
+        let (undated, rest): (Vec<_>, Vec<_>) = list
+            .iter()
+            .cloned()
+            .partition(|lens| UNDATED.contains(&lens["id"].as_str().unwrap()));
+        let ids: Vec<_> = undated.iter().map(|lens| lens["id"].clone()).collect();
+        assert_eq!(ids, UNDATED, "kept, in their stored order");
+        rest
+    };
+    let stored_bin = |expect: &Value| -> Value {
+        serde_json::from_str(expect["stored"]["still-recycle-bin"].as_str().unwrap()).unwrap()
+    };
+    let stopped = replay::<FastKeys>(&scenario("purge"), |step, actual| {
+        let expect = &step["expect"];
+        let purges_undated = step["op"] == "unlock"
+            && expect["stored"]["still-recycle-bin"]
+                .as_str()
+                .is_some_and(|bin| bin.contains("day-only"));
+        if !purges_undated {
+            return Differs::No;
+        }
+        assert_eq!(actual["result"], expect["result"]);
+        assert_eq!(actual["writes"], expect["writes"]);
+        assert_eq!(actual["view"]["lenses"], expect["view"]["lenses"]);
+        assert_eq!(
+            without_undated(&actual["view"]["bin"]),
+            *expect["view"]["bin"].as_array().unwrap()
+        );
+        assert_eq!(
+            without_undated(&stored_bin(actual)),
+            *stored_bin(expect).as_array().unwrap()
+        );
+        Differs::Go
+    });
+    assert_eq!(stopped, None);
 }
