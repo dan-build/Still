@@ -1,0 +1,19 @@
+# Advisories cargo audit accepts, each with a reason and a review date. An
+# entry here needs the same care as one in scripts/npm-audit-allowlist.json:
+# remove it as soon as a fix can land, and look again by its review date.
+
+[advisories]
+ignore = [
+    # zip 8.6.0: RUSTSEC-2026-0367, -0368, -0369 (SUID bits, symlink targets
+    # and permissions through symlinks when extracting an archive).
+    # Fixed in zip 9, but libsodium-sys-stable (1.24.3, the newest) still
+    # requires zip ^8.6. Not in the app: zip is a build dependency of
+    # libsodium-sys-stable, used only on Windows MSVC to unpack the vendored
+    # libsodium archive, after its minisign signature is checked against
+    # libsodium's pinned key. A harmful archive would have to be signed by
+    # libsodium's maintainers. Review by 2026-11-20, or as soon as
+    # libsodium-sys-stable allows zip 9.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+]
