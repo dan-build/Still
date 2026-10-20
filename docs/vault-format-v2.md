@@ -4,7 +4,7 @@ Status: **approved by the owner on 2026-10-13**, after an independent cryptograp
 
 ## Why
 
-In v1 (the format every Still vault uses today) only the secret values are encrypted. `vault.json` holds the Lens list and the Archive as readable JSON:
+In v1 (the format every Still vault used before v0.6.0) only the secret values are encrypted. `vault.json` holds the Lens list and the Archive as readable JSON:
 
 - **Metadata is readable.** Lens names, secret labels, types, creation and deletion dates, and how many secrets each Lens holds can be read by anything that can read the file: a backup, a sync folder, other software on the Mac.
 - **Nothing ties an encrypted value to its place.** Someone who can write the file can swap the values of two secrets, put back an older value, or edit a `deletedAt` so the 7-day purge deletes a Lens for good. None of it is detected (audit findings S5 and S6).
@@ -131,7 +131,7 @@ On the first successful unlock of a v1 vault, before anything else is saved. All
    - derive the password key **again, independently**, and check the new `masterKey` opens to the same app key (as `create()` does today);
    - decrypt the body and check both list strings equal the stored v1 strings, byte for byte.
 
-   If anything differs, stop. Nothing is written, the vault stays v1 and opens as normal, and conversion is tried at the next unlock.
+   If anything differs, stop. Nothing is written, the vault stays v1 and opens as normal, and conversion is tried again after Still restarts. (Before v0.6.1 it was tried at every unlock; each try runs a second Argon2id step.)
 4. **Keep the v1 file, crash-safe:**
    1. write the exact buffer from step 1 to a temp file and flush it;
    2. link it to `vault-v1.json` without replacing anything (`link()`, or `renamex_np` with `RENAME_EXCL` on macOS; the matching calls on Windows and Linux), then flush the folder;

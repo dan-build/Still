@@ -8,7 +8,7 @@ Please **do not** open a public issue. Report privately through GitHub: open the
 
 ## Supported versions
 
-Still is pre-1.0. Only the latest commit on `main` gets fixes.
+Still is pre-1.0. Only the latest release is supported: fixes go into the next release.
 
 ## What Still protects today
 
@@ -27,7 +27,7 @@ These are known, and being worked on:
 
 - **An attacker who can write your files can make the right password look wrong.** A changed salt, setting or wrapped key fails the same check as a wrong password, and nothing can tell them apart. That denies access but reveals nothing. Still never suggests anything destructive (a new vault, setting data aside) because a password didn't work: if the right one is refused, keep your files and check them.
 - **Rolling back the whole file isn't detected.** A complete older copy of `vault.json` (from a backup, say) opens as it is. Detecting that would need state outside the file, which a local-only app doesn't have.
-- **Older copies in the old format.** Upgrading keeps the previous file as `vault-v1.json`, and v1 files can't detect changes. After the upgrade, Still remembers it (in the app's local storage) and asks before opening a v1 file in the vault's place, so a changed old copy can't quietly stand in. Someone with full access to your account can remove that note.
+- **Older copies in the old format.** Upgrading keeps the previous file as `vault-v1.json`, where Lens names, secret labels, types and dates are readable (secret values stay encrypted), and v1 files can't detect changes. Vaults that started in v0.1.x also keep their old copy in WebKit's storage, with the same readable metadata. Still never deletes either copy. After the upgrade, Still remembers it (in the app's local storage) and asks before opening a v1 file in the vault's place, so a changed old copy can't quietly stand in. Someone with full access to your account can remove that note.
 - **Typed and revealed secrets pass through the web page's memory,** which can't be wiped on demand. The Rust side zeroes its own copies.
 - **Clipboard-history tools may still record copied secrets.** The "don't record" marker is a convention that most, but not all, tools follow. For 30 seconds, any app can read the clipboard.
 - **Sleep detection relies on the system's clock behaviour.** It is checked on macOS. Elsewhere the 5-minute idle lock still applies after a sleep.

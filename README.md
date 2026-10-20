@@ -16,7 +16,7 @@ No account, no sync, no telemetry. Still never connects to the internet.
 - **Copy without leaving a trace.** A copied secret is cleared from the clipboard after 30 seconds, when the vault locks, and when Still quits.
 - **Search** every Lens by label or Lens name with ⌘F. Values stay encrypted and are never searched.
 - **A 7-day Archive.** A Lens you forget moves to the Archive for 7 days, where you can restore it or delete it for good.
-- **Lock and auto-lock.** One click, or ⌘L, returns to the password screen and wipes the keys from memory. Still also locks itself after 5 minutes without activity, and whenever your Mac sleeps.
+- **Lock and auto-lock.** One click, or ⌘L, returns to the password screen and wipes the keys from memory. Still also locks itself after 5 minutes without activity, and as soon as it notices your Mac has slept.
 - **Light and dark,** following your Mac's appearance, and usable with the keyboard and screen readers.
 - **Offline by design.** No servers, no accounts and no analytics. Your vault is a single private file on your Mac.
 - **Open source** under the MIT licence. Read the code, or build it yourself instead of trusting a download.
@@ -29,7 +29,7 @@ No account, no sync, no telemetry. Still never connects to the internet.
 - Everything else (Lens names, secret labels and types, dates and counts) is encrypted too, as one block with the secrets inside.
 - Every part of the file is tied to the rest, so any change to it is detected: Still reports damaged data and changes nothing.
 
-Anyone who can read your Mac's files sees only the Argon2id settings and roughly how large the vault is.
+Anyone who can read your Mac's files sees, in the vault file, only the Argon2id settings and roughly how large the vault is. One exception: if you upgraded from an older version, the copy Still kept from before (see [Upgrading](#upgrading)) is in the old format, where Lens names and secret labels are readable. The secrets in it are still encrypted.
 
 **Your secrets stay out of the app's window.** Still's window is a web page, and its Rust code does everything else: it holds the keys, encrypts and decrypts, and alone reads and writes the vault file. While the vault is unlocked, the window sees only Lens names and secret labels. A secret's value passes through it only while you type or reveal it. Copying goes from Rust straight to the clipboard.
 
@@ -58,8 +58,8 @@ There are no Windows or Linux downloads yet. Still's tests pass on both, but it 
 
 Install the new version over the old one. Your password and secrets stay the same, and Still tells you what it did.
 
-- **From v0.5.0 or older:** the first time you unlock, Still upgrades your vault to the current format. It takes a few seconds longer, once, and the previous file is kept as `vault-v1.json` next to it. If the upgrade can't finish, your vault stays as it was and Still tries again the next time it starts.
-- **From v0.1.x:** those versions kept the vault inside macOS's web storage (`~/Library/WebKit/com.still.app/`). The first time it opens, Still copies it, unchanged, into the vault file, then upgrades it when you unlock. Still never changes or deletes that old copy.
+- **From v0.5.0 or older:** the first time you unlock, Still upgrades your vault to the current format. It takes a few seconds longer, once, and the previous file is kept as `vault-v1.json` next to it. In that file, Lens names and secret labels are readable, as they were before the upgrade; the secrets stay encrypted. If the upgrade can't finish, your vault stays as it was and Still tries again the next time it starts.
+- **From v0.1.x:** those versions kept the vault inside macOS's web storage (`~/Library/WebKit/com.still.app/`). The first time it opens, Still copies it, unchanged, into the vault file, then upgrades it when you unlock. Still never changes or deletes that old copy, and its Lens names and secret labels are readable, as they always were; the secrets stay encrypted.
 
 **Don't go back to an older version afterwards.** Versions before v0.6.0 can't open the upgraded vault; they say so and change nothing. To go back, you'd use `vault-v1.json`, which doesn't include anything changed since the upgrade. v0.1.x only sees its old copy, so everything since would seem to be missing.
 

@@ -24,7 +24,7 @@ Development builds keep their own vault, separate from any installed release bui
 - `src/features/<feature>/{model,ui}`: pure logic in `model`, React views in `ui`. Tests sit next to the code.
 - `src/platform/tauri/`: the only code that calls Rust: the vault commands, start-up (which reads an older version's localStorage for Rust) and auto-lock.
 - `src/test/`: test helpers (`fakeVaultApi.ts` stands in for the vault commands).
-- `src-tauri/`: the desktop shell, the vault file and the commands. `crates/still-core/`: the Rust core: the v1 crypto, and the vault backend (`src/vault/`), which holds every rule about stored vault data.
+- `src-tauri/`: the desktop shell, the vault file and the commands. `crates/still-core/`: the Rust core: the v1 and v2 vault formats and their crypto, and the vault backend (`src/vault/`), which holds every rule about stored vault data.
 
 ## Before you push
 
@@ -35,8 +35,9 @@ npm run check
 This runs exactly what CI runs:
 
 - Vitest
+- ESLint (no warnings allowed)
 - `tsc -b`
-- `vite build`
+- `vite build`, then `scripts/check-dist.mjs` on the build
 - `cargo fmt --check`
 - `cargo clippy` (with `-D warnings`)
 - `cargo test`
@@ -46,11 +47,11 @@ This runs exactly what CI runs:
 - **Existing vaults must keep opening.** Never change these without the maintainer's explicit approval:
   - the bundle `identifier` (`com.still.app`). It names the folder every vault lives in.
   - the dev URL `http://localhost:3000`.
-  - the v1 encrypted format: the version byte, the byte layout, and the Argon2id and KDF parameters.
+  - the encrypted formats: v1 (the version byte, the byte layout, and the Argon2id and KDF parameters) and v2 ([docs/vault-format-v2.md](docs/vault-format-v2.md)), including the read paths for older versions.
 
-  Tests enforce all three.
+  Tests enforce all of these.
 - **Keep the content security policy strict.** Never add a remote origin or inline code to the release `csp` in `src-tauri/tauri.conf.json`. Tests check every source.
-- **Never regenerate or edit the fixtures in `fixtures/vault-v1*`** to make a test pass. A failing golden test means existing vaults would break.
+- **Never regenerate or edit the fixtures** (`fixtures/vault-v1*`, `fixtures/vault-v2`, `fixtures/vault-behaviour-v1`) to make a test pass. A failing golden test means existing vaults would break.
 - **Write the tests first, then refactor** the code they cover.
 - **Tests marked `it.fails` are known bugs.** When you fix one, change it to `it` in the same commit.
 - **Dependency advisories block CI.** `npm audit` and `cargo audit` fail on any high or critical advisory, dev tools included. To accept one that can't be fixed yet, add an entry with a reason and a review date to `scripts/npm-audit-allowlist.json` (or `.cargo/audit.toml`); an npm entry stops counting after its review date.
