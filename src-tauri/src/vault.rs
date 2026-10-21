@@ -233,6 +233,60 @@ mod tests {
         );
     }
 
+    /// A v2 vault with two saves, so `.bak` is a good v2 copy, and the vault
+    /// file then changed so it still passes every header check but its body
+    /// doesn't open: a consistent edit, or a bug.
+    fn vault_with_a_damaged_body(dir: &TempDir) -> Arc<AppStore> {
+        let store = Arc::new(AppStore::open(dir.0.join("vault")));
+        {
+            let vault = Vault::new(FileStorage(store.clone()));
+            let mut backend = vault.backend();
+            backend.create(&secret("pw-123456")).unwrap();
+            backend.create_lens("First").unwrap();
+            backend.create_lens("Second").unwrap();
+        }
+        let path = dir.0.join("vault").join("vault.json");
+        let mut file = v2::File::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let last = file.body.len() - 1;
+        file.body[last] ^= 1;
+        std::fs::write(&path, file.to_json()).unwrap();
+        store
+    }
+
+    // Header damage gets "use the kept copy" at start-up. A body that doesn't
+    // open is only found by unlocking, with the right password; then the
+    // same offer is made, for that file only.
+    #[test]
+    #[should_panic(expected = "no kept copy offered")]
+    fn offers_the_kept_copy_when_an_unlock_finds_the_body_damaged() {
+        let dir = TempDir::new();
+        let store = vault_with_a_damaged_body(&dir);
+        assert_eq!(store.store().restore_source(), None, "not before unlocking");
+        let vault = Vault::new(FileStorage(store.clone()));
+        assert_eq!(
+            vault.backend().unlock(&secret("pw-123456")),
+            Err(backend::UnlockFailure::UnreadableData)
+        );
+        assert_eq!(
+            store.store().restore_source(),
+            Some(crate::store::Restore::Backup),
+            "no kept copy offered"
+        );
+    }
+
+    #[test]
+    fn offers_no_kept_copy_after_a_wrong_password() {
+        let dir = TempDir::new();
+        let store = vault_with_a_damaged_body(&dir);
+        let vault = Vault::new(FileStorage(store.clone()));
+        // A wrong password proves nothing about the file.
+        assert_eq!(
+            vault.backend().unlock(&secret("not-the-password")),
+            Err(backend::UnlockFailure::WrongPassword)
+        );
+        assert_eq!(store.store().restore_source(), None);
+    }
+
     #[test]
     fn reads_and_writes_nothing_while_another_copy_holds_the_vault() {
         let dir = TempDir::new();
