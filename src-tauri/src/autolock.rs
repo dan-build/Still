@@ -1,12 +1,14 @@
 //! Auto-lock. The vault locks after 5 minutes without activity, and as soon
 //! as the computer is found to have slept.
 //!
-//! - Idle time is measured on the wall clock, so time asleep counts too.
+//! - Idle time is measured on the monotonic clock, so setting the wall clock
+//!   back can't hold the vault open. Time asleep doesn't count there, but a
+//!   sleep locks on its own (below).
 //! - Sleep shows up as the wall clock running ahead of the monotonic clock,
 //!   which stops during sleep (macOS and Linux). A forward jump of the wall
 //!   clock for any other reason also locks, which is the safe side.
 //!
-//! The watcher thread calls `check` about once a second; every vault command
+//! The watcher thread calls `check` about once a second; most vault commands
 //! and the UI's activity signal call `touch`.
 
 use std::sync::{Mutex, MutexGuard};
@@ -44,7 +46,10 @@ fn idle_timeout_from(setting: Option<&str>, debug_build: bool) -> Duration {
 }
 
 struct State {
-    last_activity: SystemTime,
+    /// On the monotonic clock, so changing the wall clock can't hold the
+    /// vault open. (It doesn't run while the computer sleeps; sleep is
+    /// caught by comparing the two clocks.)
+    last_activity: Instant,
     last_tick: Option<(Instant, SystemTime)>,
 }
 
@@ -57,7 +62,7 @@ impl AutoLock {
     pub fn new(idle_timeout: Duration) -> Self {
         Self {
             state: Mutex::new(State {
-                last_activity: SystemTime::now(),
+                last_activity: Instant::now(),
                 last_tick: None,
             }),
             idle_timeout,
@@ -69,7 +74,7 @@ impl AutoLock {
     }
 
     /// The user did something.
-    pub fn touch(&self, now: SystemTime) {
+    pub fn touch(&self, now: Instant) {
         self.state().last_activity = now;
     }
 
@@ -89,7 +94,7 @@ impl AutoLock {
         if slept {
             return Some(Reason::Sleep);
         }
-        let idle = wall.duration_since(state.last_activity).unwrap_or_default();
+        let idle = mono.saturating_duration_since(state.last_activity);
         (idle >= self.idle_timeout).then_some(Reason::Idle)
     }
 }
@@ -127,7 +132,7 @@ mod tests {
     fn locks_after_the_idle_timeout_and_not_before() {
         let mut clock = Clock::new();
         let lock = AutoLock::new(Duration::from_secs(10));
-        lock.touch(clock.wall);
+        lock.touch(clock.mono);
         for _ in 0..9 {
             assert_eq!(clock.tick(&lock, true), None);
         }
@@ -139,7 +144,7 @@ mod tests {
         let mut clock = Clock::new();
         let lock = AutoLock::new(Duration::from_secs(10));
         for _ in 0..30 {
-            lock.touch(clock.wall);
+            lock.touch(clock.mono);
             assert_eq!(clock.tick(&lock, true), None);
         }
     }
@@ -148,7 +153,7 @@ mod tests {
     fn locks_at_once_after_even_a_short_sleep() {
         let mut clock = Clock::new();
         let lock = AutoLock::new(IDLE_TIMEOUT);
-        lock.touch(clock.wall);
+        lock.touch(clock.mono);
         assert_eq!(clock.tick(&lock, true), None);
         clock.sleep(Duration::from_secs(60));
         assert_eq!(clock.tick(&lock, true), Some(Reason::Sleep));
@@ -162,7 +167,7 @@ mod tests {
         clock.sleep(Duration::from_secs(3600));
         assert_eq!(clock.tick(&lock, false), None);
         // Unlocked again: the sleep before doesn't count, and jitter doesn't either.
-        lock.touch(clock.wall);
+        lock.touch(clock.mono);
         clock.sleep(Duration::from_secs(3));
         assert_eq!(clock.tick(&lock, true), None);
     }
@@ -171,7 +176,7 @@ mod tests {
     fn a_backwards_clock_change_neither_locks_nor_breaks() {
         let mut clock = Clock::new();
         let lock = AutoLock::new(IDLE_TIMEOUT);
-        lock.touch(clock.wall);
+        lock.touch(clock.mono);
         clock.tick(&lock, true);
         clock.wall -= Duration::from_secs(3600);
         assert_eq!(clock.tick(&lock, true), None);
@@ -181,11 +186,10 @@ mod tests {
     // or NTP correcting a fast clock), it read as no idle time at all, and
     // the vault stayed unlocked until the clock caught up.
     #[test]
-    #[should_panic(expected = "still unlocked")]
     fn still_locks_on_time_after_the_clock_is_set_back() {
         let mut clock = Clock::new();
         let lock = AutoLock::new(Duration::from_secs(10));
-        lock.touch(clock.wall);
+        lock.touch(clock.mono);
         clock.tick(&lock, true);
         clock.wall -= Duration::from_secs(3600);
         for _ in 0..8 {

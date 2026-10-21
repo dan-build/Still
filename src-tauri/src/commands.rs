@@ -4,7 +4,7 @@
 //! command counts as activity for auto-lock.
 
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::time::Instant;
 
 use serde_json::{json, Value};
 use still_core::session::{SecretText, Unlocked};
@@ -59,7 +59,7 @@ pub async fn vault_create(
     .await
     .map_err(|_| CommandError("failed"))?;
     // Activity first, so the watcher never sees a new session as idle.
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
     let mut backend = vault.backend();
     backend.finish_create(plan, created)?;
     Ok(state(&backend))
@@ -85,7 +85,7 @@ pub async fn vault_unlock(
     })
     .await
     .map_err(|_| CommandError("failed"))?;
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
     let mut backend = vault.backend();
     Ok(match backend.finish_unlock(plan, opened) {
         Ok(()) => {
@@ -118,7 +118,7 @@ pub fn vault_lock(vault: State<'_, Vault>, clipboard: State<'_, ClipboardGuard>)
 /// The UI reports activity (clicks, typing, scrolling), at most every few seconds.
 #[tauri::command]
 pub fn vault_touch(autolock: State<'_, AutoLock>) {
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
 }
 
 /// Puts a secret's value straight onto the clipboard; it never goes to the
@@ -131,7 +131,7 @@ pub fn item_copy(
     lens_id: String,
     item_id: String,
 ) -> Result<(), CommandError> {
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
     let value = vault.backend().reveal_item(&lens_id, &item_id)?;
     clipboard
         .copy(&value, Instant::now())
@@ -243,7 +243,7 @@ fn change(
     autolock: &AutoLock,
     run: impl FnOnce(&mut vault::AppBackend) -> Result<(), still_core::vault::backend::VaultError>,
 ) -> Result<Value, CommandError> {
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
     let mut backend = vault.backend();
     run(&mut backend)?;
     Ok(state(&backend))
@@ -255,7 +255,7 @@ pub fn lens_create(
     autolock: State<'_, AutoLock>,
     name: String,
 ) -> Result<Value, CommandError> {
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
     check_name(&name, "empty-name")?;
     let mut backend = vault.backend();
     let id = backend.create_lens(&name)?;
@@ -352,7 +352,7 @@ pub fn item_reveal(
     lens_id: String,
     item_id: String,
 ) -> Result<Revealed, CommandError> {
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
     Ok(Revealed(vault.backend().reveal_item(&lens_id, &item_id)?))
 }
 
