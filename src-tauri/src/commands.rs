@@ -50,6 +50,7 @@ pub async fn vault_create(
     autolock: State<'_, AutoLock>,
     password: String,
 ) -> Result<Value, CommandError> {
+    check_new_password(&password)?;
     let password = SecretText::from(password);
     let plan = vault.backend().prepare_create()?;
     let (plan, created) = tauri::async_runtime::spawn_blocking(move || {
@@ -229,6 +230,19 @@ fn check_name(name: &str, error: &'static str) -> Result<(), CommandError> {
     }
 }
 
+/// The page's rules for a new master password, kept in Rust too: at least 8
+/// characters, counted as JavaScript counts them (UTF-16 code units), and not
+/// only spaces (JavaScript's whitespace).
+fn check_new_password(password: &str) -> Result<(), CommandError> {
+    if password.chars().all(still_core::crypto::is_js_whitespace) {
+        Err(CommandError("password-blank"))
+    } else if password.encode_utf16().count() < 8 {
+        Err(CommandError("password-too-short"))
+    } else {
+        Ok(())
+    }
+}
+
 fn check_type(item_type: &str) -> Result<(), CommandError> {
     if ["password", "key", "note"].contains(&item_type) {
         Ok(())
@@ -376,5 +390,36 @@ mod tests {
         for unknown in ["", "card", "Password", "note "] {
             assert_eq!(check_type(unknown), Err(CommandError("unknown-type")));
         }
+    }
+
+    // The create-password screen already stops these; Rust holds to the
+    // same rules whatever the page sends.
+    #[test]
+    fn refuses_a_new_master_password_the_page_would_refuse() {
+        for blank in [
+            "",
+            "        ",
+            "\u{3000}\u{3000}\u{3000}\u{3000}\u{3000}\u{3000}\u{3000}\u{3000}",
+        ] {
+            assert_eq!(
+                check_new_password(blank),
+                Err(CommandError("password-blank"))
+            );
+        }
+        for short in ["a", "seven77", " short "] {
+            assert_eq!(
+                check_new_password(short),
+                Err(CommandError("password-too-short"))
+            );
+        }
+        // Counted in UTF-16 code units, as the page's password.length does:
+        // four emoji are eight units.
+        assert_eq!(check_new_password("🔐🔐🔐🔐"), Ok(()));
+        assert_eq!(
+            check_new_password("🔐🔐🔐"),
+            Err(CommandError("password-too-short"))
+        );
+        assert_eq!(check_new_password("eight888"), Ok(()));
+        assert_eq!(check_new_password("  spaced out  "), Ok(()));
     }
 }
