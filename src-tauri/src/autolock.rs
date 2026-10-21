@@ -177,6 +177,27 @@ mod tests {
         assert_eq!(clock.tick(&lock, true), None);
     }
 
+    // Idle time must not depend on the wall clock: set back an hour (by hand,
+    // or NTP correcting a fast clock), it read as no idle time at all, and
+    // the vault stayed unlocked until the clock caught up.
+    #[test]
+    #[should_panic(expected = "still unlocked")]
+    fn still_locks_on_time_after_the_clock_is_set_back() {
+        let mut clock = Clock::new();
+        let lock = AutoLock::new(Duration::from_secs(10));
+        lock.touch(clock.wall);
+        clock.tick(&lock, true);
+        clock.wall -= Duration::from_secs(3600);
+        for _ in 0..8 {
+            assert_eq!(clock.tick(&lock, true), None);
+        }
+        assert_eq!(
+            clock.tick(&lock, true),
+            Some(Reason::Idle),
+            "still unlocked"
+        );
+    }
+
     #[test]
     fn only_debug_builds_accept_a_shorter_timeout() {
         assert_eq!(idle_timeout_from(Some("20"), true), Duration::from_secs(20));
