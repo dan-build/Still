@@ -431,7 +431,6 @@ fn unlocked_with_another_vault() -> (Memory, Backend<Memory, FastKeys>, BTreeMap
 // wrote the unlocked vault's lists into whatever v1 file was there: under
 // another vault's key they'd never open, and that vault's lists were lost.
 #[test]
-#[should_panic(expected = "saved onto")]
 fn never_saves_onto_another_v1_vault_or_a_missing_one() {
     let (disk, mut vault, other) = unlocked_with_another_vault();
     disk.0.borrow_mut().data = other.clone();

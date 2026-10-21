@@ -485,6 +485,11 @@ pub struct Backend<S: Storage, K: Keys> {
     /// v2: both lists exactly as stored, so a list a change leaves alone is
     /// written back byte for byte, as in v1.
     v2_raw: Option<v2::Body>,
+    /// v1: the wrapped app key and salt the vault was unlocked or created
+    /// with. Saves refuse unless the stored ones are still these: writing
+    /// the lists into another vault's values (or a file that's gone) would
+    /// leave them under a key that can't open them.
+    v1_key: Option<(String, String)>,
     /// Convert a v1 vault to v2 when it unlocks (where the storage can).
     convert_v1: bool,
     /// Something to tell the user once, after an unlock.
@@ -515,6 +520,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             v2: false,
             v2_file: None,
             v2_raw: None,
+            v1_key: None,
             convert_v1: true,
             notice: None,
             clock,
@@ -599,24 +605,24 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     ) -> Result<(), VaultError> {
         let created = created.map_err(VaultError::Crypto)?;
         self.prepare_create()?;
-        let (keys, v2) = match created {
+        let (keys, v1_key, v2) = match created {
             Created::V1(keys, blob, salt) => {
                 let changes = [
-                    (keys::MASTER_KEY.to_owned(), Some(blob)),
-                    (keys::SALT.to_owned(), Some(salt)),
+                    (keys::MASTER_KEY.to_owned(), Some(blob.clone())),
+                    (keys::SALT.to_owned(), Some(salt.clone())),
                     // Kept for the v1 format; the PIN option never worked and has been removed.
                     (keys::HAS_PIN.to_owned(), Some("false".to_owned())),
                 ];
                 self.storage
                     .write(&changes)
                     .map_err(|_| VaultError::StorageFailed)?;
-                (keys, None)
+                (keys, Some((blob, salt)), None)
             }
             Created::V2(keys, file) => {
                 self.storage
                     .write_v2(&file)
                     .map_err(|_| VaultError::StorageFailed)?;
-                (keys, Some(file))
+                (keys, None, Some(file))
             }
         };
         if plan.generation == self.generation {
@@ -627,6 +633,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
                 bin: "[]".into(),
             });
             self.v2_file = v2;
+            self.v1_key = v1_key;
             self.keys = Some(keys);
             self.lists = Lists::default();
             self.readable.clear();
@@ -713,11 +720,17 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         self.generation += 1;
         self.v2 = opened.v2;
         self.v2_raw = opened.raw;
-        let (v2_file, expected) = match plan.source {
-            Source::V2 { file } => (Some(file), Vec::new()),
-            Source::V1 { expected, .. } => (None, expected),
+        let (v2_file, v1_key, expected) = match plan.source {
+            Source::V2 { file } => (Some(file), None, Vec::new()),
+            Source::V1 {
+                expected,
+                encrypted_master_key,
+                salt,
+                ..
+            } => (None, Some((encrypted_master_key, salt)), expected),
         };
         self.v2_file = v2_file;
+        self.v1_key = v1_key;
         self.keys = Some(opened.keys);
         // Convert before anything is saved, so the Archive purge below is
         // already saved in v2. A failure leaves the vault as it was (v1), and
@@ -728,6 +741,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             Some(Ok((file, body))) => match self.storage.convert_to_v2(&file, &expected) {
                 Ok(kept) => {
                     self.v2 = true;
+                    self.v1_key = None;
                     let marker = conversion_marker(&file, (self.clock)());
                     self.v2_file = Some(file);
                     self.v2_raw = Some(body);
@@ -801,6 +815,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         self.v2 = false;
         self.v2_file = None;
         self.v2_raw = None;
+        self.v1_key = None;
         self.readable.clear();
         self.lists = Lists::default();
     }
@@ -931,6 +946,15 @@ impl<S: Storage, K: Keys> Backend<S, K> {
                 writes.push((keys::BIN.to_owned(), Some(write_list(bin))));
             }
             if !writes.is_empty() {
+                // Only onto this vault's own values, as for v2 above.
+                let Some((blob, salt)) = &self.v1_key else {
+                    return Err(VaultError::WriteFailed);
+                };
+                if self.storage.get(keys::MASTER_KEY).as_ref() != Some(blob)
+                    || self.storage.get(keys::SALT).as_ref() != Some(salt)
+                {
+                    return Err(VaultError::WriteFailed);
+                }
                 self.storage
                     .write(&writes)
                     .map_err(|_| VaultError::WriteFailed)?;
