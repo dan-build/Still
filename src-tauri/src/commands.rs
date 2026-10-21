@@ -4,7 +4,7 @@
 //! command counts as activity for auto-lock.
 
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::time::Instant;
 
 use serde_json::{json, Value};
 use still_core::session::{SecretText, Unlocked};
@@ -50,6 +50,7 @@ pub async fn vault_create(
     autolock: State<'_, AutoLock>,
     password: String,
 ) -> Result<Value, CommandError> {
+    check_new_password(&password)?;
     let password = SecretText::from(password);
     let plan = vault.backend().prepare_create()?;
     let (plan, created) = tauri::async_runtime::spawn_blocking(move || {
@@ -59,22 +60,30 @@ pub async fn vault_create(
     .await
     .map_err(|_| CommandError("failed"))?;
     // Activity first, so the watcher never sees a new session as idle.
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
     let mut backend = vault.backend();
     backend.finish_create(plan, created)?;
     Ok(state(&backend))
 }
 
-/// Unlocks the vault: {ok: true, state} or {ok: false, reason}. Argon2id
+/// Unlocks the vault: {ok: true, state} or {ok: false, reason, canRestore?}. Argon2id
 /// runs outside the backend's lock; a Lock meanwhile wins.
 #[tauri::command]
 pub async fn vault_unlock(
     vault: State<'_, Vault>,
+    store: State<'_, Arc<AppStore>>,
     autolock: State<'_, AutoLock>,
     password: String,
 ) -> Result<Value, CommandError> {
     let password = SecretText::from(password);
-    let failed = |reason: UnlockFailure| json!({ "ok": false, "reason": reason.code() });
+    // Damaged data may come with a kept copy to put back (startup_restore_v1).
+    let failed = |reason: UnlockFailure| {
+        let mut result = json!({ "ok": false, "reason": reason.code() });
+        if reason == UnlockFailure::UnreadableData {
+            result["canRestore"] = json!(store.store().restore_source().is_some());
+        }
+        result
+    };
     let plan = match vault.backend().prepare_unlock() {
         Ok(plan) => plan,
         Err(reason) => return Ok(failed(reason)),
@@ -85,7 +94,7 @@ pub async fn vault_unlock(
     })
     .await
     .map_err(|_| CommandError("failed"))?;
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
     let mut backend = vault.backend();
     Ok(match backend.finish_unlock(plan, opened) {
         Ok(()) => {
@@ -118,7 +127,7 @@ pub fn vault_lock(vault: State<'_, Vault>, clipboard: State<'_, ClipboardGuard>)
 /// The UI reports activity (clicks, typing, scrolling), at most every few seconds.
 #[tauri::command]
 pub fn vault_touch(autolock: State<'_, AutoLock>) {
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
 }
 
 /// Puts a secret's value straight onto the clipboard; it never goes to the
@@ -131,7 +140,7 @@ pub fn item_copy(
     lens_id: String,
     item_id: String,
 ) -> Result<(), CommandError> {
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
     let value = vault.backend().reveal_item(&lens_id, &item_id)?;
     clipboard
         .copy(&value, Instant::now())
@@ -229,6 +238,19 @@ fn check_name(name: &str, error: &'static str) -> Result<(), CommandError> {
     }
 }
 
+/// The page's rules for a new master password, kept in Rust too: at least 8
+/// characters, counted as JavaScript counts them (UTF-16 code units), and not
+/// only spaces (JavaScript's whitespace).
+fn check_new_password(password: &str) -> Result<(), CommandError> {
+    if password.chars().all(still_core::crypto::is_js_whitespace) {
+        Err(CommandError("password-blank"))
+    } else if password.encode_utf16().count() < 8 {
+        Err(CommandError("password-too-short"))
+    } else {
+        Ok(())
+    }
+}
+
 fn check_type(item_type: &str) -> Result<(), CommandError> {
     if ["password", "key", "note"].contains(&item_type) {
         Ok(())
@@ -243,7 +265,7 @@ fn change(
     autolock: &AutoLock,
     run: impl FnOnce(&mut vault::AppBackend) -> Result<(), still_core::vault::backend::VaultError>,
 ) -> Result<Value, CommandError> {
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
     let mut backend = vault.backend();
     run(&mut backend)?;
     Ok(state(&backend))
@@ -255,7 +277,7 @@ pub fn lens_create(
     autolock: State<'_, AutoLock>,
     name: String,
 ) -> Result<Value, CommandError> {
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
     check_name(&name, "empty-name")?;
     let mut backend = vault.backend();
     let id = backend.create_lens(&name)?;
@@ -352,7 +374,7 @@ pub fn item_reveal(
     lens_id: String,
     item_id: String,
 ) -> Result<Revealed, CommandError> {
-    autolock.touch(SystemTime::now());
+    autolock.touch(Instant::now());
     Ok(Revealed(vault.backend().reveal_item(&lens_id, &item_id)?))
 }
 
@@ -376,5 +398,36 @@ mod tests {
         for unknown in ["", "card", "Password", "note "] {
             assert_eq!(check_type(unknown), Err(CommandError("unknown-type")));
         }
+    }
+
+    // The create-password screen already stops these; Rust holds to the
+    // same rules whatever the page sends.
+    #[test]
+    fn refuses_a_new_master_password_the_page_would_refuse() {
+        for blank in [
+            "",
+            "        ",
+            "\u{3000}\u{3000}\u{3000}\u{3000}\u{3000}\u{3000}\u{3000}\u{3000}",
+        ] {
+            assert_eq!(
+                check_new_password(blank),
+                Err(CommandError("password-blank"))
+            );
+        }
+        for short in ["a", "seven77", " short "] {
+            assert_eq!(
+                check_new_password(short),
+                Err(CommandError("password-too-short"))
+            );
+        }
+        // Counted in UTF-16 code units, as the page's password.length does:
+        // four emoji are eight units.
+        assert_eq!(check_new_password("🔐🔐🔐🔐"), Ok(()));
+        assert_eq!(
+            check_new_password("🔐🔐🔐"),
+            Err(CommandError("password-too-short"))
+        );
+        assert_eq!(check_new_password("eight888"), Ok(()));
+        assert_eq!(check_new_password("  spaced out  "), Ok(()));
     }
 }

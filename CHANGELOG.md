@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-20
+
+### Added
+
+- **Still locks as your Mac goes to sleep and when its screen locks.** Before, it locked only after waking, and a locked screen waited for the 5-minute idle lock.
+- **Revealed secrets hide themselves** after 30 seconds, the same time a copied secret stays on the clipboard, and as soon as Still's window is minimised or hidden.
+- **If your upgraded vault's data is damaged,** Still now offers to put back the copy it kept, as it already did when the file itself couldn't be read. It only ever does this over the damaged file, which it keeps.
+
+### Fixed
+
+- **Changing your Mac's clock no longer delays auto-lock.** Setting the clock back could keep the vault unlocked until the clock caught up.
+- **A vault in the old format can't be saved over another vault's file.** If a different vault's file was put in place while one was unlocked (a backup put back, a synced copy), or the file went missing, the next change could have left the lists where no key opens them. The save is now refused, and nothing changes.
+- **The rules for a new master password** (at least 8 characters, not only spaces) are now also enforced by the app's Rust code, not only by its window.
+- **The app declares macOS 10.15 as its minimum,** matching what the README says.
+
 ## [0.6.1] - 2026-10-14
 
 ### Fixed
@@ -138,7 +153,8 @@ First public pre-release, for macOS.
 - An Archive (recycle bin) that keeps forgotten Lenses for 7 days.
 - Offline by design: no accounts, servers or telemetry.
 
-[Unreleased]: https://github.com/dan-build/Still/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/dan-build/Still/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/dan-build/Still/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/dan-build/Still/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/dan-build/Still/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dan-build/Still/compare/v0.4.0...v0.5.0

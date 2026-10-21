@@ -415,3 +415,48 @@ fn makes_the_same_changes_to_a_readable_lens_next_to_hidden_ones() {
     assert!(stored.data["still-lenses"].contains("\"id\":\"hidden\""));
     assert!(stored.data["still-recycle-bin"].contains("\"id\":\"binned\""));
 }
+
+/// `small_vault`, unlocked, and the stored values of another vault, made with
+/// another password: what a backup put back or a synced copy would hold.
+fn unlocked_with_another_vault() -> (Memory, Backend<Memory, FastKeys>, BTreeMap<String, String>) {
+    let (disk, _, _) = small_vault();
+    let mut vault = backend::<FastKeys>(&disk);
+    vault.unlock(&secret("pw")).unwrap();
+    let (other, _, _) = small_vault();
+    let other = other.0.borrow().data.clone();
+    (disk, vault, other)
+}
+
+// v2 saves already refuse another vault's file (backend_v2.rs). A v1 save
+// wrote the unlocked vault's lists into whatever v1 file was there: under
+// another vault's key they'd never open, and that vault's lists were lost.
+#[test]
+fn never_saves_onto_another_v1_vault_or_a_missing_one() {
+    let (disk, mut vault, other) = unlocked_with_another_vault();
+    disk.0.borrow_mut().data = other.clone();
+    assert_eq!(
+        vault.create_lens("New"),
+        Err(VaultError::WriteFailed),
+        "saved onto another vault"
+    );
+    assert_eq!(disk.0.borrow().data, other);
+
+    // A vault file that went missing: saving would leave lists with no key.
+    disk.0.borrow_mut().data.clear();
+    assert_eq!(
+        vault.create_lens("New"),
+        Err(VaultError::WriteFailed),
+        "saved onto a missing vault"
+    );
+    assert!(disk.0.borrow().data.is_empty());
+}
+
+#[test]
+fn saves_onto_its_own_v1_vault_after_the_file_is_read_again() {
+    let (disk, mut vault, _) = unlocked_with_another_vault();
+    // The same vault's values, written back unchanged (a copy put back).
+    let own = disk.0.borrow().data.clone();
+    disk.0.borrow_mut().data = own;
+    vault.create_lens("New").unwrap();
+    assert!(disk.0.borrow().data["still-lenses"].contains("New"));
+}

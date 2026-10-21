@@ -4,7 +4,7 @@
 
 No account, no sync, no telemetry. Still never connects to the internet.
 
-> **Early pre-release (v0.6.1).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
+> **Early pre-release (v0.6.2).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
 
 ![Still in dark mode: the sidebar lists the Lenses, and the selected Lens shows its secrets, one revealed](docs/screenshot.png)
 
@@ -16,7 +16,7 @@ No account, no sync, no telemetry. Still never connects to the internet.
 - **Copy without leaving a trace.** A copied secret is cleared from the clipboard after 30 seconds, when the vault locks, and when Still quits.
 - **Search** every Lens by label or Lens name with ⌘F. Values stay encrypted and are never searched.
 - **A 7-day Archive.** A Lens you forget moves to the Archive for 7 days, where you can restore it or delete it for good.
-- **Lock and auto-lock.** One click, or ⌘L, returns to the password screen and wipes the keys from memory. Still also locks itself after 5 minutes without activity, and as soon as it notices your Mac has slept.
+- **Lock and auto-lock.** One click, or ⌘L, returns to the password screen and wipes the keys from memory. Still also locks itself after 5 minutes without activity, and when your Mac goes to sleep or its screen locks.
 - **Light and dark,** following your Mac's appearance, and usable with the keyboard and screen readers.
 - **Offline by design.** No servers, no accounts and no analytics. Your vault is a single private file on your Mac.
 - **Open source** under the MIT licence. Read the code, or build it yourself instead of trusting a download.

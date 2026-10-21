@@ -70,4 +70,5 @@ export type UnlockResult =
    * file kept from before), or converting failed and it is unchanged.
    */
   | { ok: true; state: VaultState; notice?: 'upgraded' | 'upgrade-failed'; kept?: string }
-  | { ok: false; reason: 'wrong-password' | 'unreadable-data' | 'failed' | 'no-vault' }
+  /** canRestore: with unreadable-data, a kept copy can be put back (startup_restore_v1). */
+  | { ok: false; reason: 'wrong-password' | 'unreadable-data' | 'failed' | 'no-vault'; canRestore?: boolean }

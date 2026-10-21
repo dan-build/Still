@@ -21,7 +21,8 @@ vi.mock('@/platform/tauri/startup', () => ({
   restoreKeptCopy: startup.restore,
 }))
 vi.mock('./App', () => ({
-  default: ({ notice }: { notice?: string }) => createElement('p', null, `the app${notice ? ` (${notice})` : ''}`),
+  default: ({ notice, onDamaged }: { notice?: string; onDamaged?: () => void }) =>
+    createElement('div', null, createElement('p', null, `the app${notice ? ` (${notice})` : ''}`), createElement('button', { onClick: onDamaged }, 'found damage')),
 }))
 
 import StillApp from './StillApp'
@@ -54,6 +55,19 @@ describe('start-up screens', () => {
     await screen.findByText("Still can't read its vault file")
     expect(screen.getByText(/from a newer version of Still/)).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('offers the kept copy when unlocking finds the vault damaged', async () => {
+    startup.open.mockResolvedValue({ kind: 'ready' })
+    startup.restore.mockResolvedValue({ kind: 'ready', notice: 'restored' })
+    render(createElement(StillApp))
+    fireEvent.click(await screen.findByRole('button', { name: 'found damage' }))
+
+    await screen.findByText("Still can't open its vault file")
+    expect(startup.restore).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Use the kept copy' }))
+    await screen.findByText('the app (restored)')
+    expect(startup.restore).toHaveBeenCalledOnce()
   })
 
   it('uses the older copy for a missing file only when asked', async () => {

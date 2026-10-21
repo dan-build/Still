@@ -85,11 +85,27 @@ impl From<std::io::Error> for StoreError {
 
 pub struct Store {
     dir: PathBuf,
+    /// SHA-256 of a v2 vault file whose body an unlock found doesn't open.
+    /// Only that exact file may be restored over (see `restore_source`).
+    damaged_body: Option<[u8; 32]>,
 }
 
 impl Store {
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir }
+        Self {
+            dir,
+            damaged_body: None,
+        }
+    }
+
+    /// An unlock found that the vault file's v2 body doesn't open (with the
+    /// right password). Remembers exactly that file, so `restore_source` can
+    /// offer a kept copy over it, and over nothing else.
+    pub fn mark_damaged_body(&mut self) {
+        self.damaged_body = fs::read(self.file())
+            .ok()
+            .filter(|bytes| matches!(read_vault(bytes), Loaded::V2(_)))
+            .map(|bytes| sodium::sha256(&bytes));
     }
 
     fn file(&self) -> PathBuf {
@@ -229,15 +245,25 @@ impl Store {
             .map(|(_, path)| path)
     }
 
-    /// What `restore` would put back when the vault file can't be opened:
-    /// the backup if it is a readable v2 vault (it holds the latest changes
-    /// it can), else the v1 file a conversion kept, if it reads.
+    /// What `restore` would put back when the vault file can't be opened
+    /// (or is a v2 file an unlock found damaged; see `mark_damaged_body`):
+    /// the backup if it is a readable v2 vault other than that file (it holds
+    /// the latest changes it can), else the v1 file a conversion kept, if it
+    /// reads.
     pub fn restore_source(&self) -> Option<Restore> {
-        if matches!(self.load(), Loaded::Values(_) | Loaded::V2(_)) {
-            return None;
+        let current = fs::read(self.file()).ok();
+        match self.load() {
+            Loaded::Values(_) => return None,
+            Loaded::V2(_) => {
+                let hash = current.as_deref().map(sodium::sha256);
+                if hash.is_none() || hash != self.damaged_body {
+                    return None;
+                }
+            }
+            Loaded::Nothing | Loaded::Unreadable => {}
         }
         if let Ok(bytes) = fs::read(self.backup()) {
-            if matches!(read_vault(&bytes), Loaded::V2(_)) {
+            if matches!(read_vault(&bytes), Loaded::V2(_)) && Some(&bytes) != current.as_ref() {
                 return Some(Restore::Backup);
             }
         }
@@ -803,6 +829,26 @@ mod tests {
                 .mode();
             assert_eq!(mode & 0o777, 0o600);
         }
+    }
+
+    // The last step of a conversion reads the v2 file back. If it doesn't
+    // read back as written, the v1 file goes back in its place. A body too
+    // short to be one is written but refused on reading, which stands in for
+    // a disk that returns something else.
+    #[test]
+    fn puts_the_v1_file_back_when_the_v2_file_does_not_read_back() {
+        let tmp = TempDir::new();
+        let (store, v1_bytes) = real_v1(&tmp);
+        let mut file = a_v2_file();
+        file.body.truncate(8);
+        assert_eq!(
+            store.convert_to_v2(&file, &expected(&real_vault())),
+            Err(StoreError::VerifyFailed)
+        );
+        assert_eq!(fs::read(store.file()).unwrap(), v1_bytes);
+        assert!(matches!(store.load(), Loaded::Values(_)));
+        // The copy kept before writing stays, as every kept copy does.
+        assert_eq!(fs::read(store.dir.join("vault-v1.json")).unwrap(), v1_bytes);
     }
 
     #[test]

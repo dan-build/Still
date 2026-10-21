@@ -9,9 +9,10 @@ import type { ItemEdit, NewItem, UnlockResult, VaultState } from '@/features/vau
 import { CONVERTED_MARKER } from './startup'
 
 /**
- * A refused command, by code: locked, vault-exists, unknown-lens,
- * unknown-item, empty-label, empty-name, empty-value, write-failed,
- * storage-failed, crypto-<code>, or failed (anything else).
+ * A refused command, by code: locked, vault-exists, password-too-short,
+ * password-blank, unknown-lens, unknown-item, empty-label, empty-name,
+ * empty-value, write-failed, storage-failed, crypto-<code>, or failed
+ * (anything else).
  */
 export class VaultApiError extends Error {
   constructor(readonly code: string) {

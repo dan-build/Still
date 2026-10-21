@@ -22,10 +22,10 @@ vi.mock('@/platform/tauri/vaultApi', async (importOriginal) => ({
   createTauriVaultApi: () => current.vault,
 }))
 // Rust's auto-lock: the test can fire the vault-locked event and count activity reports.
-const autoLock = vi.hoisted(() => ({ fire: undefined as undefined | ((reason: 'idle' | 'sleep') => void), activity: 0 }))
+const autoLock = vi.hoisted(() => ({ fire: undefined as undefined | ((reason: 'idle' | 'sleep' | 'screen') => void), activity: 0 }))
 vi.mock('@/platform/tauri/session', () => ({
   reportActivity: () => { autoLock.activity += 1 },
-  onAutoLocked: (onLocked: (reason: 'idle' | 'sleep') => void) => {
+  onAutoLocked: (onLocked: (reason: 'idle' | 'sleep' | 'screen') => void) => {
     autoLock.fire = onLocked
     return () => { if (autoLock.fire === onLocked) autoLock.fire = undefined }
   },
@@ -177,6 +177,26 @@ describe('the upgrade to the new vault format', () => {
     await screen.findAllByText('Alpha')
   })
 
+  it('hands damaged data with a kept copy to the start-up screens', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    vault.unreadableData = true
+    vault.canRestore = true
+    const onDamaged = vi.fn()
+    render(createElement(StillHome, { onDamaged }))
+    await enterPassword()
+    await waitFor(() => expect(onDamaged).toHaveBeenCalledOnce())
+  })
+
+  it('says damaged data could not be read when there is no kept copy', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    vault.unreadableData = true
+    const onDamaged = vi.fn()
+    render(createElement(StillHome, { onDamaged }))
+    await enterPassword()
+    await screen.findByText("Still couldn't read this vault's data. Nothing was changed.")
+    expect(onDamaged).not.toHaveBeenCalled()
+  })
+
   it('offers nothing that could write over a vault file that became unreadable', async () => {
     seedVault({ lenses: [fakeLens('l1', 'Alpha')] }).unreadableFile = true
     render(createElement(StillHome))
@@ -190,6 +210,7 @@ describe('auto-lock', () => {
   for (const [reason, message] of [
     ['idle', 'Locked after 5 minutes without activity.'],
     ['sleep', 'Locked while your computer was asleep.'],
+    ['screen', 'Locked when your screen locked.'],
   ] as const) {
     it(`returns to the unlock screen and says why when Rust locks (${reason})`, async () => {
       seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
@@ -198,8 +219,25 @@ describe('auto-lock', () => {
       act(() => autoLock.fire!(reason))
 
       await screen.findByPlaceholderText('Master password')
-      expect(screen.getByRole('status').textContent).toContain(message)
+      expect(screen.getByText(message)).toBeTruthy()
       expect(screen.queryByText('Alpha')).toBeNull()
+    })
+
+    // A screen lock happens while nobody is looking, so the reason has to
+    // wait on the unlock screen, not pass as a 2-second toast.
+    it(`still says why it locked after a while away (${reason})`, async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      try {
+        seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+        await unlock()
+        await waitFor(() => expect(autoLock.fire).toBeDefined())
+        act(() => autoLock.fire!(reason))
+        await screen.findByPlaceholderText('Master password')
+        act(() => vi.advanceTimersByTime(60_000))
+        expect(screen.getByText(message)).toBeTruthy()
+      } finally {
+        vi.useRealTimers()
+      }
     })
   }
 
@@ -343,6 +381,62 @@ describe('secrets', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reveal Alpha secret' }))
 
     await screen.findByText('value-of-l1')
+  })
+
+  // A revealed value lives in the page, so it shouldn't stay there unwatched.
+  async function revealAlpha() {
+    seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal Alpha secret' }))
+    await screen.findByText('value-of-l1')
+  }
+
+  it('hides a revealed secret after 30 seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      await revealAlpha()
+      act(() => vi.advanceTimersByTime(30_000))
+      expect(screen.queryByText('value-of-l1')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps a revealed secret shown for under 30 seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      await revealAlpha()
+      act(() => vi.advanceTimersByTime(29_000))
+      expect(screen.queryByText('value-of-l1')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  /** Makes the page hidden or visible, as minimising or hiding the window does. */
+  function setVisibility(state: 'hidden' | 'visible') {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => state === 'hidden' })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+  }
+
+  it('hides revealed secrets when the window is hidden', async () => {
+    await revealAlpha()
+    try {
+      setVisibility('hidden')
+      expect(screen.queryByText('value-of-l1')).toBeNull()
+    } finally {
+      setVisibility('visible')
+    }
+  })
+
+  it('keeps revealed secrets while the window stays visible', async () => {
+    await revealAlpha()
+    setVisibility('visible')
+    expect(screen.queryByText('value-of-l1')).not.toBeNull()
   })
 
   it('shows a revealed secret with its spaces and line breaks intact', async () => {

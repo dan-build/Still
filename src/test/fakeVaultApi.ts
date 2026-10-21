@@ -45,6 +45,8 @@ export class FakeVault implements VaultApi {
   orphaned = false
   /** Unlock reports damaged vault data. */
   unreadableData = false
+  /** With unreadableData: Rust found a kept copy to put back. */
+  canRestore = false
   lenses: FakeLens[] = []
   bin: FakeLens[] = []
   unlocked = false
@@ -156,7 +158,7 @@ export class FakeVault implements VaultApi {
   async unlock(password: string) {
     this.calls.push('unlock')
     if (this.password === null) return { ok: false, reason: 'no-vault' } as const
-    if (this.unreadableData) return { ok: false, reason: 'unreadable-data' } as const
+    if (this.unreadableData) return { ok: false, reason: 'unreadable-data', ...(this.canRestore ? { canRestore: true } : {}) } as const
     if (password !== this.password) return { ok: false, reason: 'wrong-password' } as const
     this.unlocked = true
     const notice = this.unlockNotice
