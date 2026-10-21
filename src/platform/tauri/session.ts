@@ -1,11 +1,11 @@
-// Auto-lock, seen from the page: Rust decides when to lock (5 minutes idle, or
-// the computer slept) and tells the page; the page reports that someone is
+// Auto-lock, seen from the page: Rust decides when to lock (5 minutes idle, the
+// computer sleeping, or the screen locking) and tells the page; the page reports that someone is
 // using it.
 
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
-export type AutoLockReason = 'idle' | 'sleep'
+export type AutoLockReason = 'idle' | 'sleep' | 'screen'
 
 /** Tells Rust someone is using the app. Failures don't matter: the next one tries again. */
 export function reportActivity(): void {

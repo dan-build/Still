@@ -219,7 +219,7 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
   }
 
   // While unlocked: tell Rust someone is here, follow it when it locks the
-  // vault by itself (5 minutes idle, or the computer slept), and lock on ⌘L.
+  // vault by itself (5 minutes idle, the computer sleeping, or the screen locking), and lock on ⌘L.
   useEffect(() => {
     if (!isUnlocked) return
     let last = 0
@@ -247,7 +247,8 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
     window.addEventListener('keydown', shortcut)
     const stopListening = onAutoLocked((reason) => {
       lock()
-      showToast({ message: reason === 'sleep' ? 'Locked while your computer was asleep.' : 'Locked after 5 minutes without activity.' })
+      const why = { idle: 'Locked after 5 minutes without activity.', sleep: 'Locked while your computer was asleep.', screen: 'Locked when your screen locked.' }
+      showToast({ message: why[reason] })
     })
     return () => {
       for (const name of events) window.removeEventListener(name, active)

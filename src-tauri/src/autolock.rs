@@ -26,7 +26,10 @@ const SLEEP_GAP: Duration = Duration::from_secs(15);
 #[serde(rename_all = "lowercase")]
 pub enum Reason {
     Idle,
+    /// The computer slept, or (macOS) is about to.
     Sleep,
+    /// The screen locked (macOS).
+    Screen,
 }
 
 /// The idle timeout. Debug builds accept STILL_IDLE_SECONDS (at least 5) so
@@ -200,6 +203,15 @@ mod tests {
             Some(Reason::Idle),
             "still unlocked"
         );
+    }
+
+    // The page shows a message for each.
+    #[test]
+    fn sends_each_reason_by_name() {
+        let name = |r| serde_json::to_string(&r).unwrap();
+        assert_eq!(name(Reason::Idle), r#""idle""#);
+        assert_eq!(name(Reason::Sleep), r#""sleep""#);
+        assert_eq!(name(Reason::Screen), r#""screen""#);
     }
 
     #[test]

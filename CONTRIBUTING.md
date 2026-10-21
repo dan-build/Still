@@ -56,6 +56,7 @@ This runs exactly what CI runs:
 - **Tests marked `it.fails` are known bugs.** When you fix one, change it to `it` in the same commit.
 - **Dependency advisories block CI.** `npm audit` and `cargo audit` fail on any high or critical advisory, dev tools included. To accept one that can't be fixed yet, add an entry with a reason and a review date to `scripts/npm-audit-allowlist.json` (or `.cargo/audit.toml`); an npm entry stops counting after its review date.
 - **No custom cryptography.** Use libsodium.
+- **`unsafe` Rust lives in two files only:** `crates/still-core/src/sodium.rs` (libsodium) and `src-tauri/src/macos_lock.rs` (macOS sleep and screen-lock notifications). Both crates deny it everywhere else, and each `unsafe` block explains why it's sound.
 - **No network calls, analytics or remote code at runtime.**
 - **Never log secrets.** That includes passwords, keys and decrypted values.
 - **Keep commits and pull requests small.** Each should do one thing, and explain what changed and why.

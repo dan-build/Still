@@ -6,33 +6,41 @@ use std::time::{Duration, Instant, SystemTime};
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::autolock::AutoLock;
+use crate::autolock::{AutoLock, Reason};
 use crate::clipboard::ClipboardGuard;
 use crate::vault::Vault;
 
 const TICK: Duration = Duration::from_secs(1);
 
 /// Sent to the main window when the vault locked itself; the payload is the
-/// reason, "idle" or "sleep".
+/// reason: "idle", "sleep" or "screen".
 pub const LOCKED_EVENT: &str = "vault-locked";
+
+/// Locks an unlocked vault now, clears a copied secret and tells the UI why.
+/// Auto-lock calls it, and on macOS so do sleep and screen lock (macos_lock.rs).
+pub fn lock_now(app: &AppHandle, reason: Reason) {
+    let vault = app.state::<Vault>();
+    if !vault.backend().is_unlocked() {
+        return;
+    }
+    vault.backend().lock();
+    app.state::<ClipboardGuard>().clear_now();
+    let _ = app.emit_to("main", LOCKED_EVENT, reason);
+}
 
 pub fn start(app: AppHandle) {
     std::thread::Builder::new()
         .name("still-watcher".into())
         .spawn(move || loop {
             std::thread::sleep(TICK);
-            let vault = app.state::<Vault>();
-            let clipboard = app.state::<ClipboardGuard>();
-            let unlocked = vault.backend().is_unlocked();
+            let unlocked = app.state::<Vault>().backend().is_unlocked();
             let reason = app
                 .state::<AutoLock>()
                 .check(Instant::now(), SystemTime::now(), unlocked);
             if let Some(reason) = reason {
-                vault.backend().lock();
-                clipboard.clear_now();
-                let _ = app.emit_to("main", LOCKED_EVENT, reason);
+                lock_now(&app, reason);
             }
-            clipboard.tick(Instant::now());
+            app.state::<ClipboardGuard>().tick(Instant::now());
         })
         .expect("can start the watcher thread");
 }

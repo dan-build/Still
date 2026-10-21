@@ -1,8 +1,13 @@
+// Only macos_lock.rs (here) and still-core's sodium.rs may use `unsafe`.
+#![deny(unsafe_code)]
+
 use tauri::{Manager, RunEvent};
 
 mod autolock;
 mod clipboard;
 mod commands;
+#[cfg(target_os = "macos")]
+mod macos_lock;
 mod startup;
 mod store;
 mod vault;
@@ -20,6 +25,8 @@ pub fn run() {
             )));
             app.manage(autolock::AutoLock::new(autolock::idle_timeout()));
             watcher::start(app.handle().clone());
+            #[cfg(target_os = "macos")]
+            macos_lock::watch(app.handle());
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.center();
             }

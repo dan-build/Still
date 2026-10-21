@@ -22,10 +22,10 @@ vi.mock('@/platform/tauri/vaultApi', async (importOriginal) => ({
   createTauriVaultApi: () => current.vault,
 }))
 // Rust's auto-lock: the test can fire the vault-locked event and count activity reports.
-const autoLock = vi.hoisted(() => ({ fire: undefined as undefined | ((reason: 'idle' | 'sleep') => void), activity: 0 }))
+const autoLock = vi.hoisted(() => ({ fire: undefined as undefined | ((reason: 'idle' | 'sleep' | 'screen') => void), activity: 0 }))
 vi.mock('@/platform/tauri/session', () => ({
   reportActivity: () => { autoLock.activity += 1 },
-  onAutoLocked: (onLocked: (reason: 'idle' | 'sleep') => void) => {
+  onAutoLocked: (onLocked: (reason: 'idle' | 'sleep' | 'screen') => void) => {
     autoLock.fire = onLocked
     return () => { if (autoLock.fire === onLocked) autoLock.fire = undefined }
   },
@@ -210,6 +210,7 @@ describe('auto-lock', () => {
   for (const [reason, message] of [
     ['idle', 'Locked after 5 minutes without activity.'],
     ['sleep', 'Locked while your computer was asleep.'],
+    ['screen', 'Locked when your screen locked.'],
   ] as const) {
     it(`returns to the unlock screen and says why when Rust locks (${reason})`, async () => {
       seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
