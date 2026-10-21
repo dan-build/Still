@@ -831,6 +831,26 @@ mod tests {
         }
     }
 
+    // The last step of a conversion reads the v2 file back. If it doesn't
+    // read back as written, the v1 file goes back in its place. A body too
+    // short to be one is written but refused on reading, which stands in for
+    // a disk that returns something else.
+    #[test]
+    fn puts_the_v1_file_back_when_the_v2_file_does_not_read_back() {
+        let tmp = TempDir::new();
+        let (store, v1_bytes) = real_v1(&tmp);
+        let mut file = a_v2_file();
+        file.body.truncate(8);
+        assert_eq!(
+            store.convert_to_v2(&file, &expected(&real_vault())),
+            Err(StoreError::VerifyFailed)
+        );
+        assert_eq!(fs::read(store.file()).unwrap(), v1_bytes);
+        assert!(matches!(store.load(), Loaded::Values(_)));
+        // The copy kept before writing stays, as every kept copy does.
+        assert_eq!(fs::read(store.dir.join("vault-v1.json")).unwrap(), v1_bytes);
+    }
+
     #[test]
     fn never_writes_over_a_kept_v1_file() {
         let tmp = TempDir::new();
