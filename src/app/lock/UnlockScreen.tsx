@@ -7,6 +7,8 @@ export type UnlockOutcome = 'ok' | 'wrong-password' | 'unreadable-data' | 'faile
 
 interface UnlockScreenProps {
   onUnlock: (password: string) => Promise<UnlockOutcome>
+  /** Why the vault locked itself (idle, sleep, screen lock), until the next unlock. */
+  lockedBecause?: string | null
 }
 
 const MESSAGES: Record<Exclude<UnlockOutcome, 'ok'>, string> = {
@@ -15,7 +17,7 @@ const MESSAGES: Record<Exclude<UnlockOutcome, 'ok'>, string> = {
   failed: 'Unlocking failed. Nothing was changed. Close other apps to free memory, then try again.',
 }
 
-export default function UnlockScreen({ onUnlock }: UnlockScreenProps) {
+export default function UnlockScreen({ onUnlock, lockedBecause }: UnlockScreenProps) {
   const [input, setInput] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -54,6 +56,11 @@ export default function UnlockScreen({ onUnlock }: UnlockScreenProps) {
         'Unlocking…'
       ) : ready ? (
         'Press Return to unlock'
+      ) : lockedBecause ? (
+        <>
+          <Icon name="lock" />
+          {lockedBecause}
+        </>
       ) : (
         <>
           <Icon name="lock" />

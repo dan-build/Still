@@ -36,6 +36,8 @@ interface StillHomeProps {
 export default function StillHome({ notice, onDamaged }: StillHomeProps) {
   const apiRef = useRef<VaultApi | null>(null)
   const [view, setView] = useState<VaultView>({ lenses: [], bin: [], unreadable: 0 })
+  /** Why the vault locked itself, shown on the unlock screen until the next unlock. */
+  const [lockedBecause, setLockedBecause] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [selection, setSelection] = useState<Selection | null>(null)
   // The sidebar search; while it has text, the main area shows the results.
@@ -189,6 +191,7 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
     }
     show(result.state)
     setIsUnlocked(true)
+    setLockedBecause(null)
     if (result.notice === 'upgraded') {
       if (result.kept) setKeptName(result.kept)
       setShownNotice('upgraded')
@@ -207,7 +210,8 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
 
   // Lock forgets everything shown: Rust drops (and zeroes) its keys, and the
   // open Lens, dialogs and any revealed values go with the unmounted UI.
-  const lock = () => {
+  const lock = (because: string | null = null) => {
+    setLockedBecause(because)
     api().lock().catch(() => showToast({ message: "Couldn't clear the keys from memory. Quit Still to be sure.", tone: 'error' }))
     setIsUnlocked(false)
     setSelection(null)
@@ -245,10 +249,11 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
     const events = ['pointerdown', 'pointermove', 'keydown', 'wheel'] as const
     for (const name of events) window.addEventListener(name, active, { passive: true })
     window.addEventListener('keydown', shortcut)
+    // The reason waits on the unlock screen: a screen lock or a sleep happens
+    // while nobody is looking, so a passing toast would go unseen.
     const stopListening = onAutoLocked((reason) => {
-      lock()
       const why = { idle: 'Locked after 5 minutes without activity.', sleep: 'Locked while your computer was asleep.', screen: 'Locked when your screen locked.' }
-      showToast({ message: why[reason] })
+      lock(why[reason])
     })
     return () => {
       for (const name of events) window.removeEventListener(name, active)
@@ -274,7 +279,7 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
         ) : isFirstLaunch ? (
           <CreatePasswordScreen onCreate={handleCreatePassword} />
         ) : (
-          <UnlockScreen onUnlock={handleUnlock} />
+          <UnlockScreen onUnlock={handleUnlock} lockedBecause={lockedBecause} />
         )
       ) : (
         <div className="flex h-screen w-full overflow-hidden bg-bg text-13 text-g1">
@@ -290,7 +295,7 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
             onQuery={setQuery}
             searchRef={searchField}
             onNewLens={() => setIsCreateOpen(true)}
-            onLock={lock}
+            onLock={() => lock()}
           />
           <main className="flex min-w-0 flex-1 flex-col">
             {view.unreadable > 0 && (

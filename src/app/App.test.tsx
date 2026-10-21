@@ -219,17 +219,18 @@ describe('auto-lock', () => {
       act(() => autoLock.fire!(reason))
 
       await screen.findByPlaceholderText('Master password')
-      expect(screen.getByRole('status').textContent).toContain(message)
+      expect(screen.getByText(message)).toBeTruthy()
       expect(screen.queryByText('Alpha')).toBeNull()
     })
 
     // A screen lock happens while nobody is looking, so the reason has to
     // wait on the unlock screen, not pass as a 2-second toast.
-    it.fails(`still says why it locked after a while away (${reason})`, async () => {
+    it(`still says why it locked after a while away (${reason})`, async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
       try {
         seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
         await unlock()
+        await waitFor(() => expect(autoLock.fire).toBeDefined())
         act(() => autoLock.fire!(reason))
         await screen.findByPlaceholderText('Master password')
         act(() => vi.advanceTimersByTime(60_000))
