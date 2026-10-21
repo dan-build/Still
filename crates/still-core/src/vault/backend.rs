@@ -80,6 +80,10 @@ pub trait Storage {
     fn unreadable(&self) -> bool {
         false
     }
+    /// An unlock found that the stored v2 vault's body doesn't open, though
+    /// the password did: the file passed its header checks but is damaged.
+    /// The storage may offer to put back a kept copy over exactly that file.
+    fn mark_damaged(&mut self) {}
     /// Replaces the stored v1 vault with this v2 file, keeping the v1 file
     /// (docs/vault-format-v2.md, "Converting from v1"). Refuses unless every
     /// value in `expected` is still exactly as it was read before the
@@ -707,6 +711,10 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         plan: UnlockPlan,
         opened: Result<Opened<K>, SessionError>,
     ) -> Result<(), UnlockFailure> {
+        if matches!(opened, Err(SessionError::Corrupt)) && matches!(plan.source, Source::V2 { .. })
+        {
+            self.storage.mark_damaged();
+        }
         let opened = opened.map_err(|e| match e {
             SessionError::WrongPassword => UnlockFailure::WrongPassword,
             SessionError::Corrupt => UnlockFailure::UnreadableData,

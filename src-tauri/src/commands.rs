@@ -66,16 +66,24 @@ pub async fn vault_create(
     Ok(state(&backend))
 }
 
-/// Unlocks the vault: {ok: true, state} or {ok: false, reason}. Argon2id
+/// Unlocks the vault: {ok: true, state} or {ok: false, reason, canRestore?}. Argon2id
 /// runs outside the backend's lock; a Lock meanwhile wins.
 #[tauri::command]
 pub async fn vault_unlock(
     vault: State<'_, Vault>,
+    store: State<'_, Arc<AppStore>>,
     autolock: State<'_, AutoLock>,
     password: String,
 ) -> Result<Value, CommandError> {
     let password = SecretText::from(password);
-    let failed = |reason: UnlockFailure| json!({ "ok": false, "reason": reason.code() });
+    // Damaged data may come with a kept copy to put back (startup_restore_v1).
+    let failed = |reason: UnlockFailure| {
+        let mut result = json!({ "ok": false, "reason": reason.code() });
+        if reason == UnlockFailure::UnreadableData {
+            result["canRestore"] = json!(store.store().restore_source().is_some());
+        }
+        result
+    };
     let plan = match vault.backend().prepare_unlock() {
         Ok(plan) => plan,
         Err(reason) => return Ok(failed(reason)),

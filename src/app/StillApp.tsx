@@ -28,7 +28,7 @@ export default function StillApp() {
 
   switch (startup.kind) {
     case 'ready':
-      return <StillHome notice={startup.notice} />
+      return <StillHome notice={startup.notice} onDamaged={() => setStartup({ kind: 'unreadable', canRestore: true })} />
     case 'already-open':
       return (
         <Message title="Still is already open">

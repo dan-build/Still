@@ -85,11 +85,27 @@ impl From<std::io::Error> for StoreError {
 
 pub struct Store {
     dir: PathBuf,
+    /// SHA-256 of a v2 vault file whose body an unlock found doesn't open.
+    /// Only that exact file may be restored over (see `restore_source`).
+    damaged_body: Option<[u8; 32]>,
 }
 
 impl Store {
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir }
+        Self {
+            dir,
+            damaged_body: None,
+        }
+    }
+
+    /// An unlock found that the vault file's v2 body doesn't open (with the
+    /// right password). Remembers exactly that file, so `restore_source` can
+    /// offer a kept copy over it, and over nothing else.
+    pub fn mark_damaged_body(&mut self) {
+        self.damaged_body = fs::read(self.file())
+            .ok()
+            .filter(|bytes| matches!(read_vault(bytes), Loaded::V2(_)))
+            .map(|bytes| sodium::sha256(&bytes));
     }
 
     fn file(&self) -> PathBuf {
@@ -229,15 +245,25 @@ impl Store {
             .map(|(_, path)| path)
     }
 
-    /// What `restore` would put back when the vault file can't be opened:
-    /// the backup if it is a readable v2 vault (it holds the latest changes
-    /// it can), else the v1 file a conversion kept, if it reads.
+    /// What `restore` would put back when the vault file can't be opened
+    /// (or is a v2 file an unlock found damaged; see `mark_damaged_body`):
+    /// the backup if it is a readable v2 vault other than that file (it holds
+    /// the latest changes it can), else the v1 file a conversion kept, if it
+    /// reads.
     pub fn restore_source(&self) -> Option<Restore> {
-        if matches!(self.load(), Loaded::Values(_) | Loaded::V2(_)) {
-            return None;
+        let current = fs::read(self.file()).ok();
+        match self.load() {
+            Loaded::Values(_) => return None,
+            Loaded::V2(_) => {
+                let hash = current.as_deref().map(sodium::sha256);
+                if hash.is_none() || hash != self.damaged_body {
+                    return None;
+                }
+            }
+            Loaded::Nothing | Loaded::Unreadable => {}
         }
         if let Ok(bytes) = fs::read(self.backup()) {
-            if matches!(read_vault(&bytes), Loaded::V2(_)) {
+            if matches!(read_vault(&bytes), Loaded::V2(_)) && Some(&bytes) != current.as_ref() {
                 return Some(Restore::Backup);
             }
         }

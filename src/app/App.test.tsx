@@ -177,6 +177,26 @@ describe('the upgrade to the new vault format', () => {
     await screen.findAllByText('Alpha')
   })
 
+  it('hands damaged data with a kept copy to the start-up screens', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    vault.unreadableData = true
+    vault.canRestore = true
+    const onDamaged = vi.fn()
+    render(createElement(StillHome, { onDamaged }))
+    await enterPassword()
+    await waitFor(() => expect(onDamaged).toHaveBeenCalledOnce())
+  })
+
+  it('says damaged data could not be read when there is no kept copy', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    vault.unreadableData = true
+    const onDamaged = vi.fn()
+    render(createElement(StillHome, { onDamaged }))
+    await enterPassword()
+    await screen.findByText("Still couldn't read this vault's data. Nothing was changed.")
+    expect(onDamaged).not.toHaveBeenCalled()
+  })
+
   it('offers nothing that could write over a vault file that became unreadable', async () => {
     seedVault({ lenses: [fakeLens('l1', 'Alpha')] }).unreadableFile = true
     render(createElement(StillHome))

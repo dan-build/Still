@@ -29,9 +29,11 @@ const NOTICES = {
 interface StillHomeProps {
   /** Shown once, after the vault moved into its file or an older version changed the old copy. */
   notice?: 'moved' | 'old-copy-changed' | 'restored'
+  /** Unlocking found the vault's data damaged, and Still kept a copy it can put back. */
+  onDamaged?: () => void
 }
 
-export default function StillHome({ notice }: StillHomeProps) {
+export default function StillHome({ notice, onDamaged }: StillHomeProps) {
   const apiRef = useRef<VaultApi | null>(null)
   const [view, setView] = useState<VaultView>({ lenses: [], bin: [], unreadable: 0 })
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -173,6 +175,10 @@ export default function StillHome({ notice }: StillHomeProps) {
       return 'failed'
     }
     if (!result.ok) {
+      if (result.reason === 'unreadable-data' && result.canRestore && onDamaged) {
+        onDamaged()
+        return result.reason
+      }
       if (result.reason !== 'no-vault') return result.reason
       // Start-up couldn't tell; there's no vault to unlock, so offer the right screen.
       const { status } = await api().state().catch(() => ({ status: 'locked' as const }))

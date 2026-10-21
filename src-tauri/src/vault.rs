@@ -82,6 +82,10 @@ impl Storage for FileStorage {
         true
     }
 
+    fn mark_damaged(&mut self) {
+        self.0.store().mark_damaged_body();
+    }
+
     fn unreadable(&self) -> bool {
         !self.0.already_open && self.0.store().load() == Loaded::Unreadable
     }
@@ -257,7 +261,6 @@ mod tests {
     // open is only found by unlocking, with the right password; then the
     // same offer is made, for that file only.
     #[test]
-    #[should_panic(expected = "no kept copy offered")]
     fn offers_the_kept_copy_when_an_unlock_finds_the_body_damaged() {
         let dir = TempDir::new();
         let store = vault_with_a_damaged_body(&dir);
@@ -272,6 +275,25 @@ mod tests {
             Some(crate::store::Restore::Backup),
             "no kept copy offered"
         );
+
+        // Putting it back keeps the damaged file, and the vault opens as it
+        // was one save earlier.
+        let damaged = std::fs::read(dir.0.join("vault").join("vault.json")).unwrap();
+        assert_eq!(crate::startup::restore_kept(&store)["notice"], "restored");
+        assert_eq!(
+            std::fs::read(dir.0.join("vault").join("vault-unreadable.json")).unwrap(),
+            damaged
+        );
+        let reopened = Vault::new(FileStorage(store));
+        let mut backend = reopened.backend();
+        backend.unlock(&secret("pw-123456")).unwrap();
+        let names: Vec<_> = backend
+            .view()
+            .lenses
+            .iter()
+            .map(|l| l["name"].clone())
+            .collect();
+        assert_eq!(names, [json!("First")]);
     }
 
     #[test]
