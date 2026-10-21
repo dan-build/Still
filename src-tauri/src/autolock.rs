@@ -28,7 +28,8 @@ pub enum Reason {
     Idle,
     /// The computer slept, or (macOS) is about to.
     Sleep,
-    /// The screen locked (macOS).
+    /// The screen locked (macOS only, so unused elsewhere).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Screen,
 }
 
