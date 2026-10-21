@@ -661,8 +661,10 @@ impl<S: Storage, K: Keys> Backend<S, K> {
                 source: Source::V2 { file },
             });
         }
-        // Each value is read once, so the lists, the key and what the
-        // conversion checks all come from the same reading of the file.
+        // Each value is read once here, and the lists, the key and what a
+        // conversion compares all come from these reads. (The storage may load
+        // the file anew for each; a conversion re-checks every value against
+        // the file before it replaces it.)
         let read: Vec<(String, Option<String>)> = keys::ALL
             .iter()
             .map(|key| ((*key).to_owned(), self.storage.get(key)))

@@ -74,6 +74,7 @@
     "publisher": "Still",
     "license": "MIT",
     "macOS": {
+      "minimumSystemVersion": "10.15",
       "entitlements": null,
       "exceptionDomain": "",
       "frameworks": [],
