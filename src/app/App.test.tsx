@@ -222,6 +222,22 @@ describe('auto-lock', () => {
       expect(screen.getByRole('status').textContent).toContain(message)
       expect(screen.queryByText('Alpha')).toBeNull()
     })
+
+    // A screen lock happens while nobody is looking, so the reason has to
+    // wait on the unlock screen, not pass as a 2-second toast.
+    it.fails(`still says why it locked after a while away (${reason})`, async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      try {
+        seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+        await unlock()
+        act(() => autoLock.fire!(reason))
+        await screen.findByPlaceholderText('Master password')
+        act(() => vi.advanceTimersByTime(60_000))
+        expect(screen.getByText(message)).toBeTruthy()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   }
 
   it('reports activity at most every 15 seconds, and only while unlocked', async () => {
