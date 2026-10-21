@@ -345,6 +345,62 @@ describe('secrets', () => {
     await screen.findByText('value-of-l1')
   })
 
+  // A revealed value lives in the page, so it shouldn't stay there unwatched.
+  async function revealAlpha() {
+    seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal Alpha secret' }))
+    await screen.findByText('value-of-l1')
+  }
+
+  it.fails('hides a revealed secret after 30 seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      await revealAlpha()
+      act(() => vi.advanceTimersByTime(30_000))
+      expect(screen.queryByText('value-of-l1')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps a revealed secret shown for under 30 seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      await revealAlpha()
+      act(() => vi.advanceTimersByTime(29_000))
+      expect(screen.queryByText('value-of-l1')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  /** Makes the page hidden or visible, as minimising or hiding the window does. */
+  function setVisibility(state: 'hidden' | 'visible') {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => state === 'hidden' })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+  }
+
+  it.fails('hides revealed secrets when the window is hidden', async () => {
+    await revealAlpha()
+    try {
+      setVisibility('hidden')
+      expect(screen.queryByText('value-of-l1')).toBeNull()
+    } finally {
+      setVisibility('visible')
+    }
+  })
+
+  it('keeps revealed secrets while the window stays visible', async () => {
+    await revealAlpha()
+    setVisibility('visible')
+    expect(screen.queryByText('value-of-l1')).not.toBeNull()
+  })
+
   it('shows a revealed secret with its spaces and line breaks intact', async () => {
     seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
     await unlock()
