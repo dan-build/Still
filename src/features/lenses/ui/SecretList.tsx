@@ -10,6 +10,9 @@ import SecretRow from './SecretRow'
 /** How long the copy icon shows its check. */
 const COPIED_MS = 2000
 
+/** How long a revealed value stays shown: the clipboard's time. */
+const REVEAL_MS = 30_000
+
 /** What the rows can do, by Lens and secret. */
 export interface SecretOps {
   reveal: (lensId: string, itemId: string) => Promise<string>
@@ -41,7 +44,8 @@ const keyOf = (lensId: string, itemId: string) => `${lensId}\u0000${itemId}`
 /**
  * Secrets as rows, with Reveal, Copy, Edit and Delete and their dialogs. The
  * Lens view shows one group; search shows one per Lens. Revealed values live
- * only in this component, so they go when it does (another Lens, Lock).
+ * only in this component, so they go when it does (another Lens, Lock). Each
+ * also hides after REVEAL_MS, and all of them when the window is hidden.
  */
 export default function SecretList({ groups, headings, highlight, label, ops, onToast }: SecretListProps) {
   const [revealed, setRevealed] = useState<Record<string, string>>({})
@@ -54,13 +58,33 @@ export default function SecretList({ groups, headings, highlight, label, ops, on
   const [editing, setEditing] = useState<Target | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  useEffect(() => () => clearTimeout(copiedTimer.current), [])
+  const hideTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  useEffect(() => {
+    const timers = hideTimers.current
+    // Minimised or hidden: nobody is looking, so nothing stays shown.
+    const onVisibility = () => {
+      if (document.visibilityState !== 'hidden') return
+      timers.forEach(clearTimeout)
+      timers.clear()
+      setRevealed({})
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      clearTimeout(copiedTimer.current)
+      timers.forEach(clearTimeout)
+      timers.clear()
+    }
+  }, [])
 
-  const forget = (key: string) =>
+  const forget = (key: string) => {
+    clearTimeout(hideTimers.current.get(key))
+    hideTimers.current.delete(key)
     setRevealed((prev) => {
       const { [key]: _, ...rest } = prev
       return rest
     })
+  }
 
   const toggleReveal = async (lensId: string, item: ItemView) => {
     const key = keyOf(lensId, item.id)
@@ -69,6 +93,8 @@ export default function SecretList({ groups, headings, highlight, label, ops, on
     try {
       const plaintext = await ops.reveal(lensId, item.id)
       setRevealed((prev) => ({ ...prev, [key]: plaintext }))
+      clearTimeout(hideTimers.current.get(key))
+      hideTimers.current.set(key, setTimeout(() => forget(key), REVEAL_MS))
     } catch {
       onToast({ message: "Couldn't reveal the secret.", tone: 'error' })
     } finally {

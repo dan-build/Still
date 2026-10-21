@@ -354,7 +354,7 @@ describe('secrets', () => {
     await screen.findByText('value-of-l1')
   }
 
-  it.fails('hides a revealed secret after 30 seconds', async () => {
+  it('hides a revealed secret after 30 seconds', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       await revealAlpha()
@@ -385,7 +385,7 @@ describe('secrets', () => {
     })
   }
 
-  it.fails('hides revealed secrets when the window is hidden', async () => {
+  it('hides revealed secrets when the window is hidden', async () => {
     await revealAlpha()
     try {
       setVisibility('hidden')
