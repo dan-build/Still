@@ -4,7 +4,7 @@
 
 No account, no sync, no telemetry. Still never connects to the internet.
 
-> **Early pre-release (v0.6.1).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
+> **Early pre-release (v0.6.2).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
 
 ![Still in dark mode: the sidebar lists the Lenses, and the selected Lens shows its secrets, one revealed](docs/screenshot.png)
 
