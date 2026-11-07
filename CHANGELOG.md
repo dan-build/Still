@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-07
+
+### Changed
+
+- **Still's window now runs on React 19.** Nothing about how it looks or works changes.
+- **Shadows, the dialog backdrop and the sidebar's shading come from the design system's colour tokens,** like everything else, so light and dark mode are defined in one place. They look the same as before.
+
+### Fixed
+
+- **Long notifications are no longer cut off.** A message such as the one about a failed upgrade now wraps onto a second line instead of ending mid-sentence.
+- **The search field's outline is easier to see.** It now has the same contrast as every other text field, meeting the WCAG guideline for input borders in both light and dark mode.
+- **Search highlights and the Archive's name column match the rest of the app** (the design system's corner radius, and the same column width as secret labels).
+
 ## [0.6.2] - 2026-10-20
 
 ### Added
@@ -153,7 +166,8 @@ First public pre-release, for macOS.
 - An Archive (recycle bin) that keeps forgotten Lenses for 7 days.
 - Offline by design: no accounts, servers or telemetry.
 
-[Unreleased]: https://github.com/dan-build/Still/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/dan-build/Still/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/dan-build/Still/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/dan-build/Still/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/dan-build/Still/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/dan-build/Still/compare/v0.5.0...v0.6.0

@@ -60,6 +60,15 @@
 
   /* A neutral wash for hover backgrounds: it reads on every surface. */
   --wash: rgb(127 127 127 / 0.12);
+
+  /* Depth: dialogs and toasts float highest, menus a little lower, and the
+     selected segment sits just above its track. */
+  --scrim: rgb(20 24 26 / 0.18);
+  --shadow-overlay: 0 0 0 1px rgb(16 24 28 / 0.08), 0 16px 40px rgb(16 24 28 / 0.12), 0 2px 6px rgb(16 24 28 / 0.06);
+  --shadow-menu: 0 0 0 1px rgb(16 24 28 / 0.08), 0 12px 32px rgb(16 24 28 / 0.12), 0 2px 6px rgb(16 24 28 / 0.06);
+  --shadow-control: 0 0 0 1px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.08);
+  /* The top of the sidebar's faint wash, which stands in for macOS vibrancy. */
+  --sidebar-top: #f6f7f7;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -94,6 +103,12 @@
     --accent-soft: rgb(161 177 224 / 0.14);
     --accent-glow: rgb(161 177 224 / 0.42);
     --danger-soft: rgb(242 118 109 / 0.16);
+
+    --scrim: rgb(0 0 0 / 0.5);
+    --shadow-overlay: 0 0 0 1px rgb(0 0 0 / 0.6), inset 0 1px 0 rgb(255 255 255 / 0.06), 0 16px 40px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.3);
+    --shadow-menu: 0 0 0 1px rgb(0 0 0 / 0.6), inset 0 1px 0 rgb(255 255 255 / 0.06), 0 12px 32px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.3);
+    --shadow-control: 0 0 0 1px rgb(0 0 0 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.06);
+    --sidebar-top: #16181a;
   }
 }
 

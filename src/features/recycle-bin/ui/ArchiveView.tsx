@@ -62,7 +62,7 @@ export default function ArchiveView({ bin, onRestore, onDeleteForever, now = new
                   className="relative flex min-h-[42px] items-center gap-3 rounded-6 pr-1.5 pl-3 transition-[background-color] duration-150 before:absolute before:top-0 before:right-3 before:left-10 before:h-px before:bg-hairline first:before:hidden hover:bg-hover hover:before:hidden"
                 >
                   <Icon name="lens" className="text-g5" />
-                  <span className="w-[200px] shrink-0 truncate text-13 font-medium">{lens.name}</span>
+                  <span className="w-[220px] shrink-0 truncate text-13 font-medium">{lens.name}</span>
                   <span className="flex-1 text-12 text-g4 tabular-nums">
                     {lens.itemCount === 1 ? '1 secret' : `${lens.itemCount} secrets`}
                   </span>

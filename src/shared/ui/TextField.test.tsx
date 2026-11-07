@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { useState } from 'react'
+import { createRef, useState } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SegmentedControl } from './SegmentedControl'
 import { TextField } from './TextField'
@@ -9,6 +9,22 @@ import { TextField } from './TextField'
 afterEach(cleanup)
 
 describe('TextField', () => {
+  // Screens focus and select their fields through refs.
+  it('passes a ref to the input, or to the textarea when multiline', () => {
+    const input = createRef<HTMLInputElement | HTMLTextAreaElement>()
+    const area = createRef<HTMLInputElement | HTMLTextAreaElement>()
+    render(
+      <>
+        <TextField ref={input} label="Label" />
+        <TextField ref={area} label="Value" multiline />
+      </>,
+    )
+    expect(input.current).toBe(screen.getByLabelText('Label'))
+    expect(input.current?.tagName).toBe('INPUT')
+    expect(area.current).toBe(screen.getByLabelText('Value'))
+    expect(area.current?.tagName).toBe('TEXTAREA')
+  })
+
   it('is named by its label and described by its hint', () => {
     render(<TextField label="Master password" hint="At least 8 characters." />)
     const input = screen.getByLabelText('Master password')

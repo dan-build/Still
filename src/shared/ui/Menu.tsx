@@ -83,8 +83,7 @@ export function Menu({ label, items, align = 'end' }: MenuProps) {
           onKeyDown={onKeyDown}
           className={[
             'absolute top-full z-30 mt-1 min-w-[180px] rounded-8 bg-raised p-1',
-            'shadow-[0_0_0_1px_rgb(16_24_28/0.08),0_12px_32px_rgb(16_24_28/0.12),0_2px_6px_rgb(16_24_28/0.06)]',
-            'dark:shadow-[0_0_0_1px_rgb(0_0_0/0.6),inset_0_1px_0_rgb(255_255_255/0.06),0_12px_32px_rgb(0_0_0/0.45),0_2px_6px_rgb(0_0_0/0.3)]',
+            'shadow-[var(--shadow-menu)]',
             align === 'end' ? 'right-0' : 'left-0',
           ].join(' ')}
         >

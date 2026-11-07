@@ -33,7 +33,7 @@ export default function Sidebar({ lenses, selected, archiveCount, onSelect, onNe
      
       // A faint vertical wash stands in for macOS vibrancy. Plain CSS: Tailwind's
       // gradients interpolate in oklab, which Safari 15 can't parse.
-      className="flex w-56 shrink-0 flex-col border-r border-hairline bg-sidebar px-2 pb-2 [background-image:linear-gradient(180deg,#f6f7f7,var(--sidebar)_60%)] dark:[background-image:linear-gradient(180deg,#16181a,var(--sidebar)_60%)]"
+      className="flex w-56 shrink-0 flex-col border-r border-hairline bg-sidebar px-2 pb-2 [background-image:linear-gradient(180deg,var(--sidebar-top),var(--sidebar)_60%)]"
     >
       {/* The window's title strip: the traffic lights sit here, and it drags the window. */}
       <div data-tauri-drag-region className="flex h-[52px] shrink-0 items-center justify-end px-2 text-g5">
@@ -43,7 +43,7 @@ export default function Sidebar({ lenses, selected, archiveCount, onSelect, onNe
         <label htmlFor="still-search" className="sr-only">
           Search secrets
         </label>
-        <div className="flex h-7 items-center gap-2 rounded-6 bg-field pr-1.5 pl-2 text-g4 shadow-[inset_0_0_0_1px_var(--g7)] transition-[box-shadow] duration-150 focus-within:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)]">
+        <div className="flex h-7 items-center gap-2 rounded-6 bg-field pr-1.5 pl-2 text-g4 shadow-[inset_0_0_0_1px_var(--g6)] transition-[box-shadow] duration-150 focus-within:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)]">
           <Icon name="search" />
           <input
             ref={searchRef}

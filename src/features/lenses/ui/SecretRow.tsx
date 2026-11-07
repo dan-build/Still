@@ -31,7 +31,7 @@ function Label({ text, highlight }: { text: string; highlight?: string }) {
   return (
     <>
       {text.slice(0, at)}
-      <mark className="rounded-[3px] bg-accent-soft text-inherit">{text.slice(at, at + highlight.length)}</mark>
+      <mark className="rounded-4 bg-accent-soft text-inherit">{text.slice(at, at + highlight.length)}</mark>
       {text.slice(at + highlight.length)}
     </>
   )

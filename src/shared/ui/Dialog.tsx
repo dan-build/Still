@@ -154,7 +154,7 @@ export function Dialog({
       aria-hidden={open ? undefined : true}
       className={[
         'fixed inset-0 z-50 flex items-center justify-center p-4',
-        'bg-[rgb(20_24_26/0.18)] dark:bg-[rgb(0_0_0/0.5)]',
+        'bg-[var(--scrim)]',
         'transition-opacity ease-out-still',
         shown ? 'opacity-100 duration-200' : 'opacity-0 duration-150',
       ].join(' ')}
@@ -172,8 +172,7 @@ export function Dialog({
         style={{ width, maxWidth: '100%' }}
         className={[
           'overflow-hidden rounded-12 bg-raised text-g1 outline-none',
-          'shadow-[0_0_0_1px_rgb(16_24_28/0.08),0_16px_40px_rgb(16_24_28/0.12),0_2px_6px_rgb(16_24_28/0.06)]',
-          'dark:shadow-[0_0_0_1px_rgb(0_0_0/0.6),inset_0_1px_0_rgb(255_255_255/0.06),0_16px_40px_rgb(0_0_0/0.45),0_2px_6px_rgb(0_0_0/0.3)]',
+          'shadow-[var(--shadow-overlay)]',
           // Tailwind 4 scales with the scale property, so that's what transitions.
           'transition-[opacity,scale] ease-out-still',
           shown ? 'scale-100 opacity-100 duration-200' : 'scale-[0.95] opacity-0 duration-150 motion-reduce:scale-100',

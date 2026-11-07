@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Button, IconButton } from './Button'
 import { Kbd } from './Kbd'
@@ -8,6 +9,20 @@ import { Kbd } from './Kbd'
 afterEach(cleanup)
 
 describe('Button', () => {
+  // Dialogs focus their buttons through refs.
+  it('passes a ref to the button element, as does IconButton', () => {
+    const button = createRef<HTMLButtonElement>()
+    const icon = createRef<HTMLButtonElement>()
+    render(
+      <>
+        <Button ref={button}>Save</Button>
+        <IconButton ref={icon} icon="trash" label="Delete" />
+      </>,
+    )
+    expect(button.current).toBe(screen.getByRole('button', { name: 'Save' }))
+    expect(icon.current).toBe(screen.getByRole('button', { name: 'Delete' }))
+  })
+
   it('is a plain button named by its label, with a decorative icon', () => {
     const onClick = vi.fn()
     render(

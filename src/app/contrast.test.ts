@@ -39,6 +39,7 @@ const PAIRS: [string, string, number, string][] = [
   ['g1', 'raised', 4.5, 'dialog text'],
   ['g1', 'selected', 4.5, 'the selected Lens'],
   ['g2', 'bg', 4.5, 'revealed values'],
+  ['g2', 'sidebar', 4.5, 'notice text'],
   ['g3', 'bg', 4.5, 'secondary text'],
   ['g3', 'sidebar', 4.5, 'sidebar items'],
   ['g3', 'raised', 4.5, 'dialog text'],
@@ -50,6 +51,9 @@ const PAIRS: [string, string, number, string][] = [
   ['g4', 'selected', 4.5, 'the selected Lens count'],
   ['g5', 'bg', 3, 'icons at rest'],
   ['g5', 'sidebar', 3, 'sidebar icons'],
+  ['g5', 'selected', 3, 'icons on the selected Lens'],
+  ['g5', 'hover', 3, 'icons on a hovered row'],
+  ['g5', 'raised', 3, 'icons in dialogs and menus'],
   ['g6', 'field', 3, 'input borders'],
   ['g6', 'raised', 3, 'input borders in dialogs'],
   ['on-accent', 'accent-fill', 4.5, 'primary button labels'],
@@ -58,8 +62,10 @@ const PAIRS: [string, string, number, string][] = [
   ['accent-text', 'raised', 4.5, 'accent text in dialogs'],
   ['accent', 'bg', 3, 'focus rings and the copied check'],
   ['accent', 'sidebar', 3, 'the selected Lens icon'],
+  ['accent', 'selected', 3, 'the selected Lens icon on its highlight'],
   ['danger', 'bg', 4.5, 'error text'],
   ['danger', 'raised', 4.5, 'error text in dialogs'],
+  ['danger', 'hover', 3, 'the delete icon on a hovered row'],
   ['on-danger', 'danger', 4.5, 'danger button labels'],
   ['on-danger', 'danger-hover', 4.5, 'hovered danger buttons'],
   ['warning', 'bg', 4.5, 'warning text'],
@@ -84,3 +90,32 @@ describe.each([
     expect(ratio(colours[fg], colours[bg])).toBeGreaterThanOrEqual(minimum)
   })
 })
+
+// A text field's border is what shows where to type, so it needs 3:1
+// (g6 on field, above). g7 is for outlines of controls that carry their own
+// label, such as secondary buttons and the segmented control.
+const sources = import.meta.glob<string>(['/src/**/*.tsx', '!/src/**/*.test.tsx'], { query: '?raw', import: 'default', eager: true })
+
+it('gives every text field a border that passes 3:1', () => {
+  const withInputs = Object.entries(sources).filter(([, source]) => /<input\b/.test(source))
+  expect(withInputs.length).toBeGreaterThan(0)
+  for (const [file, source] of withInputs) {
+    expect(source, file).not.toMatch(/inset_0_0_0_1px_var\(--g7\)/)
+  }
+})
+
+// Components draw with the design tokens only (globals.css), so both themes
+// stay in one place: no hex or rgb() colours in their classes.
+it('keeps raw colours out of the components', () => {
+  for (const [file, source] of Object.entries(sources)) {
+    expect(source, file).not.toMatch(/#[0-9a-f]{6}\b|rgb\(/i)
+  }
+})
+
+// Corners come from the design system's radii (rounded-4, -6, -8, -12).
+it('keeps corners on the design system radii', () => {
+  for (const [file, source] of Object.entries(sources)) {
+    expect(source, file).not.toMatch(/\brounded-\[/)
+  }
+})
+
