@@ -96,7 +96,7 @@ describe.each([
 // label, such as secondary buttons and the segmented control.
 const sources = import.meta.glob<string>(['/src/**/*.tsx', '!/src/**/*.test.tsx'], { query: '?raw', import: 'default', eager: true })
 
-it.fails('gives every text field a border that passes 3:1', () => {
+it('gives every text field a border that passes 3:1', () => {
   const withInputs = Object.entries(sources).filter(([, source]) => /<input\b/.test(source))
   expect(withInputs.length).toBeGreaterThan(0)
   for (const [file, source] of withInputs) {

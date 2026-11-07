@@ -43,7 +43,7 @@ export default function Sidebar({ lenses, selected, archiveCount, onSelect, onNe
         <label htmlFor="still-search" className="sr-only">
           Search secrets
         </label>
-        <div className="flex h-7 items-center gap-2 rounded-6 bg-field pr-1.5 pl-2 text-g4 shadow-[inset_0_0_0_1px_var(--g7)] transition-[box-shadow] duration-150 focus-within:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)]">
+        <div className="flex h-7 items-center gap-2 rounded-6 bg-field pr-1.5 pl-2 text-g4 shadow-[inset_0_0_0_1px_var(--g6)] transition-[box-shadow] duration-150 focus-within:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)]">
           <Icon name="search" />
           <input
             ref={searchRef}
