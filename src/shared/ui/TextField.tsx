@@ -1,5 +1,4 @@
 import {
-  forwardRef,
   useId,
   useState,
   type InputHTMLAttributes,
@@ -56,8 +55,8 @@ const CONTROL = 'min-w-0 flex-1 bg-transparent text-g1 outline-none placeholder:
  * A labelled text field. The label, hint and error are tied to the control
  * (for, aria-describedby, aria-invalid), so screen readers announce them.
  */
-export const TextField = forwardRef<HTMLInputElement | HTMLTextAreaElement, InputProps | AreaProps>(function TextField(props, ref) {
-  const { label, labelHidden, hint, error, invalid, mono, large, trailing, className, ...rest } = props
+export function TextField(props: (InputProps | AreaProps) & { ref?: Ref<HTMLInputElement | HTMLTextAreaElement> }) {
+  const { label, labelHidden, hint, error, invalid, mono, large, trailing, className, ref, ...rest } = props
   const id = useId()
   const isInvalid = Boolean(error) || Boolean(invalid)
   const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined
@@ -124,4 +123,4 @@ export const TextField = forwardRef<HTMLInputElement | HTMLTextAreaElement, Inpu
       ) : null}
     </div>
   )
-})
+}

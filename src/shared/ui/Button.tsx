@@ -1,4 +1,4 @@
-import { forwardRef, type ButtonHTMLAttributes } from 'react'
+import type { ButtonHTMLAttributes, Ref } from 'react'
 import { Icon, type IconName } from './Icon'
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
@@ -25,13 +25,11 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   block?: boolean
   /** An icon before the label. */
   icon?: IconName
+  ref?: Ref<HTMLButtonElement>
 }
 
 /** A text button. Its label is its accessible name. */
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'secondary', size = 'sm', block, icon, className, children, type = 'button', ...rest },
-  ref,
-) {
+export function Button({ variant = 'secondary', size = 'sm', block, icon, className, children, type = 'button', ref, ...rest }: ButtonProps) {
   const sizing = size === 'md' ? 'h-8 px-4' : 'h-7 px-3'
   return (
     <button
@@ -45,7 +43,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       {children}
     </button>
   )
-})
+}
 
 interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label' | 'children'> {
   icon: IconName
@@ -54,16 +52,14 @@ interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
   size?: 'sm' | 'md'
   /** Turns red on hover, for destructive actions. */
   danger?: boolean
+  ref?: Ref<HTMLButtonElement>
 }
 
 /**
  * A square button showing one icon. Toggles pass aria-pressed, which colours
  * the icon with the accent while pressed.
  */
-export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { icon, label, size = 'md', danger, className, type = 'button', ...rest },
-  ref,
-) {
+export function IconButton({ icon, label, size = 'md', danger, className, type = 'button', ref, ...rest }: IconButtonProps) {
   return (
     <button
       ref={ref}
@@ -83,4 +79,4 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       <Icon name={icon} />
     </button>
   )
-})
+}
