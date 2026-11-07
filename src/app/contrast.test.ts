@@ -113,7 +113,7 @@ it('keeps raw colours out of the components', () => {
 })
 
 // Corners come from the design system's radii (rounded-4, -6, -8, -12).
-it.fails('keeps corners on the design system radii', () => {
+it('keeps corners on the design system radii', () => {
   for (const [file, source] of Object.entries(sources)) {
     expect(source, file).not.toMatch(/\brounded-\[/)
   }
