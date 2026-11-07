@@ -6,7 +6,7 @@ import LensNameDialog from '@/features/lenses/ui/LensNameDialog'
 import ArchiveView from '@/features/recycle-bin/ui/ArchiveView'
 import { onAutoLocked, reportActivity } from '@/platform/tauri/session'
 import { createTauriVaultApi, type VaultApi } from '@/platform/tauri/vaultApi'
-import type { LensView as Lens, VaultState, VaultView } from '@/features/vault/model/types'
+import type { LensView as Lens, VaultState, VaultStatus, VaultView } from '@/features/vault/model/types'
 import { Button } from '@/shared/ui/Button'
 import { Icon } from '@/shared/ui/Icon'
 import { Toaster, type ToastMessage } from '@/shared/ui/Toast'
@@ -24,6 +24,28 @@ const NOTICES = {
   'old-copy-changed': 'An older version of Still changed its own copy of your vault. This version uses its file, which is unchanged; both are kept.',
   upgraded: 'Your vault was upgraded to the new format: names and labels are now encrypted too. The file from before is kept as {kept}.',
   restored: "Your vault file couldn't be opened, so Still put back the newest copy it had kept. Nothing was deleted.",
+}
+
+/**
+ * What the app shows. One value, so two screens can never both apply:
+ * starting (until Rust says), the unreadable-file message, the recovery
+ * screen for orphaned data, creating a vault, unlocking, and the vault.
+ */
+type Screen = 'starting' | 'unreadable' | 'orphaned' | 'create' | 'unlock' | 'unlocked'
+
+/** The locked screen for a vault status. This page starts locked, so an unlocked status unlocks again. */
+function lockedScreen(status: VaultStatus): Screen {
+  switch (status) {
+    case 'empty':
+      return 'create'
+    case 'orphaned':
+      return 'orphaned'
+    case 'unreadable':
+      return 'unreadable'
+    case 'locked':
+    case 'unlocked':
+      return 'unlock'
+  }
 }
 
 interface StillHomeProps {
@@ -50,13 +72,8 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
   const [keptName, setKeptName] = useState('vault-v1.json')
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const toastId = useRef(0)
-  // Until Rust has said which screen to show.
-  const [isStarting, setIsStarting] = useState(true)
-  const [isUnlocked, setIsUnlocked] = useState(false)
-  const [isFirstLaunch, setIsFirstLaunch] = useState(false)
-  const [isOrphaned, setIsOrphaned] = useState(false)
-  // The vault file became unreadable while Still was open.
-  const [isUnreadable, setIsUnreadable] = useState(false)
+  const [screen, setScreen] = useState<Screen>('starting')
+  const isUnlocked = screen === 'unlocked'
 
   // Created on first use. The vault and its keys live in Rust, behind the Tauri commands.
   const api = () => {
@@ -91,14 +108,10 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
       .lock()
       .catch(() => {})
       .then(() => api().state())
-      .then(({ status }) => {
-        setIsFirstLaunch(status === 'empty')
-        setIsOrphaned(status === 'orphaned')
-        setIsUnreadable(status === 'unreadable')
-      })
-      // The unlock screen then reports what goes wrong.
-      .catch(() => {})
-      .finally(() => setIsStarting(false))
+      .then(({ status }) => lockedScreen(status))
+      // If Rust can't say, the unlock screen reports what goes wrong.
+      .catch((): Screen => 'unlock')
+      .then(setScreen)
     // Once, when the app starts: api() is the same object for its life.
   }, [])
 
@@ -163,9 +176,8 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
   const handleCreatePassword = async (password: string) => {
     const state = await api().create(password)
     show(state)
-    setIsFirstLaunch(false)
     // A Lock while it was being created leaves the new vault saved but locked.
-    setIsUnlocked(state.status === 'unlocked')
+    setScreen(state.status === 'unlocked' ? 'unlocked' : 'unlock')
     showToast({ message: 'Vault created' })
   }
 
@@ -184,13 +196,11 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
       if (result.reason !== 'no-vault') return result.reason
       // Start-up couldn't tell; there's no vault to unlock, so offer the right screen.
       const { status } = await api().state().catch(() => ({ status: 'locked' as const }))
-      setIsFirstLaunch(status === 'empty')
-      setIsOrphaned(status === 'orphaned')
-      setIsUnreadable(status === 'unreadable')
+      setScreen(lockedScreen(status))
       return 'failed'
     }
     show(result.state)
-    setIsUnlocked(true)
+    setScreen('unlocked')
     setLockedBecause(null)
     if (result.notice === 'upgraded') {
       if (result.kept) setKeptName(result.kept)
@@ -204,8 +214,7 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
 
   const handleSetAside = async () => {
     await api().setAside()
-    setIsOrphaned(false)
-    setIsFirstLaunch(true)
+    setScreen('create')
   }
 
   // Lock forgets everything shown: Rust drops (and zeroes) its keys, and the
@@ -213,7 +222,7 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
   const lock = (because: string | null = null) => {
     setLockedBecause(because)
     api().lock().catch(() => showToast({ message: "Couldn't clear the keys from memory. Quit Still to be sure.", tone: 'error' }))
-    setIsUnlocked(false)
+    setScreen('unlock')
     setSelection(null)
     setQuery('')
     setIsCreateOpen(false)
@@ -265,22 +274,23 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUnlocked])
 
-  if (isStarting) return null
+  if (screen === 'starting') return null
+
+  const lockedView = {
+    unreadable: (
+      <LockLayout title="Still can't read its vault file" warning width={400}>
+        <p>Nothing was changed. Quit Still and open it again to see your options. Keep the files in Still's app data folder safe.</p>
+      </LockLayout>
+    ),
+    orphaned: <RecoveryScreen onSetAside={handleSetAside} />,
+    create: <CreatePasswordScreen onCreate={handleCreatePassword} />,
+    unlock: <UnlockScreen onUnlock={handleUnlock} lockedBecause={lockedBecause} />,
+  }
 
   return (
     <>
-      {!isUnlocked ? (
-        isUnreadable ? (
-          <LockLayout title="Still can't read its vault file" warning width={400}>
-            <p>Nothing was changed. Quit Still and open it again to see your options. Keep the files in Still's app data folder safe.</p>
-          </LockLayout>
-        ) : isOrphaned ? (
-          <RecoveryScreen onSetAside={handleSetAside} />
-        ) : isFirstLaunch ? (
-          <CreatePasswordScreen onCreate={handleCreatePassword} />
-        ) : (
-          <UnlockScreen onUnlock={handleUnlock} lockedBecause={lockedBecause} />
-        )
+      {screen !== 'unlocked' ? (
+        lockedView[screen]
       ) : (
         <div className="flex h-screen w-full overflow-hidden bg-bg text-13 text-g1">
           <Sidebar

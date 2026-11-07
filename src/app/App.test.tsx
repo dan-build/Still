@@ -721,6 +721,32 @@ describe('creating a vault (B4)', () => {
     await screen.findByLabelText('Confirm password')
   })
 
+  it('offers the recovery screen if start-up couldn\'t tell the data was orphaned', async () => {
+    const vault = freshInstall()
+    vault.orphaned = true
+    vault.failState = true
+    render(createElement(StillHome))
+    await screen.findByPlaceholderText('Master password')
+    vault.failState = false
+    await enterPassword('anything')
+
+    await screen.findByText("Still found data it can't open")
+    expect(screen.queryByLabelText('Master password')).toBeNull()
+  })
+
+  it('explains an unreadable file if start-up couldn\'t tell', async () => {
+    const vault = freshInstall()
+    vault.unreadableFile = true
+    vault.failState = true
+    render(createElement(StillHome))
+    await screen.findByPlaceholderText('Master password')
+    vault.failState = false
+    await enterPassword('anything')
+
+    await screen.findByText("Still can't read its vault file")
+    expect(screen.queryByLabelText('Master password')).toBeNull()
+  })
+
   it('shows the recovery screen for data it can\'t open, and changes nothing', async () => {
     const vault = freshInstall()
     vault.orphaned = true

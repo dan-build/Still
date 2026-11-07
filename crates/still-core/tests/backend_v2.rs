@@ -636,3 +636,80 @@ fn never_offers_to_create_over_an_unreadable_file() {
     assert_eq!(vault.create(&secret("pw")), Err(VaultError::VaultExists));
     assert!(disk.0.borrow().v2.is_none() && disk.0.borrow().data.is_empty());
 }
+
+/// Every change and read a command can make, by id, with what each returned.
+fn every_call(
+    vault: &mut Backend<Memory, FastKeys>,
+    lens: &str,
+    item: &str,
+) -> Vec<(&'static str, Result<(), VaultError>)> {
+    vec![
+        ("create_lens", vault.create_lens("New").map(drop)),
+        ("add_item", vault.add_item(lens, "X", "note", &secret("v"))),
+        (
+            "update_item",
+            vault.update_item(lens, item, "X", "note", Some(&secret("v"))),
+        ),
+        (
+            "update_item (label only)",
+            vault.update_item(lens, item, "Y", "note", None),
+        ),
+        ("delete_item", vault.delete_item(lens, item)),
+        ("rename_lens", vault.rename_lens(lens, "Renamed")),
+        ("forget_lens", vault.forget_lens(lens)),
+        ("restore_lens", vault.restore_lens(lens)),
+        ("delete_lens_forever", vault.delete_lens_forever(lens)),
+        ("reveal_item", vault.reveal_item(lens, item).map(drop)),
+    ]
+}
+
+// Lock drops everything at once, in either format: nothing can be read or
+// changed until the next unlock, which opens the vault in the format it's in.
+#[test]
+fn forgets_everything_at_lock_and_reopens_in_the_same_format() {
+    for disk in [Memory::default(), v2_disk()] {
+        let in_v2 = disk.0.borrow().creates_v2;
+        let mut vault = backend::<FastKeys>(&disk);
+        vault.create(&secret("pw")).unwrap();
+        let kept = vault.create_lens("Kept").unwrap();
+        vault
+            .add_item(&kept, "Email", "password", &secret("v"))
+            .unwrap();
+        let gone = vault.create_lens("Gone").unwrap();
+        vault.forget_lens(&gone).unwrap();
+        let item = vault.view().lenses[0]["items"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let shown = vault.view();
+
+        vault.lock();
+        assert!(!vault.is_unlocked());
+        assert_eq!(vault.status(), Status::Locked);
+        assert!(vault.view().lenses.is_empty() && vault.view().bin.is_empty());
+        assert_eq!(vault.view().unreadable, 0);
+        disk.0.borrow_mut().writes.clear();
+        for (call, result) in every_call(&mut vault, &kept, &item) {
+            assert_eq!(
+                result,
+                Err(VaultError::Locked),
+                "{call} while locked (v2: {in_v2})"
+            );
+        }
+        assert!(
+            disk.0.borrow().writes.is_empty(),
+            "nothing written while locked"
+        );
+
+        vault.unlock(&secret("pw")).unwrap();
+        assert_eq!(vault.view(), shown);
+        vault.rename_lens(&kept, "Renamed").unwrap();
+        if in_v2 {
+            assert!(disk.0.borrow().data.is_empty());
+            assert!(stored_lists(&disk, "pw").lenses.contains("Renamed"));
+        } else {
+            assert!(disk.0.borrow().v2.is_none());
+            assert!(disk.0.borrow().data["still-lenses"].contains("Renamed"));
+        }
+    }
+}

@@ -321,8 +321,7 @@ pub struct Opened<K> {
     /// One entry per stored Lens (Lenses, then Archive): true if its key opened.
     opened: Vec<bool>,
     stored: Lists,
-    v2: bool,
-    /// v2: the lists exactly as stored in the body.
+    /// v2: the lists exactly as stored in the body. None for v1.
     raw: Option<v2::Body>,
     /// A v1 vault's conversion: not tried (None), or the checked v2 file
     /// with the lists it holds, or a failure.
@@ -404,7 +403,6 @@ impl UnlockPlan {
                     keys,
                     opened,
                     stored: stored.clone(),
-                    v2: false,
                     raw: None,
                     converted,
                 })
@@ -421,7 +419,6 @@ impl UnlockPlan {
                     keys,
                     opened,
                     stored,
-                    v2: true,
                     raw: Some(body),
                     converted: None,
                 })
@@ -469,31 +466,81 @@ pub fn system_clock() -> Clock {
     })
 }
 
-pub struct Backend<S: Storage, K: Keys> {
-    storage: S,
-    /// Some while unlocked.
-    keys: Option<K>,
+/// The unlocked vault: its keys, its lists and how it is saved. All of it
+/// exists only while unlocked, so locking drops it in one step and no part
+/// can outlive the rest (the keys and the v2 body zero themselves).
+struct Session<K> {
+    keys: K,
     lists: Lists,
     /// Lens ids whose key opened. Others are kept but not shown.
     readable: HashSet<String>,
+    format: Format,
+}
+
+/// How the unlocked vault is saved, with what each format's saves check.
+enum Format {
+    /// The wrapped app key and salt the vault was unlocked or created with.
+    /// Saves refuse unless the stored ones are still these: writing the
+    /// lists into another vault's values (or a file that's gone) would leave
+    /// them under a key that can't open them.
+    V1 { master_key: String, salt: String },
+    /// The file as this vault last opened or saved it, and both lists exactly
+    /// as stored. Saves seal onto the file's settings and wrapped key, and
+    /// refuse if the file on disk has another vault's (sealing onto that
+    /// would make the vault unopenable); a list a change leaves alone is
+    /// written back byte for byte, as in v1.
+    V2 { file: v2::File, raw: v2::Body },
+}
+
+impl<K: Keys> Session<K> {
+    fn new(keys: K, format: Format) -> Self {
+        Self {
+            keys,
+            lists: Lists::default(),
+            readable: HashSet::new(),
+            format,
+        }
+    }
+
+    /// Refuses a change to a stored Lens whose key didn't open, as if it
+    /// didn't exist: it's kept exactly as stored. Checked before every change.
+    fn refuse_hidden(&self, lens_id: &str) -> Result<(), VaultError> {
+        let stored = self
+            .lists
+            .lenses
+            .iter()
+            .chain(&self.lists.bin)
+            .any(|l| id_of(l) == Some(lens_id));
+        if stored && !self.readable.contains(lens_id) {
+            return Err(VaultError::UnknownLens);
+        }
+        Ok(())
+    }
+
+    fn active_lens(&self, lens_id: &str) -> Option<&Value> {
+        self.lists.lenses.iter().find(|l| id_of(l) == Some(lens_id))
+    }
+
+    /// Encrypts a value for a Lens: its key must have opened, and the value
+    /// must not be blank.
+    fn encrypt(&self, lens_id: &str, value: &SecretText) -> Result<String, VaultError> {
+        self.keys.encrypt_item(lens_id, value).map_err(|e| match e {
+            SessionError::Failed if value.expose().chars().all(is_js_whitespace) => {
+                VaultError::EmptyValue
+            }
+            e => VaultError::Crypto(e),
+        })
+    }
+}
+
+pub struct Backend<S: Storage, K: Keys> {
+    storage: S,
+    /// Some while unlocked.
+    session: Option<Session<K>>,
     /// Changes on every create, unlock, lock, saved change and set-aside, so
     /// a slow create or unlock that something overtook is thrown away (it
     /// would otherwise bring back lists or keys from before).
     generation: u64,
-    /// The unlocked vault is in format v2, so every save reseals its body.
-    v2: bool,
-    /// v2: the file as this vault last opened or saved it. Saves seal onto
-    /// its settings and wrapped key, and refuse if the file on disk has
-    /// another vault's: sealing onto that would make the vault unopenable.
-    v2_file: Option<v2::File>,
-    /// v2: both lists exactly as stored, so a list a change leaves alone is
-    /// written back byte for byte, as in v1.
-    v2_raw: Option<v2::Body>,
-    /// v1: the wrapped app key and salt the vault was unlocked or created
-    /// with. Saves refuse unless the stored ones are still these: writing
-    /// the lists into another vault's values (or a file that's gone) would
-    /// leave them under a key that can't open them.
-    v1_key: Option<(String, String)>,
     /// Convert a v1 vault to v2 when it unlocks (where the storage can).
     convert_v1: bool,
     /// Something to tell the user once, after an unlock.
@@ -517,14 +564,8 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     pub fn new(storage: S, clock: Clock) -> Self {
         Self {
             storage,
-            keys: None,
-            lists: Lists::default(),
-            readable: HashSet::new(),
+            session: None,
             generation: 0,
-            v2: false,
-            v2_file: None,
-            v2_raw: None,
-            v1_key: None,
             convert_v1: true,
             notice: None,
             clock,
@@ -548,11 +589,11 @@ impl<S: Storage, K: Keys> Backend<S, K> {
 
     /// Whether keys are held; unlike `status`, this never reads storage.
     pub fn is_unlocked(&self) -> bool {
-        self.keys.is_some()
+        self.session.is_some()
     }
 
     pub fn status(&self) -> Status {
-        if self.keys.is_some() {
+        if self.session.is_some() {
             Status::Unlocked
         } else if self.storage.unreadable() {
             Status::Unreadable
@@ -609,7 +650,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     ) -> Result<(), VaultError> {
         let created = created.map_err(VaultError::Crypto)?;
         self.prepare_create()?;
-        let (keys, v1_key, v2) = match created {
+        let (keys, format) = match created {
             Created::V1(keys, blob, salt) => {
                 let changes = [
                     (keys::MASTER_KEY.to_owned(), Some(blob.clone())),
@@ -620,27 +661,26 @@ impl<S: Storage, K: Keys> Backend<S, K> {
                 self.storage
                     .write(&changes)
                     .map_err(|_| VaultError::StorageFailed)?;
-                (keys, Some((blob, salt)), None)
+                let format = Format::V1 {
+                    master_key: blob,
+                    salt,
+                };
+                (keys, format)
             }
             Created::V2(keys, file) => {
                 self.storage
                     .write_v2(&file)
                     .map_err(|_| VaultError::StorageFailed)?;
-                (keys, None, Some(file))
+                let raw = v2::Body {
+                    lenses: "[]".into(),
+                    bin: "[]".into(),
+                };
+                (keys, Format::V2 { file, raw })
             }
         };
         if plan.generation == self.generation {
             self.generation += 1;
-            self.v2 = v2.is_some();
-            self.v2_raw = v2.is_some().then(|| v2::Body {
-                lenses: "[]".into(),
-                bin: "[]".into(),
-            });
-            self.v2_file = v2;
-            self.v1_key = v1_key;
-            self.keys = Some(keys);
-            self.lists = Lists::default();
-            self.readable.clear();
+            self.session = Some(Session::new(keys, format));
         }
         Ok(())
     }
@@ -727,21 +767,27 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         if plan.generation != self.generation {
             return Err(UnlockFailure::Failed);
         }
-        self.generation += 1;
-        self.v2 = opened.v2;
-        self.v2_raw = opened.raw;
-        let (v2_file, v1_key, expected) = match plan.source {
-            Source::V2 { file } => (Some(file), None, Vec::new()),
-            Source::V1 {
-                expected,
-                encrypted_master_key,
-                salt,
-                ..
-            } => (None, Some((encrypted_master_key, salt)), expected),
+        let (mut format, expected) = match (plan.source, opened.raw) {
+            (Source::V2 { file }, Some(raw)) => (Format::V2 { file, raw }, Vec::new()),
+            (
+                Source::V1 {
+                    expected,
+                    encrypted_master_key,
+                    salt,
+                    ..
+                },
+                None,
+            ) => {
+                let format = Format::V1 {
+                    master_key: encrypted_master_key,
+                    salt,
+                };
+                (format, expected)
+            }
+            // The password step opens the format the plan read; never otherwise.
+            _ => return Err(UnlockFailure::Failed),
         };
-        self.v2_file = v2_file;
-        self.v1_key = v1_key;
-        self.keys = Some(opened.keys);
+        self.generation += 1;
         // Convert before anything is saved, so the Archive purge below is
         // already saved in v2. A failure leaves the vault as it was (v1), and
         // isn't tried again until Still starts again: each try costs a second
@@ -750,11 +796,8 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             None => None,
             Some(Ok((file, body))) => match self.storage.convert_to_v2(&file, &expected) {
                 Ok(kept) => {
-                    self.v2 = true;
-                    self.v1_key = None;
                     let marker = conversion_marker(&file, (self.clock)());
-                    self.v2_file = Some(file);
-                    self.v2_raw = Some(body);
+                    format = Format::V2 { file, raw: body };
                     Some(Notice::Upgraded { marker, kept })
                 }
                 Err(_) => Some(Notice::UpgradeFailed),
@@ -764,6 +807,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         if self.notice == Some(Notice::UpgradeFailed) {
             self.convert_v1 = false;
         }
+        self.session = Some(Session::new(opened.keys, format));
         self.open_lists(opened.stored, &opened.opened);
         Ok(())
     }
@@ -779,14 +823,18 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     /// as stored, so saving writes it back unchanged; it just isn't shown.
     /// Then the Archive's expired entries are purged, and that is saved.
     fn open_lists(&mut self, stored: Lists, opened: &[bool]) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
         let count = stored.lenses.len();
-        self.readable.clear();
+        session.readable.clear();
+        let readable = &mut session.readable;
         let mut open = |(i, lens): (usize, Value)| -> Value {
             if !opened[i] {
                 return lens;
             }
             if let Some(id) = id_of(&lens) {
-                self.readable.insert(id.to_owned());
+                readable.insert(id.to_owned());
             }
             // `{...lens, items: lens.items ?? []}`
             match lens.get("items") {
@@ -806,9 +854,9 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             .enumerate()
             .map(|(i, lens)| open((count + i, lens)))
             .collect();
-        self.lists = Lists { lenses, bin };
-        let purged = model::purge_expired(&self.lists.bin, (self.clock)());
-        if purged.len() != self.lists.bin.len() {
+        session.lists = Lists { lenses, bin };
+        let purged = model::purge_expired(&session.lists.bin, (self.clock)());
+        if purged.len() != session.lists.bin.len() {
             let change = Change {
                 lenses: None,
                 bin: Some(purged),
@@ -821,29 +869,30 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     /// Hides everything at once and drops the keys, which zero themselves.
     pub fn lock(&mut self) {
         self.generation += 1;
-        self.keys = None;
-        self.v2 = false;
-        self.v2_file = None;
-        self.v2_raw = None;
-        self.v1_key = None;
-        self.readable.clear();
-        self.lists = Lists::default();
+        self.session = None;
     }
 
     // ---- reading ----------------------------------------------------------------
 
     pub fn view(&self) -> View {
-        let readable = |lens: &&Value| id_of(lens).is_some_and(|id| self.readable.contains(id));
-        let all = self.lists.lenses.iter().chain(&self.lists.bin);
+        let Some(session) = &self.session else {
+            return View {
+                lenses: Vec::new(),
+                bin: Vec::new(),
+                unreadable: 0,
+            };
+        };
+        let readable = |lens: &&Value| id_of(lens).is_some_and(|id| session.readable.contains(id));
+        let all = session.lists.lenses.iter().chain(&session.lists.bin);
         View {
-            lenses: self
+            lenses: session
                 .lists
                 .lenses
                 .iter()
                 .filter(readable)
                 .map(to_view)
                 .collect(),
-            bin: self
+            bin: session
                 .lists
                 .bin
                 .iter()
@@ -861,12 +910,12 @@ impl<S: Storage, K: Keys> Backend<S, K> {
 
     /// A secret's value, from either list (the first Lens with that id).
     pub fn reveal_item(&self, lens_id: &str, item_id: &str) -> Result<SecretText, VaultError> {
-        let keys = self.keys.as_ref().ok_or(VaultError::Locked)?;
-        let lens = self
+        let session = self.session()?;
+        let lens = session
             .lists
             .lenses
             .iter()
-            .chain(&self.lists.bin)
+            .chain(&session.lists.bin)
             .find(|l| id_of(l) == Some(lens_id));
         let item = lens
             .and_then(|lens| items_of(lens).iter().find(|i| id_of(i) == Some(item_id)))
@@ -875,115 +924,94 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             .get("encryptedValue")
             .and_then(Value::as_str)
             .unwrap_or("");
-        keys.decrypt_item(lens_id, blob).map_err(VaultError::Crypto)
+        session
+            .keys
+            .decrypt_item(lens_id, blob)
+            .map_err(VaultError::Crypto)
     }
 
     // ---- changes ------------------------------------------------------------------
 
-    fn keys(&self) -> Result<&K, VaultError> {
-        self.keys.as_ref().ok_or(VaultError::Locked)
+    fn session(&self) -> Result<&Session<K>, VaultError> {
+        self.session.as_ref().ok_or(VaultError::Locked)
     }
 
-    /// Refuses a change to a stored Lens whose key didn't open, as if it
-    /// didn't exist: it's kept exactly as stored. Checked before every change.
-    fn readable_lens(&self, lens_id: &str) -> Result<(), VaultError> {
-        let stored = self
-            .lists
-            .lenses
-            .iter()
-            .chain(&self.lists.bin)
-            .any(|l| id_of(l) == Some(lens_id));
-        if stored && !self.readable.contains(lens_id) {
-            return Err(VaultError::UnknownLens);
-        }
-        Ok(())
-    }
-
-    fn active_lens(&self, lens_id: &str) -> Option<&Value> {
-        self.lists.lenses.iter().find(|l| id_of(l) == Some(lens_id))
-    }
-
-    /// Encrypts a value for a Lens: its key must have opened, and the value
-    /// must not be blank.
-    fn encrypt(&self, lens_id: &str, value: &SecretText) -> Result<String, VaultError> {
-        self.keys()?
-            .encrypt_item(lens_id, value)
-            .map_err(|e| match e {
-                SessionError::Failed if value.expose().chars().all(is_js_whitespace) => {
-                    VaultError::EmptyValue
-                }
-                e => VaultError::Crypto(e),
-            })
+    /// The unlocked session, for a change to a stored Lens: refused while
+    /// locked, or if that Lens's key didn't open.
+    fn session_for(&self, lens_id: &str) -> Result<&Session<K>, VaultError> {
+        let session = self.session()?;
+        session.refuse_hidden(lens_id)?;
+        Ok(session)
     }
 
     /// Saves the lists a change produced, in one write, then makes them
     /// current. On failure nothing changes.
     fn write(&mut self, change: Change) -> Result<(), VaultError> {
-        let vault_keys = self.keys()?;
-        if self.v2 && !change.is_empty() {
-            let (Some(current), Some(raw)) = (&self.v2_file, &self.v2_raw) else {
-                return Err(VaultError::WriteFailed);
-            };
-            // Only onto this vault's own file: another vault's (a backup put
-            // back, a synced copy) would end up with neither's key fitting.
-            let on_disk = self.storage.v2().ok_or(VaultError::WriteFailed)?;
-            if on_disk.kdf != current.kdf || on_disk.master_key != current.master_key {
-                return Err(VaultError::WriteFailed);
-            }
-            // A list the change leaves alone is written back exactly as stored.
-            let body = v2::Body {
-                lenses: change
-                    .lenses
-                    .as_deref()
-                    .map_or_else(|| raw.lenses.clone(), write_list),
-                bin: change
-                    .bin
-                    .as_deref()
-                    .map_or_else(|| raw.bin.clone(), write_list),
-            };
-            let sealed = vault_keys.seal_v2(current, &body);
-            self.storage
-                .write_v2(&sealed)
-                .map_err(|_| VaultError::WriteFailed)?;
-            self.v2_file = Some(sealed);
-            self.v2_raw = Some(body);
-        } else if !self.v2 {
-            let mut writes = Vec::new();
-            if let Some(lenses) = &change.lenses {
-                writes.push((keys::LENSES.to_owned(), Some(write_list(lenses))));
-            }
-            if let Some(bin) = &change.bin {
-                writes.push((keys::BIN.to_owned(), Some(write_list(bin))));
-            }
-            if !writes.is_empty() {
-                // Only onto this vault's own values, as for v2 above.
-                let Some((blob, salt)) = &self.v1_key else {
-                    return Err(VaultError::WriteFailed);
-                };
-                if self.storage.get(keys::MASTER_KEY).as_ref() != Some(blob)
-                    || self.storage.get(keys::SALT).as_ref() != Some(salt)
-                {
-                    return Err(VaultError::WriteFailed);
+        let session = self.session.as_mut().ok_or(VaultError::Locked)?;
+        match &mut session.format {
+            Format::V2 { file, raw } => {
+                if !change.is_empty() {
+                    // Only onto this vault's own file: another vault's (a
+                    // backup put back, a synced copy) would end up with
+                    // neither's key fitting.
+                    let on_disk = self.storage.v2().ok_or(VaultError::WriteFailed)?;
+                    if on_disk.kdf != file.kdf || on_disk.master_key != file.master_key {
+                        return Err(VaultError::WriteFailed);
+                    }
+                    // A list the change leaves alone is written back exactly as stored.
+                    let body = v2::Body {
+                        lenses: change
+                            .lenses
+                            .as_deref()
+                            .map_or_else(|| raw.lenses.clone(), write_list),
+                        bin: change
+                            .bin
+                            .as_deref()
+                            .map_or_else(|| raw.bin.clone(), write_list),
+                    };
+                    let sealed = session.keys.seal_v2(file, &body);
+                    self.storage
+                        .write_v2(&sealed)
+                        .map_err(|_| VaultError::WriteFailed)?;
+                    *file = sealed;
+                    *raw = body;
                 }
-                self.storage
-                    .write(&writes)
-                    .map_err(|_| VaultError::WriteFailed)?;
+            }
+            Format::V1 { master_key, salt } => {
+                let mut writes = Vec::new();
+                if let Some(lenses) = &change.lenses {
+                    writes.push((keys::LENSES.to_owned(), Some(write_list(lenses))));
+                }
+                if let Some(bin) = &change.bin {
+                    writes.push((keys::BIN.to_owned(), Some(write_list(bin))));
+                }
+                if !writes.is_empty() {
+                    // Only onto this vault's own values, as for v2 above.
+                    if self.storage.get(keys::MASTER_KEY).as_ref() != Some(master_key)
+                        || self.storage.get(keys::SALT).as_ref() != Some(salt)
+                    {
+                        return Err(VaultError::WriteFailed);
+                    }
+                    self.storage
+                        .write(&writes)
+                        .map_err(|_| VaultError::WriteFailed)?;
+                }
             }
         }
         self.generation += 1;
         if let Some(lenses) = change.lenses {
-            self.lists.lenses = lenses;
+            session.lists.lenses = lenses;
         }
         if let Some(bin) = change.bin {
-            self.lists.bin = bin;
+            session.lists.bin = bin;
         }
         Ok(())
     }
 
     pub fn create_lens(&mut self, name: &str) -> Result<String, VaultError> {
-        self.keys()?;
+        let session = self.session.as_mut().ok_or(VaultError::Locked)?;
         let id = new_id();
-        let encrypted_master_key = self.keys.as_mut().expect("unlocked").new_lens_key(&id);
+        let encrypted_master_key = session.keys.new_lens_key(&id);
         let lens = json!({
             "id": id,
             "name": js_trim(name),
@@ -992,8 +1020,11 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             "encryptedMasterKey": encrypted_master_key,
             "items": [],
         });
-        self.write(model::add_lens(&self.lists, lens))?;
-        self.readable.insert(id.clone());
+        let change = model::add_lens(&session.lists, lens);
+        self.write(change)?;
+        if let Some(session) = self.session.as_mut() {
+            session.readable.insert(id.clone());
+        }
         Ok(id)
     }
 
@@ -1004,10 +1035,11 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         item_type: &str,
         value: &SecretText,
     ) -> Result<(), VaultError> {
-        self.keys()?;
-        self.readable_lens(lens_id)?;
-        let lens = self.active_lens(lens_id).ok_or(VaultError::UnknownLens)?;
-        let encrypted_value = self.encrypt(lens_id, value)?;
+        let session = self.session_for(lens_id)?;
+        let lens = session
+            .active_lens(lens_id)
+            .ok_or(VaultError::UnknownLens)?;
+        let encrypted_value = session.encrypt(lens_id, value)?;
         let mut items = items_of(lens).to_vec();
         items.push(json!({
             "id": new_id(),
@@ -1015,7 +1047,8 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             "type": item_type,
             "encryptedValue": encrypted_value,
         }));
-        self.write(model::set_items(&self.lists, lens_id, items))
+        let change = model::set_items(&session.lists, lens_id, items);
+        self.write(change)
     }
 
     /// Changes a secret in place (same id and position). Without a new
@@ -1028,9 +1061,8 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         item_type: &str,
         value: Option<&SecretText>,
     ) -> Result<(), VaultError> {
-        self.keys()?;
-        self.readable_lens(lens_id)?;
-        let lens = self.active_lens(lens_id);
+        let session = self.session_for(lens_id)?;
+        let lens = session.active_lens(lens_id);
         let items = lens.map(items_of).unwrap_or_default();
         let item = items
             .iter()
@@ -1041,7 +1073,7 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             return Err(VaultError::EmptyLabel);
         }
         let encrypted_value = match value {
-            Some(value) => Value::String(self.encrypt(lens_id, value)?),
+            Some(value) => Value::String(session.encrypt(lens_id, value)?),
             None => item.get("encryptedValue").cloned().unwrap_or(Value::Null),
         };
         let items = items
@@ -1055,13 +1087,15 @@ impl<S: Storage, K: Keys> Backend<S, K> {
                 with_field(&i, "encryptedValue", encrypted_value.clone())
             })
             .collect();
-        self.write(model::set_items(&self.lists, lens_id, items))
+        let change = model::set_items(&session.lists, lens_id, items);
+        self.write(change)
     }
 
     pub fn delete_item(&mut self, lens_id: &str, item_id: &str) -> Result<(), VaultError> {
-        self.keys()?;
-        self.readable_lens(lens_id)?;
-        let lens = self.active_lens(lens_id).ok_or(VaultError::UnknownLens)?;
+        let session = self.session_for(lens_id)?;
+        let lens = session
+            .active_lens(lens_id)
+            .ok_or(VaultError::UnknownLens)?;
         // A Lens stored without an items list stays exactly as stored. (Only
         // an unreadable one can be, and those are refused above.)
         if !lens.get("items").is_some_and(Value::is_array) {
@@ -1072,35 +1106,35 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             .filter(|i| id_of(i) != Some(item_id))
             .cloned()
             .collect();
-        self.write(model::set_items(&self.lists, lens_id, items))
+        let change = model::set_items(&session.lists, lens_id, items);
+        self.write(change)
     }
 
     pub fn rename_lens(&mut self, lens_id: &str, name: &str) -> Result<(), VaultError> {
-        self.keys()?;
-        self.readable_lens(lens_id)?;
-        self.active_lens(lens_id).ok_or(VaultError::UnknownLens)?;
+        let session = self.session_for(lens_id)?;
+        session
+            .active_lens(lens_id)
+            .ok_or(VaultError::UnknownLens)?;
         if js_trim(name).is_empty() {
             return Err(VaultError::EmptyName);
         }
-        self.write(model::rename_lens(&self.lists, lens_id, name))
+        let change = model::rename_lens(&session.lists, lens_id, name);
+        self.write(change)
     }
 
     pub fn forget_lens(&mut self, lens_id: &str) -> Result<(), VaultError> {
-        self.keys()?;
-        self.readable_lens(lens_id)?;
-        self.write(model::forget_lens(&self.lists, lens_id, (self.clock)()))
+        let change = model::forget_lens(&self.session_for(lens_id)?.lists, lens_id, (self.clock)());
+        self.write(change)
     }
 
     pub fn restore_lens(&mut self, lens_id: &str) -> Result<(), VaultError> {
-        self.keys()?;
-        self.readable_lens(lens_id)?;
-        self.write(model::restore_lens(&self.lists, lens_id))
+        let change = model::restore_lens(&self.session_for(lens_id)?.lists, lens_id);
+        self.write(change)
     }
 
     pub fn delete_lens_forever(&mut self, lens_id: &str) -> Result<(), VaultError> {
-        self.keys()?;
-        self.readable_lens(lens_id)?;
-        self.write(model::delete_lens_forever(&self.lists, lens_id))
+        let change = model::delete_lens_forever(&self.session_for(lens_id)?.lists, lens_id);
+        self.write(change)
     }
 
     // ---- set-aside ------------------------------------------------------------------
