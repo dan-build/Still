@@ -104,3 +104,11 @@ it('gives every text field a border that passes 3:1', () => {
   }
 })
 
+// Components draw with the design tokens only (globals.css), so both themes
+// stay in one place: no hex or rgb() colours in their classes.
+it.fails('keeps raw colours out of the components', () => {
+  for (const [file, source] of Object.entries(sources)) {
+    expect(source, file).not.toMatch(/#[0-9a-f]{6}\b|rgb\(/i)
+  }
+})
+
