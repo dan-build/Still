@@ -63,7 +63,7 @@ export function SegmentedControl<T extends string>({ label, options, value, onCh
                 'focus-ring inline-flex h-7 items-center justify-center gap-1.5 rounded-6 text-13 font-medium',
                 'transition-[background-color,color] duration-150',
                 checked
-                  ? 'bg-raised text-g1 shadow-[0_0_0_1px_rgb(0_0_0/0.08),0_1px_2px_rgb(0_0_0/0.08)] dark:shadow-[0_0_0_1px_rgb(0_0_0/0.5),inset_0_1px_0_rgb(255_255_255/0.06)]'
+                  ? 'bg-raised text-g1 shadow-[var(--shadow-control)]'
                   : 'text-g3 hover:text-g1',
               ].join(' ')}
             >

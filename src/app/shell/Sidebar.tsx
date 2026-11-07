@@ -33,7 +33,7 @@ export default function Sidebar({ lenses, selected, archiveCount, onSelect, onNe
      
       // A faint vertical wash stands in for macOS vibrancy. Plain CSS: Tailwind's
       // gradients interpolate in oklab, which Safari 15 can't parse.
-      className="flex w-56 shrink-0 flex-col border-r border-hairline bg-sidebar px-2 pb-2 [background-image:linear-gradient(180deg,#f6f7f7,var(--sidebar)_60%)] dark:[background-image:linear-gradient(180deg,#16181a,var(--sidebar)_60%)]"
+      className="flex w-56 shrink-0 flex-col border-r border-hairline bg-sidebar px-2 pb-2 [background-image:linear-gradient(180deg,var(--sidebar-top),var(--sidebar)_60%)]"
     >
       {/* The window's title strip: the traffic lights sit here, and it drags the window. */}
       <div data-tauri-drag-region className="flex h-[52px] shrink-0 items-center justify-end px-2 text-g5">
