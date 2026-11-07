@@ -46,16 +46,18 @@ function Toast({ message, detail, tone = 'info', countdown }: ToastMessage) {
   return (
     <div
       className={[
-        'relative flex h-9 items-center gap-2 overflow-hidden whitespace-nowrap rounded-8 bg-raised pr-3.5 pl-3 text-13 font-medium text-g1',
+        // One 36px line for short messages; longer ones wrap within the window.
+        'relative flex min-h-9 max-w-[min(480px,calc(100vw-32px))] items-start gap-2 overflow-hidden rounded-8 bg-raised py-2 pr-3.5 pl-3 text-13 leading-5 font-medium text-g1',
         'shadow-[0_0_0_1px_rgb(16_24_28/0.08),0_16px_40px_rgb(16_24_28/0.12),0_2px_6px_rgb(16_24_28/0.06)]',
         'dark:shadow-[0_0_0_1px_rgb(0_0_0/0.6),inset_0_1px_0_rgb(255_255_255/0.06),0_16px_40px_rgb(0_0_0/0.45),0_2px_6px_rgb(0_0_0/0.3)]',
         'transition-[opacity,translate] duration-200 ease-out-still',
         shown ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0 motion-reduce:translate-y-0',
       ].join(' ')}
     >
-      <Icon name={tone === 'error' ? 'warning' : 'check'} className={tone === 'error' ? 'text-danger' : 'text-accent'} />
+      {/* Centred on the first line of text (20px). */}
+      <Icon name={tone === 'error' ? 'warning' : 'check'} className={`mt-0.5 ${tone === 'error' ? 'text-danger' : 'text-accent'}`} />
       <span>{message}</span>
-      {detail && <span className="font-normal text-g4 tabular-nums">{detail}</span>}
+      {detail && <span className="shrink-0 font-normal whitespace-nowrap text-g4 tabular-nums">{detail}</span>}
       {countdown && (
         <span
           aria-hidden

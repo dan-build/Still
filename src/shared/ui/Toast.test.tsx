@@ -14,7 +14,7 @@ const box = (text: string) => screen.getByText(text).parentElement!
 describe('Toaster', () => {
   // A toast was one fixed-height line that hid overflow, so a long message
   // was cut off mid-sentence.
-  it.fails('lets a long message wrap within a maximum width instead of cutting it off', () => {
+  it('lets a long message wrap within a maximum width instead of cutting it off', () => {
     render(<Toaster toast={{ id: 1, message: LONG, tone: 'error' }} />)
     const classes = box(LONG).className.split(/\s+/)
     expect(classes).not.toContain('whitespace-nowrap')
