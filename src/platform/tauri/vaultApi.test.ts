@@ -20,6 +20,7 @@ describe('the vault commands', () => {
     await api.unlock('  pw  ')
     await api.lock()
     await api.setAside()
+    await api.changePassword('old pw', ' new pw ', true)
     await api.createLens('Work')
     await api.renameLens('a', 'Home')
     await api.forgetLens('a')
@@ -37,6 +38,7 @@ describe('the vault commands', () => {
       ['vault_unlock', { password: '  pw  ' }],
       ['vault_lock', undefined],
       ['vault_set_aside', undefined],
+      ['vault_change_password', { current: 'old pw', new: ' new pw ', stronger: true }],
       ['lens_create', { name: 'Work' }],
       ['lens_rename', { lensId: 'a', name: 'Home' }],
       ['lens_forget', { lensId: 'a' }],

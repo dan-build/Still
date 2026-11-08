@@ -22,6 +22,17 @@ function setup() {
 }
 
 describe('Menu', () => {
+  // At the bottom of the window (the sidebar's vault menu), it opens upward.
+  it('opens below its button, or above when asked', () => {
+    const { trigger } = setup()
+    fireEvent.click(trigger)
+    expect(screen.getByRole('menu').className).toContain('top-full')
+    cleanup()
+    render(<Menu label="Vault actions" side="above" items={[{ label: 'Change', onSelect: vi.fn() }]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Vault actions' }))
+    expect(screen.getByRole('menu').className).toContain('bottom-full')
+  })
+
   it('opens a named menu from its button and focuses the first item', () => {
     const { trigger } = setup()
     expect(trigger.getAttribute('aria-haspopup')).toBe('menu')

@@ -47,6 +47,12 @@ export class FakeVault implements VaultApi {
   unreadableData = false
   /** With unreadableData: Rust found a kept copy to put back. */
   canRestore = false
+  /** What a password change reports as still opening with the old password. */
+  olderCopies: string[] = []
+  /** The settings of each password change, in order. */
+  strengths: ('standard' | 'stronger')[] = []
+  /** Refuse a password change as an old-format vault (needs-upgrade). */
+  oldFormat = false
   lenses: FakeLens[] = []
   bin: FakeLens[] = []
   unlocked = false
@@ -181,6 +187,20 @@ export class FakeVault implements VaultApi {
     this.lenses = []
     this.bin = []
     return prefix
+  }
+
+  async changePassword(current: string, next: string, stronger: boolean) {
+    this.calls.push('changePassword')
+    if (!this.unlocked) throw new VaultApiError('locked')
+    // As in Rust: the new password's rules first, then the vault's.
+    if (next.trim() === '') throw new VaultApiError('password-blank')
+    if (next.length < 8) throw new VaultApiError('password-too-short')
+    if (this.oldFormat) throw new VaultApiError('needs-upgrade')
+    if (current !== this.password) throw new VaultApiError('crypto-wrong-password')
+    if (this.failChanges) throw new VaultApiError('write-failed')
+    this.password = next
+    this.strengths.push(stronger ? 'stronger' : 'standard')
+    return { state: this.now(), olderCopies: this.olderCopies }
   }
 
   async createLens(name: string) {
