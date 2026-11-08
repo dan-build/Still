@@ -303,7 +303,10 @@ mod tests {
         // Putting it back keeps the damaged file, and the vault opens as it
         // was one save earlier.
         let damaged = std::fs::read(dir.0.join("vault").join("vault.json")).unwrap();
-        assert_eq!(crate::startup::restore_kept(&store)["notice"], "restored");
+        assert_eq!(
+            crate::startup::restore_kept(&store).to_json()["notice"],
+            "restored"
+        );
         assert_eq!(
             std::fs::read(dir.0.join("vault").join("vault-unreadable.json")).unwrap(),
             damaged

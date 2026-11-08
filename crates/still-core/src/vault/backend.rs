@@ -646,10 +646,9 @@ pub struct Backend<S: Storage, K: Keys> {
 /// What an unlock has to tell the user, once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Notice {
-    /// The vault was converted to v2, and the v1 file kept as `kept`. The
-    /// page keeps `marker` (localStorage `still-converted-v2`), so an old v1
-    /// copy asks before it opens.
-    Upgraded { marker: String, kept: String },
+    /// The vault was converted to v2, and the v1 file kept as `kept`. (The
+    /// storage records the conversion, so an old v1 copy asks before it opens.)
+    Upgraded { kept: String },
     /// Converting failed; the vault is unchanged (v1), and converting is
     /// tried again only after a restart (a new backend).
     UpgradeFailed,
@@ -891,9 +890,8 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             None => None,
             Some(Ok((file, body))) => match self.storage.convert_to_v2(&file, &expected) {
                 Ok(kept) => {
-                    let marker = conversion_marker(&file, (self.clock)());
                     format = Format::V2 { file, raw: body };
-                    Some(Notice::Upgraded { marker, kept })
+                    Some(Notice::Upgraded { kept })
                 }
                 Err(_) => Some(Notice::UpgradeFailed),
             },
@@ -1383,16 +1381,6 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         self.generation += 1;
         Ok(prefix)
     }
-}
-
-/// The conversion marker: when, and a fingerprint of the converted file.
-fn conversion_marker(file: &v2::File, now_ms: i64) -> String {
-    let fingerprint: String = sodium::sha256(file.to_json().as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    serde_json::json!({ "convertedAt": time::to_iso(now_ms), "fingerprint": fingerprint })
-        .to_string()
 }
 
 /// 128 random bits in hex. v0.1.0's ids (`Date.now().toString(36)`) are kept as they are.

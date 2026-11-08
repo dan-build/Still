@@ -142,13 +142,11 @@ pub async fn vault_unlock(
     Ok(match backend.finish_unlock(plan, opened) {
         Ok(()) => {
             let mut unlocked = json!({ "ok": true, "state": state(&backend) });
-            // The first unlock after updating converts the vault to v2. The
-            // page keeps the marker (localStorage still-converted-v2), so an
-            // old v1 copy put back later asks before it opens.
+            // The first unlock after updating converts the vault to v2 (the
+            // store records it, so an old v1 copy put back later asks first).
             match backend.take_notice() {
-                Some(Notice::Upgraded { marker, kept }) => {
+                Some(Notice::Upgraded { kept }) => {
                     unlocked["notice"] = json!("upgraded");
-                    unlocked["marker"] = json!(marker);
                     unlocked["kept"] = json!(kept);
                 }
                 Some(Notice::UpgradeFailed) => unlocked["notice"] = json!("upgrade-failed"),
@@ -194,8 +192,8 @@ pub fn item_copy(
 
 /// Opens the vault file, or moves an older version's vault into it once (see
 /// startup.rs). The page sends what it found in localStorage: the values an
-/// older version kept, and the marker. It gets back {kind, notice?, movedAt?,
-/// marker?}, and writes `marker` to localStorage when there is one.
+/// older version kept, and the two markers versions up to 0.8 kept there
+/// (taken into the record once). It gets back {kind, notice?, movedAt?, ...}.
 #[tauri::command]
 pub fn startup_open(
     vault: State<'_, Vault>,
@@ -232,7 +230,7 @@ pub fn startup_open_old_format(vault: State<'_, Vault>, upgrade: bool) -> Value 
 /// newest copy Still kept (the unreadable file is kept too).
 #[tauri::command]
 pub fn startup_restore_v1(store: State<'_, Arc<AppStore>>) -> Value {
-    startup::restore_kept(&store)
+    startup::restore_kept(&store).to_json()
 }
 
 /// The user's choice when the moved vault file has gone: bring back the

@@ -20,6 +20,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use still_core::sodium;
 use still_core::v2;
+use still_core::vault::{backend, time};
+
+use crate::record::{self, hex, Converted, Record};
 
 pub const FILE_NAME: &str = "vault.json";
 pub const BACKUP_NAME: &str = "vault.json.bak";
@@ -114,6 +117,22 @@ impl Store {
 
     fn backup(&self) -> PathBuf {
         self.dir.join(BACKUP_NAME)
+    }
+
+    /// What Still recorded about this vault (record.rs), if `state.json`
+    /// is there and readable.
+    pub fn record(&self) -> Option<Record> {
+        Record::parse(&fs::read(self.dir.join(record::FILE_NAME)).ok()?)
+    }
+
+    /// Writes `state.json`, atomically.
+    pub fn set_record(&self, record: &Record) -> Result<(), StoreError> {
+        create_private_dir(&self.dir)?;
+        write_atomically(
+            &self.dir,
+            &self.dir.join(record::FILE_NAME),
+            &record.to_bytes(),
+        )
     }
 
     pub fn load(&self) -> Loaded {
@@ -325,10 +344,20 @@ impl Store {
         let kept = self.keep("vault-v1", &original)?;
         self.save_bytes(file.to_json().as_bytes())?;
         match self.load() {
-            Loaded::V2(stored) if *stored == *file => Ok(kept
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default()),
+            Loaded::V2(stored) if *stored == *file => {
+                // So a v1 copy put back later asks before it opens. Losing
+                // this (a failed write) loses only that question.
+                let mut record = self.record().unwrap_or_default();
+                record.converted = Some(Converted {
+                    converted_at: time::to_iso(backend::system_clock()()),
+                    fingerprint: hex(&sodium::sha256(file.to_json().as_bytes())),
+                });
+                let _ = self.set_record(&record);
+                Ok(kept
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default())
+            }
             _ => {
                 write_atomically(&self.dir, &self.file(), &original)?;
                 Err(StoreError::VerifyFailed)
@@ -961,6 +990,52 @@ mod tests {
                 .mode();
             assert_eq!(mode & 0o777, 0o600);
         }
+    }
+
+    // The conversion is recorded in state.json (keeping what's there), so a
+    // v1 copy put back later asks first. The record is private, and never
+    // one of the kept copies.
+    #[test]
+    fn records_the_conversion_beside_the_vault() {
+        let tmp = TempDir::new();
+        let (store, _) = real_v1(&tmp);
+        let moved = record::Moved {
+            moved_at: "2026-10-05T10:00:00.000Z".into(),
+            fingerprint: "ab".into(),
+        };
+        store
+            .set_record(&Record {
+                moved: Some(moved.clone()),
+                converted: None,
+            })
+            .unwrap();
+        let file = a_v2_file();
+        store
+            .convert_to_v2(&file, &expected(&real_vault()))
+            .unwrap();
+
+        let recorded = store.record().unwrap();
+        assert_eq!(recorded.moved, Some(moved));
+        let converted = recorded.converted.unwrap();
+        assert_eq!(
+            converted.fingerprint,
+            hex(&sodium::sha256(file.to_json().as_bytes()))
+        );
+        assert!(converted.converted_at.ends_with('Z'));
+        assert_eq!(store.kept_copies(), ["vault-v1.json"]);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(store.dir.join(record::FILE_NAME))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        assert_eq!(
+            store.trash_kept(record::FILE_NAME),
+            Err(StoreError::Unreadable)
+        );
     }
 
     // The last step of a conversion reads the v2 file back. If it doesn't

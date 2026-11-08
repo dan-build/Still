@@ -8,6 +8,7 @@ mod clipboard;
 mod commands;
 #[cfg(target_os = "macos")]
 mod macos_lock;
+mod record;
 mod startup;
 mod store;
 mod vault;
