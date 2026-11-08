@@ -13,12 +13,14 @@ const startup = vi.hoisted(() => ({
   move: vi.fn<() => Promise<Startup>>(),
   oldFormat: vi.fn<() => Promise<Startup>>(),
   restore: vi.fn<() => Promise<Startup>>(),
+  replaced: vi.fn<() => Promise<Startup>>(),
 }))
 vi.mock('@/platform/tauri/startup', () => ({
   openVault: startup.open,
   restoreOldCopy: startup.move,
   openOldFormat: startup.oldFormat,
   restoreKeptCopy: startup.restore,
+  openReplaced: startup.replaced,
 }))
 const restore = vi.hoisted(() => ({
   choose: vi.fn(),
@@ -30,8 +32,14 @@ vi.mock('@/platform/tauri/vaultApi', async (importOriginal) => ({
   createTauriVaultApi: () => ({ restoreChoose: restore.choose, restoreCheck: restore.check, restoreConfirm: restore.confirm }),
 }))
 vi.mock('./App', () => ({
-  default: ({ notice, onDamaged }: { notice?: string; onDamaged?: () => void }) =>
-    createElement('div', null, createElement('p', null, `the app${notice ? ` (${notice})` : ''}`), createElement('button', { onClick: onDamaged }, 'found damage')),
+  default: ({ notice, onDamaged, onReplaced }: { notice?: string; onDamaged?: () => void; onReplaced?: () => void }) =>
+    createElement(
+      'div',
+      null,
+      createElement('p', null, `the app${notice ? ` (${notice})` : ''}`),
+      createElement('button', { onClick: onDamaged }, 'found damage'),
+      createElement('button', { onClick: onReplaced }, 'found another file'),
+    ),
 }))
 
 import StillApp from './StillApp'
@@ -42,6 +50,7 @@ afterEach(() => {
   startup.move.mockReset()
   startup.oldFormat.mockReset()
   startup.restore.mockReset()
+  startup.replaced.mockReset()
   restore.choose.mockReset()
   restore.check.mockReset()
   restore.confirm.mockReset()
@@ -122,7 +131,7 @@ describe('start-up screens', () => {
     expect(screen.getByRole('button', { name: 'Open and upgrade it' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Open anyway' }))
     await screen.findByText('the app')
-    expect(startup.oldFormat).toHaveBeenCalledWith(expect.anything(), false)
+    expect(startup.oldFormat).toHaveBeenCalledWith(false)
   })
 
   it('can open and upgrade an old-format vault instead', async () => {
@@ -131,7 +140,45 @@ describe('start-up screens', () => {
     render(createElement(StillApp))
     fireEvent.click(await screen.findByRole('button', { name: 'Open and upgrade it' }))
     await screen.findByText('the app')
-    expect(startup.oldFormat).toHaveBeenCalledWith(expect.anything(), true)
+    expect(startup.oldFormat).toHaveBeenCalledWith(true)
+  })
+
+  it('asks before opening a vault file Still did not save last, and opens it only when asked', async () => {
+    startup.open.mockResolvedValue({ kind: 'replaced', samePassword: true })
+    startup.replaced.mockResolvedValue({ kind: 'ready' })
+    render(createElement(StillApp))
+    await screen.findByText("This isn't the vault file Still saved last")
+    expect(screen.getByText(/an older copy put back/)).toBeTruthy()
+    expect(screen.queryByText(/before you changed your master password/)).toBeNull()
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Restore from a backup…', 'Open it'])
+    expect(startup.replaced).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open it' }))
+    await screen.findByText('the app')
+    expect(startup.replaced).toHaveBeenCalledOnce()
+  })
+
+  it('says when that file may be from before a password change', async () => {
+    startup.open.mockResolvedValue({ kind: 'replaced', samePassword: false })
+    render(createElement(StillApp))
+    await screen.findByText(/before you changed your master password, and your old password may open it/)
+  })
+
+  it('can restore a backup over a vault file Still did not save last', async () => {
+    startup.open.mockResolvedValue({ kind: 'replaced', samePassword: false })
+    restore.choose.mockResolvedValue({ name: 'still-backup.json' })
+    render(createElement(StillApp))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore from a backup…' }))
+    await screen.findByText(/still-backup\.json/)
+    expect(startup.replaced).not.toHaveBeenCalled()
+  })
+
+  it('goes back to the start-up screens when unlocking finds another vault file', async () => {
+    startup.open.mockResolvedValueOnce({ kind: 'ready' }).mockResolvedValueOnce({ kind: 'replaced', samePassword: true })
+    render(createElement(StillApp))
+    fireEvent.click(await screen.findByRole('button', { name: 'found another file' }))
+    await screen.findByText("This isn't the vault file Still saved last")
+    expect(startup.open).toHaveBeenCalledTimes(2)
   })
 
   it('offers the kept copy for an unreadable file only when there is one, and only when asked', async () => {

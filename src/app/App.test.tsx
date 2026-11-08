@@ -187,6 +187,16 @@ describe('the upgrade to the new vault format', () => {
     await waitFor(() => expect(onDamaged).toHaveBeenCalledOnce())
   })
 
+  it('hands an unlock that finds another vault file to the start-up screens', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    vault.replacedFile = true
+    const onReplaced = vi.fn()
+    render(createElement(StillHome, { onReplaced }))
+    await enterPassword()
+    await waitFor(() => expect(onReplaced).toHaveBeenCalledOnce())
+    expect(screen.queryByText('Alpha')).toBeNull()
+  })
+
   it('says damaged data could not be read when there is no kept copy', async () => {
     const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
     vault.unreadableData = true

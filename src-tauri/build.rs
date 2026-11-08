@@ -11,6 +11,7 @@ const COMMANDS: &[&str] = &[
     "startup_use_old_copy",
     "startup_open_old_format",
     "startup_restore_v1",
+    "startup_open_replaced",
     "vault_state",
     "vault_set_aside",
     "vault_change_password",

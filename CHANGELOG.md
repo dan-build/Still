@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-08
+
+### Added
+
+- **Still notices when its vault file was replaced.** If the file in place isn't the one Still saved last (an older copy put back from a backup or another disk, or a changed one), Still asks before opening it, at start-up or when you unlock. It also says when that file has different password settings, so it may be from before you changed your master password and your old password may open it. You can open it anyway or restore from a backup instead. Nothing is deleted either way.
+
+### Changed
+
+- **Still keeps its notes about your vault next to it, in `state.json`,** rather than in the app's web storage: when the vault moved out of web storage, when it was upgraded to the new format, and which file it saved last. The file holds only dates and fingerprints, no keys or secrets. The first start of this version takes the existing notes over, and records the vault file as it finds it.
+
 ## [0.8.0] - 2026-11-08
 
 ### Added

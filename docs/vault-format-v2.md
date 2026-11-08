@@ -165,7 +165,7 @@ After conversion, v1 copies exist in several places:
 
 An attacker who can write files could **edit** one of these (swap values, change a `deletedAt`) and put it in as `vault.json`. In v1 that edit can't be detected. Converting it would even seal the forgery into an authenticated v2 vault.
 
-So conversion records a **marker**, `still-converted-v2` in localStorage next to `still-moved-to-file`, holding the date and a fingerprint of the converted vault. Like the move marker, the page writes it and Rust decides. **If `vault.json` is v1 and the marker exists,** Still neither opens it silently nor converts it. It shows: "This vault is in the old format, but it was upgraded on <date>. Opening it uses an older or changed copy." Only an explicit **Open anyway** opens it.
+So conversion records a **marker**, `still-converted-v2` in localStorage next to `still-moved-to-file`, holding the date and a fingerprint of the converted vault. (Since v0.9.0 both markers live in `state.json` next to the vault, which Rust keeps; the first start takes them over from localStorage.) Like the move marker, the page writes it and Rust decides. **If `vault.json` is v1 and the marker exists,** Still neither opens it silently nor converts it. It shows: "This vault is in the old format, but it was upgraded on <date>. Opening it uses an older or changed copy." Only an explicit **Open anyway** opens it.
 
 This stops attackers who can only touch files, such as through a synced folder or a restored backup. Someone with full access to the user's account can delete the marker, which SECURITY.md will say. Anything changed in a v1 vault *before* it was converted is kept as it was. Existing vaults keep opening, so the owner's rule holds: the guard adds a question, never a refusal.
 

@@ -4,7 +4,7 @@
 
 No account, no sync, no telemetry. Still never connects to the internet.
 
-> **Early pre-release (v0.8.0).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
+> **Early pre-release (v0.9.0).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
 
 ![Still in dark mode: the sidebar lists the Lenses, and the selected Lens shows its secrets, one revealed](docs/screenshot.png)
 
@@ -38,6 +38,7 @@ Anyone who can read your Mac's files sees, in the vault file, only the Argon2id 
 **Still is careful with your vault file.**
 - A save happens completely or not at all, even if your Mac crashes or loses power, and the previous version is kept as a backup.
 - If the file can't be read, Still writes nothing over it, and offers to put back the newest copy it kept.
+- If another file is put in its place, such as an older copy, Still asks before opening it.
 - When the vault format changes, the old file is kept beside the new one.
 - Only one copy of Still uses the vault at a time.
 
@@ -54,7 +55,7 @@ Still is a macOS app. The current release is a pre-release: a universal build th
 
 **Backups:** choose **Save a backup…** from the vault menu next to Lock. A backup is your vault file itself, fully encrypted, so it's safe on a USB stick or in cloud storage, and it opens with the master password your vault had when you saved it. **Restore from a backup…** checks the backup's password and shows what's in it before replacing anything, and keeps your current vault as a copy.
 
-**Where your vault lives:** `~/Library/Application Support/com.still.app/vault.json`, with the previous version kept as `vault.json.bak`. Deleting them deletes your vault. To back it up by hand instead, quit Still and copy both files somewhere safe.
+**Where your vault lives:** `~/Library/Application Support/com.still.app/vault.json`, with the previous version kept as `vault.json.bak`. Deleting them deletes your vault. To back it up by hand instead, quit Still and copy both files somewhere safe; if you put such a copy back later, Still asks before opening it, since it isn't the file Still saved last.
 
 There are no Windows or Linux downloads yet. Still's tests pass on both, but it hasn't been tested there as an installed app.
 

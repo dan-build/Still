@@ -8,6 +8,7 @@ mod clipboard;
 mod commands;
 #[cfg(target_os = "macos")]
 mod macos_lock;
+mod record;
 mod startup;
 mod store;
 mod vault;
@@ -43,6 +44,7 @@ pub fn run() {
             commands::startup_use_old_copy,
             commands::startup_open_old_format,
             commands::startup_restore_v1,
+            commands::startup_open_replaced,
             commands::vault_state,
             commands::vault_set_aside,
             commands::vault_change_password,

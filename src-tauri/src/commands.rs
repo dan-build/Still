@@ -15,12 +15,12 @@ use tauri::{AppHandle, Manager, State};
 use crate::autolock::AutoLock;
 use crate::clipboard::ClipboardGuard;
 use crate::startup;
-use crate::store::{AppStore, Values};
+use crate::store::{AppStore, FileCheck, Values};
 use crate::vault::{self, state, ChosenBackup, CommandError, PendingRestore, Revealed, Vault};
 
 /// Every command, as named in build.rs and the capability.
 #[cfg(test)]
-pub const ALL: [&str; 28] = [
+pub const ALL: [&str; 29] = [
     "vault_create",
     "vault_unlock",
     "vault_lock",
@@ -30,6 +30,7 @@ pub const ALL: [&str; 28] = [
     "startup_use_old_copy",
     "startup_open_old_format",
     "startup_restore_v1",
+    "startup_open_replaced",
     "vault_state",
     "vault_set_aside",
     "vault_change_password",
@@ -110,7 +111,9 @@ pub async fn vault_change_password(
 }
 
 /// Unlocks the vault: {ok: true, state} or {ok: false, reason, canRestore?}. Argon2id
-/// runs outside the backend's lock; a Lock meanwhile wins.
+/// runs outside the backend's lock; a Lock meanwhile wins. A vault file that
+/// isn't the one Still saved last is refused first (`file-replaced`): Still
+/// can sit locked for days, and the page then asks as at start-up.
 #[tauri::command]
 pub async fn vault_unlock(
     vault: State<'_, Vault>,
@@ -119,6 +122,9 @@ pub async fn vault_unlock(
     password: String,
 ) -> Result<Value, CommandError> {
     let password = SecretText::from(password);
+    if !store.already_open && matches!(store.store().check_file(), FileCheck::Replaced { .. }) {
+        return Ok(json!({ "ok": false, "reason": "file-replaced" }));
+    }
     // Damaged data may come with a kept copy to put back (startup_restore_v1).
     let failed = |reason: UnlockFailure| {
         let mut result = json!({ "ok": false, "reason": reason.code() });
@@ -142,13 +148,11 @@ pub async fn vault_unlock(
     Ok(match backend.finish_unlock(plan, opened) {
         Ok(()) => {
             let mut unlocked = json!({ "ok": true, "state": state(&backend) });
-            // The first unlock after updating converts the vault to v2. The
-            // page keeps the marker (localStorage still-converted-v2), so an
-            // old v1 copy put back later asks before it opens.
+            // The first unlock after updating converts the vault to v2 (the
+            // store records it, so an old v1 copy put back later asks first).
             match backend.take_notice() {
-                Some(Notice::Upgraded { marker, kept }) => {
+                Some(Notice::Upgraded { kept }) => {
                     unlocked["notice"] = json!("upgraded");
-                    unlocked["marker"] = json!(marker);
                     unlocked["kept"] = json!(kept);
                 }
                 Some(Notice::UpgradeFailed) => unlocked["notice"] = json!("upgrade-failed"),
@@ -194,8 +198,8 @@ pub fn item_copy(
 
 /// Opens the vault file, or moves an older version's vault into it once (see
 /// startup.rs). The page sends what it found in localStorage: the values an
-/// older version kept, and the marker. It gets back {kind, notice?, movedAt?,
-/// marker?}, and writes `marker` to localStorage when there is one.
+/// older version kept, and the two markers versions up to 0.8 kept there
+/// (taken into the record once). It gets back {kind, notice?, movedAt?, ...}.
 #[tauri::command]
 pub fn startup_open(
     vault: State<'_, Vault>,
@@ -232,7 +236,14 @@ pub fn startup_open_old_format(vault: State<'_, Vault>, upgrade: bool) -> Value 
 /// newest copy Still kept (the unreadable file is kept too).
 #[tauri::command]
 pub fn startup_restore_v1(store: State<'_, Arc<AppStore>>) -> Value {
-    startup::restore_kept(&store)
+    startup::restore_kept(&store).to_json()
+}
+
+/// The user's choice when the vault file isn't the one Still saved last (an
+/// older copy put back, say): open it, making it the vault from now on.
+#[tauri::command]
+pub fn startup_open_replaced(store: State<'_, Arc<AppStore>>) -> Value {
+    startup::accept_replaced(&store).to_json()
 }
 
 /// The user's choice when the moved vault file has gone: bring back the
@@ -475,11 +486,19 @@ pub async fn backup_save(
 
 /// Whether a backup may replace the vault now: while it's unlocked, or when
 /// there's no vault that could be unlocked (none, orphaned data, or a file
-/// that can't be read). A locked vault must be unlocked first.
-fn may_restore(vault: &Vault) -> Result<(), CommandError> {
+/// that can't be read). A locked vault must be unlocked first, unless its
+/// file isn't the one Still saved last (an older copy put back, which may
+/// not open with the current password); that file is kept too.
+fn may_restore(vault: &Vault, store: &AppStore) -> Result<(), CommandError> {
     let backend = vault.backend();
     match backend.status() {
         Status::Unlocked | Status::Empty | Status::Orphaned | Status::Unreadable => Ok(()),
+        Status::Locked
+            if !store.already_open
+                && matches!(store.store().check_file(), FileCheck::Replaced { .. }) =>
+        {
+            Ok(())
+        }
         Status::Locked => Err(CommandError("unlock-first")),
     }
 }
@@ -491,9 +510,10 @@ fn may_restore(vault: &Vault) -> Result<(), CommandError> {
 pub async fn restore_choose(
     app: AppHandle,
     vault: State<'_, Vault>,
+    store: State<'_, Arc<AppStore>>,
     pending: State<'_, PendingRestore>,
 ) -> Result<Value, CommandError> {
-    may_restore(&vault)?;
+    may_restore(&vault, &store)?;
     let Some(chosen) = dialog(&app).pick_file().await else {
         return Ok(json!({ "name": null }));
     };
@@ -556,7 +576,7 @@ pub fn restore_confirm(
     pending: State<'_, PendingRestore>,
     clipboard: State<'_, ClipboardGuard>,
 ) -> Result<Value, CommandError> {
-    may_restore(&vault)?;
+    may_restore(&vault, &store)?;
     let mut chosen = pending.get();
     let file = match chosen.as_ref() {
         Some(c) if c.checked => c.file.clone(),
@@ -614,6 +634,42 @@ pub fn kept_trash(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // A backup never replaces a locked vault, unless its file isn't the one
+    // Still saved last: an older copy put back may not open with the
+    // current password, and restoring keeps it too.
+    #[test]
+    fn restores_over_a_locked_vault_only_when_its_file_was_replaced() {
+        let mut id = [0u8; 8];
+        still_core::sodium::random_bytes(&mut id);
+        let hex: String = id.iter().map(|b| format!("{b:02x}")).collect();
+        let dir = std::env::temp_dir().join(format!("still-commands-test-{hex}"));
+        let store = Arc::new(AppStore::open(dir.clone()));
+        let values: Values =
+            serde_json::from_str(include_str!("../../fixtures/vault-v1-real/vault.json")).unwrap();
+        store.store().set_record(&Default::default()).unwrap();
+        store.store().import_legacy(values).unwrap();
+        let vault = Vault::new(vault::FileStorage(store.clone()));
+        assert_eq!(vault.backend().status(), Status::Locked);
+        assert_eq!(
+            may_restore(&vault, &store),
+            Err(CommandError("unlock-first"))
+        );
+
+        // Another copy of the same vault in its place (one value differs).
+        let file = dir.join("vault.json");
+        let older = std::fs::read_to_string(&file).unwrap().replace(
+            "\"still-has-pin\": \"false\"",
+            "\"still-has-pin\": \"true\"",
+        );
+        std::fs::write(&file, older).unwrap();
+        assert_eq!(vault.backend().status(), Status::Locked);
+        assert_eq!(may_restore(&vault, &store), Ok(()));
+
+        drop(vault);
+        drop(store);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     // The UI never sends these; a page that does gets a code, not a change.
     #[test]

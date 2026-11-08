@@ -71,6 +71,8 @@ export class FakeVault implements VaultApi {
   failState = false
   /** What the next successful unlock tells the user (the conversion to v2). */
   unlockNotice: 'upgraded' | 'upgrade-failed' | undefined
+  /** Another vault file was put in place since start-up: unlock refuses with file-replaced. */
+  replacedFile = false
   /** The status while locked is 'unreadable' (the vault file became unreadable). */
   unreadableFile = false
   /** The command of every call, in order. */
@@ -171,6 +173,7 @@ export class FakeVault implements VaultApi {
   async unlock(password: string) {
     this.calls.push('unlock')
     if (this.password === null) return { ok: false, reason: 'no-vault' } as const
+    if (this.replacedFile) return { ok: false, reason: 'file-replaced' } as const
     if (this.unreadableData) return { ok: false, reason: 'unreadable-data', ...(this.canRestore ? { canRestore: true } : {}) } as const
     if (password !== this.password) return { ok: false, reason: 'wrong-password' } as const
     this.unlocked = true
