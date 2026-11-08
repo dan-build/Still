@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-07
+
+### Added
+
+- **Change your master password.** Open the vault menu next to Lock and choose "Change master password…". Still checks your current password, then locks the same vault with the new one; your Lenses and secrets don't change. A wrong current password, a failed save or a lock part-way through leaves the vault as it was, on the old password.
+- **Stronger settings for your password,** chosen when you change it. "Stronger" makes unlocking, and every guess at your password, take about twice as long, using no more memory than before.
+
+### Changed
+
+- **The everyday backup follows the new password.** After a change, `vault.json.bak` is a copy of the new file, so it no longer opens with the old password. Older copies Still kept aside still do; Still lists them after the change, and never deletes them.
+
 ## [0.6.3] - 2026-11-07
 
 ### Changed
@@ -166,7 +177,8 @@ First public pre-release, for macOS.
 - An Archive (recycle bin) that keeps forgotten Lenses for 7 days.
 - Offline by design: no accounts, servers or telemetry.
 
-[Unreleased]: https://github.com/dan-build/Still/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/dan-build/Still/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/dan-build/Still/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/dan-build/Still/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/dan-build/Still/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/dan-build/Still/compare/v0.6.0...v0.6.1
