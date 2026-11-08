@@ -3,6 +3,7 @@
 //! fixtures/vault-behaviour-v1 to prove it.
 
 pub mod backend;
+pub mod backup;
 pub mod format;
 pub mod json;
 pub mod model;
