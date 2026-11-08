@@ -89,6 +89,14 @@ pub trait Storage {
     /// value in `expected` is still exactly as it was read before the
     /// password step (a missing one still missing). On any failure the v1
     /// vault is left as it was. Returns the kept copy's name.
+    /// Replaces the stored v2 vault with this one, the same vault under a new
+    /// password, in one all-or-nothing write that is read back, and makes
+    /// the backup a copy of it too, so the everyday backup doesn't keep the
+    /// old password. Returns the names of other kept copies, which may still
+    /// open with the old password (they are never deleted).
+    fn write_rekeyed_v2(&mut self, _file: &v2::File) -> Result<Vec<String>, StorageError> {
+        Err(StorageError)
+    }
     fn convert_to_v2(
         &mut self,
         _file: &v2::File,
@@ -124,6 +132,17 @@ pub trait Keys: Sized {
     /// This vault, opened from v1, as a new v2 file holding these lists,
     /// checked to open to the same key and lists before it's returned.
     fn convert_v2(&self, password: &SecretText, body: &v2::Body) -> Result<v2::File, SessionError>;
+    /// The same vault under a new password and settings, opened with the
+    /// current one and checked before it's returned (see Unlocked).
+    fn change_password_v2(
+        file: &v2::File,
+        current: &SecretText,
+        new: &SecretText,
+        kdf: v2::Kdf,
+        body: &v2::Body,
+    ) -> Result<(Self, v2::File), SessionError>;
+    /// Whether both hold the same app key: the same vault.
+    fn same_app_key(&self, other: &Self) -> bool;
 }
 
 impl Keys for Unlocked {
@@ -171,6 +190,18 @@ impl Keys for Unlocked {
     fn convert_v2(&self, password: &SecretText, body: &v2::Body) -> Result<v2::File, SessionError> {
         Unlocked::convert_v2(self, password, body)
     }
+    fn change_password_v2(
+        file: &v2::File,
+        current: &SecretText,
+        new: &SecretText,
+        kdf: v2::Kdf,
+        body: &v2::Body,
+    ) -> Result<(Self, v2::File), SessionError> {
+        Unlocked::change_password_v2(file, current, new, kdf, body)
+    }
+    fn same_app_key(&self, other: &Self) -> bool {
+        Unlocked::same_app_key(self, other)
+    }
 }
 
 /// Why a change, reveal or create was refused. `code()` is what the UI sees.
@@ -190,6 +221,9 @@ pub enum VaultError {
     EmptyValue,
     /// A change could not be saved; nothing changed.
     WriteFailed,
+    /// The vault is in the old format (opened as it is): it must be upgraded
+    /// before its password can be changed.
+    NeedsUpgrade,
     /// create or set-aside could not be saved; nothing changed.
     StorageFailed,
     /// The keys refused: a Lens whose key didn't open, a damaged value, or
@@ -208,6 +242,7 @@ impl VaultError {
             Self::EmptyName => "empty-name",
             Self::EmptyValue => "empty-value",
             Self::WriteFailed => "write-failed",
+            Self::NeedsUpgrade => "needs-upgrade",
             Self::StorageFailed => "storage-failed",
             Self::Crypto(SessionError::WrongPassword) => "crypto-wrong-password",
             Self::Crypto(SessionError::Corrupt) => "crypto-corrupt",
@@ -424,6 +459,50 @@ impl UnlockPlan {
                 })
             }
         }
+    }
+}
+
+/// How hard the master password is to guess: Argon2id's settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Strength {
+    /// libsodium's SENSITIVE settings (1 GiB, 4 passes), as every vault so far.
+    Standard,
+    /// The same memory with twice the passes: unlocking, and every guess,
+    /// takes about twice as long, with no more memory than Standard.
+    Stronger,
+}
+
+impl Strength {
+    fn kdf(self) -> v2::Kdf {
+        match self {
+            Self::Standard => v2::Kdf::new_sensitive(),
+            // Twice OPS_MIN is well inside OPS_MAX, so no check is needed.
+            Self::Stronger => v2::Kdf {
+                ops_limit: v2::OPS_MIN * 2,
+                ..v2::Kdf::new_sensitive()
+            },
+        }
+    }
+}
+
+/// What `prepare_change_password` read, for the password step and
+/// `finish_change_password`.
+pub struct ChangePlan {
+    generation: u64,
+    file: v2::File,
+    body: v2::Body,
+}
+
+impl ChangePlan {
+    /// The slow part: Argon2id three times (the current password, the new
+    /// one, and the check). Needs no backend.
+    pub fn change<K: Keys>(
+        &self,
+        current: &SecretText,
+        new: &SecretText,
+        strength: Strength,
+    ) -> Result<(K, v2::File), SessionError> {
+        K::change_password_v2(&self.file, current, new, strength.kdf(), &self.body)
     }
 }
 
@@ -1143,6 +1222,70 @@ impl<S: Storage, K: Keys> Backend<S, K> {
     /// removes the originals, so a new vault can be created. Nothing is
     /// deleted, and copies from an earlier set-aside are never overwritten:
     /// if the time-based prefix is taken, a number is added. Returns the prefix.
+    // ---- changing the master password -------------------------------------------
+
+    /// What a password change starts from: the vault as last saved. v2 only.
+    pub fn prepare_change_password(&self) -> Result<ChangePlan, VaultError> {
+        let session = self.session()?;
+        let Format::V2 { file, raw } = &session.format else {
+            return Err(VaultError::NeedsUpgrade);
+        };
+        Ok(ChangePlan {
+            generation: self.generation,
+            file: file.clone(),
+            body: v2::Body {
+                lenses: raw.lenses.clone(),
+                bin: raw.bin.clone(),
+            },
+        })
+    }
+
+    /// Saves the vault under its new password. Refused, with nothing written,
+    /// if the vault was locked or changed during the password step (the new
+    /// file would hold lists from before), if the new file isn't this vault,
+    /// or if the file on disk is another vault's. Returns the other kept
+    /// copies that may still open with the old password.
+    pub fn finish_change_password(
+        &mut self,
+        plan: ChangePlan,
+        changed: Result<(K, v2::File), SessionError>,
+    ) -> Result<Vec<String>, VaultError> {
+        let (keys, file) = changed.map_err(VaultError::Crypto)?;
+        let session = self.session.as_mut().ok_or(VaultError::Locked)?;
+        if plan.generation != self.generation || !keys.same_app_key(&session.keys) {
+            return Err(VaultError::WriteFailed);
+        }
+        let Format::V2 { file: current, .. } = &session.format else {
+            return Err(VaultError::NeedsUpgrade);
+        };
+        let on_disk = self.storage.v2().ok_or(VaultError::WriteFailed)?;
+        if on_disk.kdf != current.kdf || on_disk.master_key != current.master_key {
+            return Err(VaultError::WriteFailed);
+        }
+        let kept = self
+            .storage
+            .write_rekeyed_v2(&file)
+            .map_err(|_| VaultError::WriteFailed)?;
+        session.format = Format::V2 {
+            file,
+            raw: plan.body,
+        };
+        self.generation += 1;
+        Ok(kept)
+    }
+
+    /// All of a password change in one call (the password step runs here).
+    pub fn change_password(
+        &mut self,
+        current: &SecretText,
+        new: &SecretText,
+        strength: Strength,
+    ) -> Result<Vec<String>, VaultError> {
+        let plan = self.prepare_change_password()?;
+        let changed = plan.change::<K>(current, new, strength);
+        self.finish_change_password(plan, changed)
+    }
+
     pub fn set_aside(&mut self) -> Result<String, VaultError> {
         let base = format!("still-set-aside-{}-", time::to_iso((self.clock)()));
         let taken = self.storage.keys();

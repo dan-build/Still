@@ -136,6 +136,23 @@ impl Keys for FastKeys {
         file.with_body(body, &self.app)
     }
 
+    fn change_password_v2(
+        file: &v2::File,
+        current: &SecretText,
+        new: &SecretText,
+        kdf: v2::Kdf,
+        body: &v2::Body,
+    ) -> Result<(Self, v2::File), SessionError> {
+        let (keys, _) = Self::open_v2(file, current)?;
+        let key = password_key(new, &kdf.salt);
+        let changed = v2::seal_file(&keys.app, &key, kdf, body, file.migrated_from.clone());
+        Ok((keys, changed))
+    }
+
+    fn same_app_key(&self, other: &Self) -> bool {
+        self.app.same_as(&other.app)
+    }
+
     fn convert_v2(&self, password: &SecretText, body: &v2::Body) -> Result<v2::File, SessionError> {
         let kdf = v2::Kdf::new_sensitive();
         let key = password_key(password, &kdf.salt);
@@ -162,6 +179,10 @@ pub struct Disk {
     pub unreadable: bool,
     /// The v1 values each conversion kept, in order.
     pub kept_v1: Vec<BTreeMap<String, String>>,
+    /// Kept copies a password change reports as possibly opening with the old password.
+    pub kept_copies: Vec<String>,
+    /// How many password changes were written.
+    pub rekeys: usize,
     pub fail_all: bool,
     pub fail_keys: HashSet<String>,
     pub writes: Vec<Vec<String>>,
@@ -226,6 +247,17 @@ impl Storage for Memory {
 
     fn unreadable(&self) -> bool {
         self.0.borrow().unreadable
+    }
+
+    fn write_rekeyed_v2(&mut self, file: &v2::File) -> Result<Vec<String>, StorageError> {
+        let mut disk = self.0.borrow_mut();
+        if disk.fail_all || disk.fail_keys.contains("v2") || disk.v2.is_none() {
+            return Err(StorageError);
+        }
+        disk.writes.push(vec!["rekey".to_owned()]);
+        disk.v2 = Some(file.to_json());
+        disk.rekeys += 1;
+        Ok(disk.kept_copies.clone())
     }
 
     fn convert_to_v2(
