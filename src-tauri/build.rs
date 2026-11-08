@@ -22,6 +22,7 @@ const COMMANDS: &[&str] = &[
     "item_add",
     "item_update",
     "item_delete",
+    "item_restore",
     "item_reveal",
 ];
 

@@ -24,6 +24,7 @@
     "allow-item-add",
     "allow-item-update",
     "allow-item-delete",
+    "allow-item-restore",
     "allow-item-reveal",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
