@@ -101,6 +101,7 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
     copy: (lensId, itemId) => api().copyItem(lensId, itemId),
     update: async (lensId, itemId, edit) => show(await api().updateItem(lensId, itemId, edit)),
     remove: async (lensId, itemId) => show(await api().deleteItem(lensId, itemId)),
+    restore: async (lensId, itemId) => show(await api().restoreItem(lensId, itemId)),
   }
 
   useEffect(() => {
@@ -122,7 +123,8 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
   const showToast = (next: ToastMessage) => {
     clearTimeout(toastTimer.current)
     setToast({ ...next, id: ++toastId.current })
-    const ms = next.countdown ? next.countdown * 1000 : next.tone === 'error' ? 6000 : 2200
+    // Long enough to read an error or reach an Undo button.
+    const ms = next.countdown ? next.countdown * 1000 : next.action ? 10_000 : next.tone === 'error' ? 6000 : 2200
     toastTimer.current = setTimeout(() => setToast(null), ms)
   }
   useEffect(() => () => clearTimeout(toastTimer.current), [])

@@ -176,6 +176,7 @@ export class FakeVault implements VaultApi {
   async lock() {
     this.calls.push('lock')
     this.unlocked = false
+    this.deleted = null
   }
 
   async setAside() {
@@ -260,10 +261,25 @@ export class FakeVault implements VaultApi {
     })
   }
 
+  /** As in Rust: the secret deleted last, until it's put back, replaced or the vault locks. */
+  private deleted: { lensId: string; item: FakeItem; index: number } | null = null
+
   deleteItem(lensId: string, itemId: string) {
     return this.change('deleteItem', () => {
       const lens = this.lens(lensId)
+      const index = lens.items.findIndex((i) => i.id === itemId)
+      if (index >= 0) this.deleted = { lensId, item: lens.items[index], index }
       lens.items = lens.items.filter((i) => i.id !== itemId)
+    })
+  }
+
+  restoreItem(lensId: string, itemId: string) {
+    return this.change('restoreItem', () => {
+      const deleted = this.deleted
+      if (!deleted || deleted.lensId !== lensId || deleted.item.id !== itemId) throw new VaultApiError('unknown-item')
+      const lens = this.lens(lensId)
+      lens.items.splice(Math.min(deleted.index, lens.items.length), 0, deleted.item)
+      this.deleted = null
     })
   }
 

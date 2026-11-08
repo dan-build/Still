@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Toaster } from './Toast'
 
 afterEach(cleanup)
@@ -25,5 +25,12 @@ describe('Toaster', () => {
   it('shows a long message in full, announced as an alert', () => {
     render(<Toaster toast={{ id: 1, message: LONG, tone: 'error' }} />)
     expect(screen.getByRole('alert').textContent).toContain(LONG)
+  })
+
+  it('shows an action button that can be clicked, such as Undo', () => {
+    const onAction = vi.fn()
+    render(<Toaster toast={{ id: 1, message: 'Secret deleted', action: { label: 'Undo', onAction } }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(onAction).toHaveBeenCalledOnce()
   })
 })

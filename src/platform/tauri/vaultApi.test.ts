@@ -30,6 +30,7 @@ describe('the vault commands', () => {
     await api.updateItem('a', 'i', { label: 'L', type: 'key' })
     await api.updateItem('a', 'i', { label: 'L', type: 'key', value: 'w' })
     await api.deleteItem('a', 'i')
+    await api.restoreItem('a', 'i')
     await api.revealItem('a', 'i')
     await api.copyItem('a', 'i')
     expect(invoke.mock.calls).toEqual([
@@ -48,6 +49,7 @@ describe('the vault commands', () => {
       ['item_update', { lensId: 'a', itemId: 'i', label: 'L', itemType: 'key', value: null }],
       ['item_update', { lensId: 'a', itemId: 'i', label: 'L', itemType: 'key', value: 'w' }],
       ['item_delete', { lensId: 'a', itemId: 'i' }],
+      ['item_restore', { lensId: 'a', itemId: 'i' }],
       ['item_reveal', { lensId: 'a', itemId: 'i' }],
       ['item_copy', { lensId: 'a', itemId: 'i' }],
     ])

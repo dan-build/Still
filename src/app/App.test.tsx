@@ -507,12 +507,59 @@ describe('secrets', () => {
     await unlock()
     await openLens('Alpha')
     fireEvent.click(screen.getByRole('button', { name: 'Delete Alpha secret' }))
-    // Deleting can't be undone, so it asks first.
+    // It asks first, as well as offering Undo after.
     expect(vault.calls).not.toContain('deleteItem')
     fireEvent.click(await screen.findByRole('button', { name: 'Delete secret' }))
 
     await waitFor(() => expect(lens(vault, 'Alpha').items).toEqual([]))
     expect(screen.queryByText('Alpha secret')).toBeNull()
+  })
+
+  async function deleteAlphaSecret() {
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Alpha secret' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete secret' }))
+    await screen.findByText('Secret deleted')
+  }
+
+  it('puts a deleted secret back with Undo', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    const before = lens(vault, 'Alpha').items.map((i) => ({ ...i }))
+    await unlock()
+    await openLens('Alpha')
+    await deleteAlphaSecret()
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+
+    await screen.findByText('Alpha secret restored')
+    expect(screen.getByText('Alpha secret')).toBeTruthy()
+    expect(lens(vault, 'Alpha').items).toEqual(before)
+  })
+
+  it('offers Undo for 10 seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+      await unlock()
+      await openLens('Alpha')
+      await deleteAlphaSecret()
+      act(() => vi.advanceTimersByTime(9_000))
+      expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy()
+      act(() => vi.advanceTimersByTime(1_000))
+      expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('says when Undo fails, and the secret stays deleted', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    await unlock()
+    await openLens('Alpha')
+    await deleteAlphaSecret()
+    vault.failChanges = true
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+
+    await screen.findByText("Couldn't restore Alpha secret. It stays deleted.")
+    expect(lens(vault, 'Alpha').items).toEqual([])
   })
 })
 

@@ -46,6 +46,8 @@ export interface VaultApi {
   /** Changes a secret in place (same id and position); without a value, the stored one stays. */
   updateItem(lensId: string, itemId: string, edit: ItemEdit): Promise<VaultState>
   deleteItem(lensId: string, itemId: string): Promise<VaultState>
+  /** Puts back the secret deleted last (Undo), within 30 seconds; refused after lock. */
+  restoreItem(lensId: string, itemId: string): Promise<VaultState>
   revealItem(lensId: string, itemId: string): Promise<string>
   /** Puts the value on the clipboard without returning it; Rust clears it after 30 seconds. */
   copyItem(lensId: string, itemId: string): Promise<void>
@@ -91,6 +93,7 @@ export function createTauriVaultApi(): VaultApi {
     updateItem: (lensId, itemId, { label, type, value }) =>
       call('item_update', { lensId, itemId, label, itemType: type, value: value ?? null }),
     deleteItem: (lensId, itemId) => call('item_delete', { lensId, itemId }),
+    restoreItem: (lensId, itemId) => call('item_restore', { lensId, itemId }),
     revealItem: (lensId, itemId) => call('item_reveal', { lensId, itemId }),
     copyItem: (lensId, itemId) => call('item_copy', { lensId, itemId }),
   }
