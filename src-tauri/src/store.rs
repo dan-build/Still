@@ -22,7 +22,7 @@ use still_core::sodium;
 use still_core::v2;
 use still_core::vault::{backend, time};
 
-use crate::record::{self, hex, Converted, Record};
+use crate::record::{self, hex, Converted, Record, Saved};
 
 pub const FILE_NAME: &str = "vault.json";
 pub const BACKUP_NAME: &str = "vault.json.bak";
@@ -63,6 +63,19 @@ pub enum Loaded {
     /// The file is damaged or in an unknown format, or it's missing while
     /// its backup exists. Never written over.
     Unreadable,
+}
+
+/// The vault file compared with the one Still saved last (`check_file`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileCheck {
+    /// Nothing recorded yet (the first start that keeps a record).
+    Unrecorded,
+    /// The file Still saved, or no file at all.
+    Matches,
+    /// Another file is in its place: an older copy, or a changed one.
+    /// `same_password`: it opens with the same password settings as the
+    /// saved one; if not, it may be from before a password change.
+    Replaced { same_password: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,6 +146,65 @@ impl Store {
             &self.dir.join(record::FILE_NAME),
             &record.to_bytes(),
         )
+    }
+
+    /// Writes `bytes` as the vault file, recording it (record.rs): first as
+    /// pending, then as saved. If the pending note can't be written, the
+    /// vault file isn't either, so a save never leaves a false alarm. Only
+    /// start-up creates the record (it takes the old markers into it
+    /// first); without one, the file is written unrecorded, and the next
+    /// start records it as it finds it.
+    fn put_vault(&self, bytes: &[u8]) -> Result<(), StoreError> {
+        let Some(mut record) = self.record() else {
+            return write_atomically(&self.dir, &self.file(), bytes);
+        };
+        let saved = fingerprint_vault(bytes);
+        record.pending = Some(saved.clone());
+        self.set_record(&record)?;
+        write_atomically(&self.dir, &self.file(), bytes)?;
+        record.saved = Some(saved);
+        record.pending = None;
+        // If this fails, the pending note still matches the new file.
+        let _ = self.set_record(&record);
+        Ok(())
+    }
+
+    /// Whether the vault file is the one Still saved last (or was saving).
+    pub fn check_file(&self) -> FileCheck {
+        let Ok(bytes) = fs::read(self.file()) else {
+            return FileCheck::Matches;
+        };
+        let Some(record) = self.record() else {
+            return FileCheck::Unrecorded;
+        };
+        let Some(saved) = record.saved else {
+            return FileCheck::Unrecorded;
+        };
+        let now = fingerprint_vault(&bytes);
+        if now.file == saved.file || record.pending.is_some_and(|p| p.file == now.file) {
+            return FileCheck::Matches;
+        }
+        FileCheck::Replaced {
+            same_password: now.header.is_some() && now.header == saved.header,
+        }
+    }
+
+    /// Records the vault file as it is now as the one Still saved: the
+    /// user chose to open a replaced file, or (`only_if_unrecorded`) this
+    /// is the first start that keeps a record, which can only trust what's
+    /// there. Only a file that reads (v1 or v2) is recorded.
+    pub fn accept_file(&self, only_if_unrecorded: bool) -> Result<(), StoreError> {
+        let mut record = self.record().unwrap_or_default();
+        if only_if_unrecorded && record.saved.is_some() {
+            return Ok(());
+        }
+        let bytes = fs::read(self.file())?;
+        if !matches!(read_vault(&bytes), Loaded::Values(_) | Loaded::V2(_)) {
+            return Err(StoreError::Unreadable);
+        }
+        record.saved = Some(fingerprint_vault(&bytes));
+        record.pending = None;
+        self.set_record(&record)
     }
 
     pub fn load(&self) -> Loaded {
@@ -211,7 +283,7 @@ impl Store {
         match self.load() {
             Loaded::V2(stored) if *stored == *file => {}
             _ => {
-                write_atomically(&self.dir, &self.file(), &previous)?;
+                self.put_vault(&previous)?;
                 return Err(StoreError::VerifyFailed);
             }
         }
@@ -312,12 +384,12 @@ impl Store {
             self.keep("vault-bak", &backup)?;
         }
         let bytes = file.to_json();
-        write_atomically(&self.dir, &self.file(), bytes.as_bytes())?;
+        self.put_vault(bytes.as_bytes())?;
         match self.load() {
             Loaded::V2(stored) if *stored == *file => {}
             _ => {
                 if let Some(previous) = &previous {
-                    write_atomically(&self.dir, &self.file(), previous)?;
+                    self.put_vault(previous)?;
                 }
                 return Err(StoreError::VerifyFailed);
             }
@@ -359,7 +431,7 @@ impl Store {
                     .unwrap_or_default())
             }
             _ => {
-                write_atomically(&self.dir, &self.file(), &original)?;
+                self.put_vault(&original)?;
                 Err(StoreError::VerifyFailed)
             }
         }
@@ -447,7 +519,7 @@ impl Store {
             self.keep("vault-unreadable", &damaged)?;
         }
         create_private_dir(&self.dir)?;
-        write_atomically(&self.dir, &self.file(), &bytes)?;
+        self.put_vault(&bytes)?;
         match self.load() {
             Loaded::Values(_) | Loaded::V2(_) => Ok(source),
             _ => Err(StoreError::VerifyFailed),
@@ -501,7 +573,29 @@ impl Store {
             }
             write_atomically(&self.dir, &self.backup(), &previous)?;
         }
-        write_atomically(&self.dir, &self.file(), bytes)
+        self.put_vault(bytes)
+    }
+}
+
+/// A vault file's fingerprints (record.rs): of the whole file, and of what
+/// the password opens: v2's `kdf` and `masterKey`, or v1's salt and
+/// encrypted master key. A file that doesn't read has no header.
+pub fn fingerprint_vault(bytes: &[u8]) -> Saved {
+    let sha = |bytes: &[u8]| hex(&sodium::sha256(bytes));
+    let header = match read_vault(bytes) {
+        Loaded::V2(_) => serde_json::from_slice::<serde_json::Value>(bytes)
+            .ok()
+            .map(|file| serde_json::json!(["v2", file["kdf"], file["masterKey"]])),
+        Loaded::Values(values) => Some(serde_json::json!([
+            "v1",
+            values.get("still-salt"),
+            values.get("still-encrypted-master-key")
+        ])),
+        Loaded::Nothing | Loaded::Unreadable => None,
+    };
+    Saved {
+        file: sha(bytes),
+        header: header.map(|header| sha(header.to_string().as_bytes())),
     }
 }
 
@@ -992,6 +1086,140 @@ mod tests {
         }
     }
 
+    /// A store with a record, as start-up leaves it.
+    fn recorded(tmp: &TempDir) -> Store {
+        let store = tmp.store();
+        store.set_record(&Record::default()).unwrap();
+        store
+    }
+
+    /// The record names the vault file as it is now, with no save pending.
+    fn assert_recorded(store: &Store) {
+        assert_eq!(store.check_file(), FileCheck::Matches);
+        let record = store.record().unwrap();
+        let bytes = fs::read(store.file()).unwrap();
+        assert_eq!(record.saved, Some(fingerprint_vault(&bytes)));
+        assert_eq!(record.pending, None);
+    }
+
+    // Every way Still writes the vault file records it, so none of its own
+    // writes ever looks like a file put back.
+    #[test]
+    fn records_every_write_of_the_vault_file() {
+        let tmp = TempDir::new();
+        let store = recorded(&tmp);
+        assert_eq!(store.check_file(), FileCheck::Matches);
+        store.import_legacy(real_vault()).unwrap();
+        assert_recorded(&store);
+        store
+            .write(&set(&[("still-has-pin", Some("false"))]))
+            .unwrap();
+        assert_recorded(&store);
+        store
+            .convert_to_v2(&a_v2_file(), &expected(&real_vault()))
+            .unwrap();
+        assert_recorded(&store);
+        store.write_v2(&a_v2_file()).unwrap();
+        assert_recorded(&store);
+        store.write_rekeyed_v2(&a_v2_file()).unwrap();
+        assert_recorded(&store);
+        store.restore_backup(&a_v2_file()).unwrap();
+        assert_recorded(&store);
+        // A damaged file in its place isn't the saved one; putting back the
+        // kept copy over it records that.
+        fs::write(store.file(), b"{damaged").unwrap();
+        assert_eq!(
+            store.check_file(),
+            FileCheck::Replaced {
+                same_password: false
+            }
+        );
+        store.restore().unwrap();
+        assert_recorded(&store);
+        // The markers are kept through all of it.
+        assert!(store.record().unwrap().converted.is_some());
+    }
+
+    // A save cut short (a crash, a power cut) leaves the pending note: the
+    // file is then the old one or the new one, and neither is an alarm.
+    #[test]
+    fn a_save_cut_short_is_no_false_alarm() {
+        let tmp = TempDir::new();
+        let store = recorded(&tmp);
+        store.write_v2(&a_v2_file()).unwrap();
+        let next = a_v2_file().to_json();
+        let mut record = store.record().unwrap();
+        record.pending = Some(fingerprint_vault(next.as_bytes()));
+        store.set_record(&record).unwrap();
+        // Cut short before the vault file was written...
+        assert_eq!(store.check_file(), FileCheck::Matches);
+        // ...or after.
+        fs::write(store.file(), &next).unwrap();
+        assert_eq!(store.check_file(), FileCheck::Matches);
+    }
+
+    // An older copy put back is noticed, and told apart by whether it has
+    // the same password settings (a file from before a password change
+    // doesn't).
+    #[test]
+    fn notices_an_older_copy_and_whether_its_password_changed() {
+        let replaced = |same_password| FileCheck::Replaced { same_password };
+
+        // v1: the same salt and wrapped key, older Lenses.
+        let tmp = TempDir::new();
+        let store = recorded(&tmp);
+        store.import_legacy(real_vault()).unwrap();
+        let older = fs::read(store.file()).unwrap();
+        store.write(&set(&[("still-lenses", Some("[]"))])).unwrap();
+        fs::write(store.file(), &older).unwrap();
+        assert_eq!(store.check_file(), replaced(true));
+
+        // v2: an older body under the same header...
+        let tmp = TempDir::new();
+        let store = recorded(&tmp);
+        let saved = a_v2_file();
+        store.write_v2(&saved).unwrap();
+        let older = v2::File {
+            body: a_v2_file().body,
+            ..saved.clone()
+        };
+        fs::write(store.file(), older.to_json()).unwrap();
+        assert!(matches!(store.load(), Loaded::V2(_)));
+        assert_eq!(store.check_file(), replaced(true));
+
+        // ...or the file from before a password change.
+        store.write_v2(&saved).unwrap();
+        let before_change = fs::read(store.file()).unwrap();
+        store.write_rekeyed_v2(&a_v2_file()).unwrap();
+        fs::write(store.file(), &before_change).unwrap();
+        assert_eq!(store.check_file(), replaced(false));
+
+        // Accepted only when asked: the first start's trust doesn't
+        // overwrite what's recorded.
+        store.accept_file(true).unwrap();
+        assert_eq!(store.check_file(), replaced(false));
+        store.accept_file(false).unwrap();
+        assert_recorded(&store);
+        // A file that doesn't read is never accepted.
+        fs::write(store.file(), b"{damaged").unwrap();
+        assert_eq!(store.accept_file(false), Err(StoreError::Unreadable));
+    }
+
+    // Without a record (before start-up made one), writes create none: the
+    // next start takes the old markers into it first.
+    #[test]
+    fn writes_make_no_record_of_their_own() {
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        store.write_v2(&a_v2_file()).unwrap();
+        assert_eq!(store.record(), None);
+        assert_eq!(store.check_file(), FileCheck::Unrecorded);
+        store.set_record(&Record::default()).unwrap();
+        assert_eq!(store.check_file(), FileCheck::Unrecorded);
+        store.accept_file(true).unwrap();
+        assert_recorded(&store);
+    }
+
     // The conversion is recorded in state.json (keeping what's there), so a
     // v1 copy put back later asks first. The record is private, and never
     // one of the kept copies.
@@ -1006,7 +1234,7 @@ mod tests {
         store
             .set_record(&Record {
                 moved: Some(moved.clone()),
-                converted: None,
+                ..Record::default()
             })
             .unwrap();
         let file = a_v2_file();

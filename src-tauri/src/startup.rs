@@ -7,23 +7,29 @@
 //! `open` gathers what's there (`Inputs`) and `decide` picks the outcome
 //! from this table, top row first ("·" matches anything):
 //!
-//! | another copy open | vault.json | kept copy | moved marker      | converted marker | old copy | outcome                      |
-//! |-------------------|------------|-----------|-------------------|------------------|----------|------------------------------|
-//! | yes               | ·          | ·         | ·                 | ·                | ·        | already open                 |
-//! | no                | unreadable | k         | ·                 | ·                | ·        | unreadable, can restore if k |
-//! | no                | v1         | ·         | ·                 | yes              | ·        | old format: ask first        |
-//! | no                | v1 or v2   | ·         | differs from copy | ·                | ·        | ready, say once it changed   |
-//! | no                | v1 or v2   | ·         | ·                 | ·                | ·        | ready                        |
-//! | no                | missing    | yes       | ·                 | ·                | ·        | unreadable, can restore      |
-//! | no                | missing    | no        | yes               | ·                | ·        | file missing: user chooses   |
-//! | no                | missing    | no        | no                | ·                | empty    | ready (a new install)        |
-//! | no                | missing    | no        | no                | ·                | values   | move the old copy into a file|
+//! | another copy open | vault.json | not the saved one | kept copy | moved marker      | converted marker | old copy | outcome                       |
+//! |-------------------|------------|-------------------|-----------|-------------------|------------------|----------|-------------------------------|
+//! | yes               | ·          | ·                 | ·         | ·                 | ·                | ·        | already open                  |
+//! | no                | unreadable | ·                 | k         | ·                 | ·                | ·        | unreadable, can restore if k  |
+//! | no                | v1         | ·                 | ·         | ·                 | yes              | ·        | old format: ask first         |
+//! | no                | v1 or v2   | yes (password p)  | ·         | ·                 | ·                | ·        | replaced: ask first           |
+//! | no                | v1 or v2   | no                | ·         | differs from copy | ·                | ·        | ready, say once it changed    |
+//! | no                | v1 or v2   | no                | ·         | ·                 | ·                | ·        | ready                         |
+//! | no                | missing    | ·                 | yes       | ·                 | ·                | ·        | unreadable, can restore       |
+//! | no                | missing    | ·                 | no        | yes               | ·                | ·        | file missing: user chooses    |
+//! | no                | missing    | ·                 | no        | no                | ·                | empty    | ready (a new install)         |
+//! | no                | missing    | ·                 | no        | no                | ·                | values   | move the old copy into a file |
 //!
 //! - A kept copy is what `Store::restore_source` would put back: a readable
 //!   v2 `.bak`, else the v1 file a conversion kept. With no vault file it's
 //!   newer than any localStorage copy, so it's offered first.
 //! - The markers are the record's (record.rs). The first start without one
 //!   takes the page's localStorage markers into it.
+//! - "Not the saved one": the vault file isn't the one Still saved last
+//!   (`Store::check_file`), such as an older copy put back. It opens only
+//!   if the user says so. `p`: whether it has the same password settings;
+//!   if not, it may be from before a password change. The first start that
+//!   keeps a record has nothing to compare with, and records what's there.
 //! - "Differs from copy": an older version changed the old copy since the
 //!   move. The marker is updated to the copy as it is, so it's said once.
 //! - After a move, the moved file is never quietly replaced by the older
@@ -35,7 +41,7 @@ use still_core::vault::time;
 
 pub use crate::record::Moved;
 use crate::record::{Converted, Record};
-use crate::store::{AppStore, Loaded, Restore, Values};
+use crate::store::{AppStore, FileCheck, Loaded, Restore, Values};
 
 /// The localStorage key versions up to 0.8 kept the moved marker under.
 pub const MOVED_MARKER: &str = "still-moved-to-file";
@@ -63,6 +69,12 @@ pub enum Startup {
     FileMissing {
         moved_at: String,
     },
+    /// The vault file isn't the one Still saved last: an older copy put
+    /// back, or a changed one. It opens only if the user says so.
+    /// `same_password`: false if it may be from before a password change.
+    Replaced {
+        same_password: bool,
+    },
     Failed,
 }
 
@@ -86,6 +98,9 @@ impl Startup {
             }
             Self::FileMissing { moved_at } => {
                 json!({ "kind": "file-missing", "movedAt": moved_at })
+            }
+            Self::Replaced { same_password } => {
+                json!({ "kind": "replaced", "samePassword": same_password })
             }
             Self::Failed => json!({ "kind": "failed" }),
         }
@@ -153,16 +168,33 @@ fn record_or_adopt(store: &AppStore, marker: Option<&str>, converted: Option<&st
     let adopted = || Record {
         moved: read_marker(marker),
         converted: read_converted(converted),
+        ..Record::default()
     };
     if store.already_open {
         return adopted();
     }
     let store = store.store();
-    store.record().unwrap_or_else(|| {
+    let record = store.record().unwrap_or_else(|| {
         let record = adopted();
         let _ = store.set_record(&record);
         record
-    })
+    });
+    // Nothing to compare the vault file with yet: trust what's there. (If
+    // this can't be written, the next start tries again.)
+    let _ = store.accept_file(true);
+    record
+}
+
+/// The user's choice for a vault file that isn't the one Still saved last:
+/// open it, making it the vault from now on.
+pub fn accept_replaced(store: &AppStore) -> Startup {
+    if store.already_open {
+        return Startup::AlreadyOpen;
+    }
+    match store.store().accept_file(false) {
+        Ok(()) => Startup::Ready { notice: None },
+        Err(_) => Startup::Failed,
+    }
 }
 
 /// Records a new moved marker, keeping the rest of the record. If it can't
@@ -197,6 +229,8 @@ pub enum MovedMarker {
 pub struct Inputs {
     pub already_open: bool,
     pub file: FileKind,
+    /// The vault file isn't the one Still saved last: Some(same password).
+    pub replaced: Option<bool>,
     /// `Store::restore_source` has something to put back.
     pub kept_copy: bool,
     pub moved: MovedMarker,
@@ -232,6 +266,9 @@ pub fn decide(inputs: &Inputs) -> Decision {
         (V1, _) if inputs.converted_at.is_some() => show(Startup::OldFormat {
             converted_at: inputs.converted_at.clone().unwrap_or_default(),
         }),
+        (V1 | V2, _) if inputs.replaced.is_some() => show(Startup::Replaced {
+            same_password: inputs.replaced.unwrap_or_default(),
+        }),
         (V1 | V2, MovedMarker::Differs(marker)) => Decision::OldCopyChanged(Moved {
             fingerprint: inputs.old_copy_fingerprint.clone(),
             ..marker.clone()
@@ -256,8 +293,8 @@ fn gather(store: &AppStore, legacy: &Values, record: Record) -> Inputs {
         Some(marker) if marker.fingerprint == old_copy_fingerprint => MovedMarker::Matches(marker),
         Some(marker) => MovedMarker::Differs(marker),
     };
-    let (file, kept_copy) = if store.already_open {
-        (FileKind::Missing, false)
+    let (file, replaced, kept_copy) = if store.already_open {
+        (FileKind::Missing, None, false)
     } else {
         let store = store.store();
         let file = match store.load() {
@@ -266,11 +303,16 @@ fn gather(store: &AppStore, legacy: &Values, record: Record) -> Inputs {
             Loaded::Values(_) => FileKind::V1,
             Loaded::V2(_) => FileKind::V2,
         };
-        (file, store.restore_source().is_some())
+        let replaced = match store.check_file() {
+            FileCheck::Replaced { same_password } => Some(same_password),
+            FileCheck::Matches | FileCheck::Unrecorded => None,
+        };
+        (file, replaced, store.restore_source().is_some())
     };
     Inputs {
         already_open: store.already_open,
         file,
+        replaced,
         kept_copy,
         moved,
         converted_at: record.converted.map(|c| c.converted_at),
@@ -807,6 +849,9 @@ mod tests {
                     converted_at: "2026-10-13T09:00:00.000Z".into(),
                     fingerprint: "ab".into(),
                 }),
+                // The first start trusts the vault file that's there.
+                saved: Some(fingerprint_of(&tmp)),
+                pending: None,
             }
         );
         let taken = record(&store);
@@ -821,6 +866,18 @@ mod tests {
         // Nor does a page with no markers at all.
         open(&store, real_vault(), None, None, NOW);
         assert_eq!(record(&store), forgotten);
+    }
+
+    /// The record's fingerprint of the vault file as it is now.
+    fn fingerprint_of(tmp: &TempDir) -> crate::record::Saved {
+        let store = tmp.store();
+        assert!(
+            store.already_open,
+            "only to read: the test's store holds the lock"
+        );
+        drop(store);
+        let bytes = std::fs::read(tmp.0.join("vault").join("vault.json")).unwrap();
+        crate::store::fingerprint_vault(&bytes)
     }
 
     fn a_v2_file() -> still_core::v2::File {
@@ -962,164 +1019,143 @@ mod tests {
         #[derive(Clone, Copy, PartialEq, Debug)]
         enum Out {
             AlreadyOpen,
+            /// Can restore (the kept-copy column).
             Unreadable(bool),
             OldFormat,
+            /// Same password.
+            Replaced(bool),
             ReadyChanged,
             Ready,
             FileMissing,
             Move,
         }
-        type Row = (
-            Option<bool>,
-            &'static [FileKind],
-            Option<bool>,
-            &'static [M],
-            Option<bool>,
-            Option<bool>,
-            fn(bool) -> Out,
-        );
-        const ANY_M: &[M] = &[M::Absent, M::Matches, M::Differs];
+        struct Case {
+            already_open: bool,
+            file: FileKind,
+            replaced: Option<bool>,
+            kept_copy: bool,
+            moved: M,
+            converted: bool,
+            empty: bool,
+        }
+        const ANY: &[bool] = &[false, true];
+        const NO: &[bool] = &[false];
+        const YES: &[bool] = &[true];
         const ALL: &[FileKind] = &[Missing, Unreadable, V1, V2];
-        let table: [Row; 9] = [
-            (Some(true), ALL, None, ANY_M, None, None, |_| {
-                Out::AlreadyOpen
-            }),
-            (
-                Some(false),
-                &[Unreadable],
-                None,
-                ANY_M,
-                None,
-                None,
-                Out::Unreadable,
-            ),
-            (Some(false), &[V1], None, ANY_M, Some(true), None, |_| {
-                Out::OldFormat
-            }),
-            (
-                Some(false),
-                &[V1, V2],
-                None,
-                &[M::Differs],
-                None,
-                None,
-                |_| Out::ReadyChanged,
-            ),
-            (Some(false), &[V1, V2], None, ANY_M, None, None, |_| {
-                Out::Ready
-            }),
-            (
-                Some(false),
-                &[Missing],
-                Some(true),
-                ANY_M,
-                None,
-                None,
-                |_| Out::Unreadable(true),
-            ),
-            (
-                Some(false),
-                &[Missing],
-                Some(false),
-                &[M::Matches, M::Differs],
-                None,
-                None,
-                |_| Out::FileMissing,
-            ),
-            (
-                Some(false),
-                &[Missing],
-                Some(false),
-                &[M::Absent],
-                None,
-                Some(true),
-                |_| Out::Ready,
-            ),
-            (
-                Some(false),
-                &[Missing],
-                Some(false),
-                &[M::Absent],
-                None,
-                Some(false),
-                |_| Out::Move,
-            ),
+        const ANY_M: &[M] = &[M::Absent, M::Matches, M::Differs];
+        const SET: &[M] = &[M::Matches, M::Differs];
+        // Columns as in the doc: another copy open, vault.json, not the
+        // saved one, kept copy, moved marker, converted marker, old copy
+        // empty; then the outcome.
+        type Row = (
+            &'static [bool],
+            &'static [FileKind],
+            &'static [bool],
+            &'static [bool],
+            &'static [M],
+            &'static [bool],
+            &'static [bool],
+            fn(&Case) -> Out,
+        );
+        #[rustfmt::skip]
+        let table: [Row; 10] = [
+            (YES, ALL,           ANY, ANY, ANY_M,          ANY, ANY, |_| Out::AlreadyOpen),
+            (NO,  &[Unreadable], ANY, ANY, ANY_M,          ANY, ANY, |c| Out::Unreadable(c.kept_copy)),
+            (NO,  &[V1],         ANY, ANY, ANY_M,          YES, ANY, |_| Out::OldFormat),
+            (NO,  &[V1, V2],     YES, ANY, ANY_M,          ANY, ANY, |c| Out::Replaced(c.replaced == Some(true))),
+            (NO,  &[V1, V2],     NO,  ANY, &[M::Differs],  ANY, ANY, |_| Out::ReadyChanged),
+            (NO,  &[V1, V2],     NO,  ANY, ANY_M,          ANY, ANY, |_| Out::Ready),
+            (NO,  &[Missing],    ANY, YES, ANY_M,          ANY, ANY, |_| Out::Unreadable(true)),
+            (NO,  &[Missing],    ANY, NO,  SET,            ANY, ANY, |_| Out::FileMissing),
+            (NO,  &[Missing],    ANY, NO,  &[M::Absent],   ANY, YES, |_| Out::Ready),
+            (NO,  &[Missing],    ANY, NO,  &[M::Absent],   ANY, NO,  |_| Out::Move),
         ];
         let marker = Moved {
             moved_at: "t".into(),
             fingerprint: "f".into(),
         };
-        let mut checked = 0;
-        for already_open in [false, true] {
+
+        let mut cases = Vec::new();
+        for &already_open in ANY {
             for &file in ALL {
-                for kept_copy in [false, true] {
-                    for &m in ANY_M {
-                        for converted in [false, true] {
-                            for empty in [false, true] {
-                                let fits =
-                                    |want: Option<bool>, have: bool| want.is_none_or(|w| w == have);
-                                let row = table
-                                    .iter()
-                                    .find(|r| {
-                                        fits(r.0, already_open)
-                                            && r.1.contains(&file)
-                                            && fits(r.2, kept_copy)
-                                            && r.3.contains(&m)
-                                            && fits(r.4, converted)
-                                            && fits(r.5, empty)
-                                    })
-                                    .expect("the table covers every combination");
-                                let want = (row.6)(kept_copy);
-                                let inputs = Inputs {
-                                    already_open,
-                                    file,
-                                    kept_copy,
-                                    moved: match m {
-                                        M::Absent => MovedMarker::Absent,
-                                        M::Matches => MovedMarker::Matches(marker.clone()),
-                                        M::Differs => MovedMarker::Differs(marker.clone()),
-                                    },
-                                    converted_at: converted.then(|| "c".to_owned()),
-                                    old_copy_empty: empty,
-                                    old_copy_fingerprint: "now".into(),
-                                };
-                                let got = match decide(&inputs) {
-                                    Decision::MoveOldCopy => Out::Move,
-                                    Decision::Show(Startup::AlreadyOpen) => Out::AlreadyOpen,
-                                    Decision::Show(Startup::Unreadable { can_restore }) => {
-                                        Out::Unreadable(can_restore)
-                                    }
-                                    Decision::Show(Startup::OldFormat { converted_at }) => {
-                                        assert_eq!(converted_at, "c");
-                                        Out::OldFormat
-                                    }
-                                    Decision::OldCopyChanged(updated) => {
-                                        assert_eq!(updated.moved_at, "t");
-                                        assert_eq!(updated.fingerprint, "now");
-                                        Out::ReadyChanged
-                                    }
-                                    Decision::Show(Startup::Ready { notice: None }) => Out::Ready,
-                                    Decision::Show(Startup::FileMissing { moved_at }) => {
-                                        assert_eq!(moved_at, "t");
-                                        Out::FileMissing
-                                    }
-                                    other => panic!("not in the table: {other:?}"),
-                                };
-                                assert_eq!(got, want);
-                                checked += 1;
+                for replaced in [None, Some(false), Some(true)] {
+                    for &kept_copy in ANY {
+                        for &moved in ANY_M {
+                            for &converted in ANY {
+                                for &empty in ANY {
+                                    cases.push(Case {
+                                        already_open,
+                                        file,
+                                        replaced,
+                                        kept_copy,
+                                        moved,
+                                        converted,
+                                        empty,
+                                    });
+                                }
                             }
                         }
                     }
                 }
             }
         }
-        assert_eq!(checked, 2 * 4 * 2 * 3 * 2 * 2);
+        assert_eq!(cases.len(), 2 * 4 * 3 * 2 * 3 * 2 * 2);
+
+        for case in &cases {
+            let row = table
+                .iter()
+                .find(|r| {
+                    r.0.contains(&case.already_open)
+                        && r.1.contains(&case.file)
+                        && r.2.contains(&case.replaced.is_some())
+                        && r.3.contains(&case.kept_copy)
+                        && r.4.contains(&case.moved)
+                        && r.5.contains(&case.converted)
+                        && r.6.contains(&case.empty)
+                })
+                .expect("the table covers every combination");
+            let inputs = Inputs {
+                already_open: case.already_open,
+                file: case.file,
+                replaced: case.replaced,
+                kept_copy: case.kept_copy,
+                moved: match case.moved {
+                    M::Absent => MovedMarker::Absent,
+                    M::Matches => MovedMarker::Matches(marker.clone()),
+                    M::Differs => MovedMarker::Differs(marker.clone()),
+                },
+                converted_at: case.converted.then(|| "c".to_owned()),
+                old_copy_empty: case.empty,
+                old_copy_fingerprint: "now".into(),
+            };
+            let got = match decide(&inputs) {
+                Decision::MoveOldCopy => Out::Move,
+                Decision::OldCopyChanged(updated) => {
+                    assert_eq!(updated.moved_at, "t");
+                    assert_eq!(updated.fingerprint, "now");
+                    Out::ReadyChanged
+                }
+                Decision::Show(Startup::AlreadyOpen) => Out::AlreadyOpen,
+                Decision::Show(Startup::Unreadable { can_restore }) => Out::Unreadable(can_restore),
+                Decision::Show(Startup::OldFormat { converted_at }) => {
+                    assert_eq!(converted_at, "c");
+                    Out::OldFormat
+                }
+                Decision::Show(Startup::Replaced { same_password }) => Out::Replaced(same_password),
+                Decision::Show(Startup::Ready { notice: None }) => Out::Ready,
+                Decision::Show(Startup::FileMissing { moved_at }) => {
+                    assert_eq!(moved_at, "t");
+                    Out::FileMissing
+                }
+                other => panic!("not in the table: {other:?}"),
+            };
+            assert_eq!(got, (row.7)(case));
+        }
     }
 
-    // KNOWN GAP: an older copy of the vault file put back (a single-file
-    // restore, a sync tool) opens as if nothing happened. Not yet fixed.
+    // An older copy of the vault file put back (a single-file restore, a
+    // sync tool) asks before it opens.
     #[test]
-    #[should_panic(expected = "an older vault file opens without a warning")]
     fn warns_when_an_older_vault_file_is_put_back() {
         let tmp = TempDir::new();
         let store = tmp.store();
@@ -1130,10 +1166,17 @@ mod tests {
         store.store().write_v2(&a_v2_file()).unwrap();
         std::fs::write(&file, older).unwrap();
 
-        assert_ne!(
+        // Different keys each time, so a different password too.
+        let replaced = Startup::Replaced {
+            same_password: false,
+        };
+        assert_eq!(open(&store, Values::new(), None, None, NOW), replaced);
+        // It asks every time, until the user chooses to open it.
+        assert_eq!(open(&store, Values::new(), None, None, NOW), replaced);
+        assert_eq!(accept_replaced(&store), Startup::Ready { notice: None });
+        assert_eq!(
             open(&store, Values::new(), None, None, NOW),
-            Startup::Ready { notice: None },
-            "an older vault file opens without a warning"
+            Startup::Ready { notice: None }
         );
     }
 }

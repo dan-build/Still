@@ -15,12 +15,12 @@ use tauri::{AppHandle, Manager, State};
 use crate::autolock::AutoLock;
 use crate::clipboard::ClipboardGuard;
 use crate::startup;
-use crate::store::{AppStore, Values};
+use crate::store::{AppStore, FileCheck, Values};
 use crate::vault::{self, state, ChosenBackup, CommandError, PendingRestore, Revealed, Vault};
 
 /// Every command, as named in build.rs and the capability.
 #[cfg(test)]
-pub const ALL: [&str; 28] = [
+pub const ALL: [&str; 29] = [
     "vault_create",
     "vault_unlock",
     "vault_lock",
@@ -30,6 +30,7 @@ pub const ALL: [&str; 28] = [
     "startup_use_old_copy",
     "startup_open_old_format",
     "startup_restore_v1",
+    "startup_open_replaced",
     "vault_state",
     "vault_set_aside",
     "vault_change_password",
@@ -110,7 +111,9 @@ pub async fn vault_change_password(
 }
 
 /// Unlocks the vault: {ok: true, state} or {ok: false, reason, canRestore?}. Argon2id
-/// runs outside the backend's lock; a Lock meanwhile wins.
+/// runs outside the backend's lock; a Lock meanwhile wins. A vault file that
+/// isn't the one Still saved last is refused first (`file-replaced`): Still
+/// can sit locked for days, and the page then asks as at start-up.
 #[tauri::command]
 pub async fn vault_unlock(
     vault: State<'_, Vault>,
@@ -119,6 +122,9 @@ pub async fn vault_unlock(
     password: String,
 ) -> Result<Value, CommandError> {
     let password = SecretText::from(password);
+    if !store.already_open && matches!(store.store().check_file(), FileCheck::Replaced { .. }) {
+        return Ok(json!({ "ok": false, "reason": "file-replaced" }));
+    }
     // Damaged data may come with a kept copy to put back (startup_restore_v1).
     let failed = |reason: UnlockFailure| {
         let mut result = json!({ "ok": false, "reason": reason.code() });
@@ -231,6 +237,13 @@ pub fn startup_open_old_format(vault: State<'_, Vault>, upgrade: bool) -> Value 
 #[tauri::command]
 pub fn startup_restore_v1(store: State<'_, Arc<AppStore>>) -> Value {
     startup::restore_kept(&store).to_json()
+}
+
+/// The user's choice when the vault file isn't the one Still saved last (an
+/// older copy put back, say): open it, making it the vault from now on.
+#[tauri::command]
+pub fn startup_open_replaced(store: State<'_, Arc<AppStore>>) -> Value {
+    startup::accept_replaced(&store).to_json()
 }
 
 /// The user's choice when the moved vault file has gone: bring back the

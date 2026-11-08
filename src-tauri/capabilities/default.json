@@ -13,6 +13,7 @@
     "allow-startup-use-old-copy",
     "allow-startup-open-old-format",
     "allow-startup-restore-v1",
+    "allow-startup-open-replaced",
     "allow-vault-state",
     "allow-vault-set-aside",
     "allow-vault-change-password",
