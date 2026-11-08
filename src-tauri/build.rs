@@ -23,6 +23,12 @@ const COMMANDS: &[&str] = &[
     "item_update",
     "item_delete",
     "item_restore",
+    "backup_save",
+    "restore_choose",
+    "restore_check",
+    "restore_confirm",
+    "kept_list",
+    "kept_trash",
     "item_reveal",
 ];
 

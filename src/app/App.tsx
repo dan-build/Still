@@ -4,10 +4,12 @@ import SearchView from '@/features/lenses/ui/SearchView'
 import type { SecretOps } from '@/features/lenses/ui/SecretList'
 import LensNameDialog from '@/features/lenses/ui/LensNameDialog'
 import ChangePasswordDialog from '@/features/vault/ui/ChangePasswordDialog'
+import KeptCopiesDialog from '@/features/vault/ui/KeptCopiesDialog'
+import RestoreBackupDialog from '@/features/vault/ui/RestoreBackupDialog'
 import ArchiveView from '@/features/recycle-bin/ui/ArchiveView'
 import { onAutoLocked, reportActivity } from '@/platform/tauri/session'
-import { createTauriVaultApi, type VaultApi } from '@/platform/tauri/vaultApi'
-import type { LensView as Lens, VaultState, VaultStatus, VaultView } from '@/features/vault/model/types'
+import { createTauriVaultApi, VaultApiError, type VaultApi } from '@/platform/tauri/vaultApi'
+import type { KeptCopy, LensView as Lens, VaultState, VaultStatus, VaultView } from '@/features/vault/model/types'
 import { Button } from '@/shared/ui/Button'
 import { Icon } from '@/shared/ui/Icon'
 import { Toaster, type ToastMessage } from '@/shared/ui/Toast'
@@ -63,6 +65,8 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
   const [lockedBecause, setLockedBecause] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isPasswordOpen, setIsPasswordOpen] = useState(false)
+  const [restoreChosen, setRestoreChosen] = useState<{ name: string; modifiedAt?: number | null } | null>(null)
+  const [keptCopies, setKeptCopies] = useState<KeptCopy[] | null>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
   // The sidebar search; while it has text, the main area shows the results.
   const [query, setQuery] = useState('')
@@ -216,6 +220,32 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
     return 'ok'
   }
 
+  const handleBackup = async () => {
+    try {
+      const { saved } = await api().backupSave()
+      if (saved) showToast({ message: `Backup saved as ${saved}` })
+    } catch (error) {
+      const code = error instanceof VaultApiError ? error.code : 'failed'
+      showToast({
+        message:
+          code === 'needs-upgrade'
+            ? 'Your vault is still in the old format. Lock Still and unlock it again to upgrade it, then save a backup.'
+            : "Couldn't save the backup. Your vault is unchanged.",
+        tone: 'error',
+      })
+    }
+  }
+
+  const handleRestore = async () => {
+    try {
+      const chosen = await api().restoreChoose()
+      if (chosen.name) setRestoreChosen({ name: chosen.name, modifiedAt: chosen.modifiedAt })
+    } catch (error) {
+      const code = error instanceof VaultApiError ? error.code : 'failed'
+      showToast({ message: code === 'not-a-vault' ? "That file isn't a Still backup." : "Couldn't open the backup.", tone: 'error' })
+    }
+  }
+
   const handleSetAside = async () => {
     await api().setAside()
     setScreen('create')
@@ -231,6 +261,8 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
     setQuery('')
     setIsCreateOpen(false)
     setIsPasswordOpen(false)
+    setRestoreChosen(null)
+    setKeptCopies(null)
     setView({ lenses: [], bin: [], unreadable: 0 })
     // A copy toast would outlive what it describes; Rust clears the clipboard on lock.
     setToast((current) => (current?.countdown ? null : current))
@@ -312,6 +344,14 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
             onNewLens={() => setIsCreateOpen(true)}
             onLock={() => lock()}
             onChangePassword={() => setIsPasswordOpen(true)}
+            onBackup={handleBackup}
+            onRestore={handleRestore}
+            onKeptCopies={() =>
+              api()
+                .keptList()
+                .then(setKeptCopies)
+                .catch(() => showToast({ message: "Couldn't list the kept copies.", tone: 'error' }))
+            }
           />
           <main className="flex min-w-0 flex-1 flex-col">
             {view.unreadable > 0 && (
@@ -361,6 +401,19 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
           </main>
 
           <LensNameDialog open={isCreateOpen} onClose={() => setIsCreateOpen(false)} onSubmit={createLens} />
+          <RestoreBackupDialog
+            chosen={restoreChosen}
+            onClose={() => setRestoreChosen(null)}
+            onCheck={(password) => api().restoreCheck(password)}
+            onConfirm={async () => (await api().restoreConfirm()).kept}
+            onRestored={() => lock("Backup restored. Unlock it with the backup's password.")}
+          />
+          <KeptCopiesDialog
+            copies={keptCopies}
+            onClose={() => setKeptCopies(null)}
+            onTrash={(name) => api().keptTrash(name)}
+            onError={(message) => showToast({ message, tone: 'error' })}
+          />
           <ChangePasswordDialog
             open={isPasswordOpen}
             onClose={() => setIsPasswordOpen(false)}

@@ -64,6 +64,21 @@ export interface ItemEdit {
  * unreadable-data: stored vault data is damaged; nothing was opened or changed.
  * failed: something else went wrong, e.g. not enough memory for Argon2id.
  */
+/** A copy Still kept next to the vault, such as vault-v1.json. */
+export interface KeptCopy {
+  name: string
+  /** Last changed, in ms since 1970. */
+  modifiedAt: number
+  size: number
+}
+
+/** What a backup holds, shown before it replaces the vault. */
+export interface BackupSummary {
+  lenses: number
+  secrets: number
+  archived: number
+}
+
 export type UnlockResult =
   /**
    * notice: the vault was converted to format v2 ('upgraded'; `kept` names the

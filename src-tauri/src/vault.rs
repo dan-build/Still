@@ -118,6 +118,23 @@ pub type AppBackend = Backend<FileStorage, Unlocked>;
 /// already under way. Creating and unlocking release it for Argon2id.
 pub struct Vault(Mutex<AppBackend>);
 
+/// A backup chosen for restoring (restore_choose), and whether its password
+/// has opened it (restore_check). restore_confirm needs both; choosing
+/// another replaces it.
+#[derive(Default)]
+pub struct PendingRestore(Mutex<Option<ChosenBackup>>);
+
+pub struct ChosenBackup {
+    pub file: v2::File,
+    pub checked: bool,
+}
+
+impl PendingRestore {
+    pub fn get(&self) -> MutexGuard<'_, Option<ChosenBackup>> {
+        self.0.lock().unwrap_or_else(|p| p.into_inner())
+    }
+}
+
 impl Vault {
     pub fn new(storage: FileStorage) -> Self {
         Self(Mutex::new(Backend::new(storage, backend::system_clock())))

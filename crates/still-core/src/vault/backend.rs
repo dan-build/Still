@@ -1276,6 +1276,22 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         self.write(change)
     }
 
+    // ---- backups ------------------------------------------------------------------
+
+    /// The vault file to save as a backup: v2 only, and only if the file on
+    /// disk is exactly the vault that is unlocked (otherwise the backup could
+    /// hold another vault, or an older save).
+    pub fn backup_file(&self) -> Result<v2::File, VaultError> {
+        let session = self.session()?;
+        let Format::V2 { file, .. } = &session.format else {
+            return Err(VaultError::NeedsUpgrade);
+        };
+        match self.storage.v2() {
+            Some(on_disk) if on_disk == *file => Ok(on_disk),
+            _ => Err(VaultError::WriteFailed),
+        }
+    }
+
     // ---- changing the master password -------------------------------------------
 
     /// What a password change starts from: the vault as last saved. v2 only.

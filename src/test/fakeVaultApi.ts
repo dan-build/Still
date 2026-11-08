@@ -6,7 +6,7 @@
 // fixtures/vault-behaviour-v1.
 
 import { VaultApiError, type VaultApi } from '@/platform/tauri/vaultApi'
-import { RECYCLE_DAYS, type ItemType, type LensView, type VaultState, type VaultStatus } from '@/features/vault/model/types'
+import { RECYCLE_DAYS, type BackupSummary, type ItemType, type KeptCopy, type LensView, type VaultState, type VaultStatus } from '@/features/vault/model/types'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -53,6 +53,13 @@ export class FakeVault implements VaultApi {
   strengths: ('standard' | 'stronger')[] = []
   /** Refuse a password change as an old-format vault (needs-upgrade). */
   oldFormat = false
+  /** What the save dialog returns: a file name, or null for Cancel. */
+  backupSavedAs: string | null = 'Still backup 2026-11-08.json'
+  /** The backup the open dialog picks (null for Cancel), with its password and contents. */
+  backupChosen: { name: string; modifiedAt: number; password: string; summary: BackupSummary; lenses: FakeLens[] } | 'not-a-vault' | null = null
+  private backupChecked = false
+  /** Copies Still kept next to the vault. */
+  kept: KeptCopy[] = []
   lenses: FakeLens[] = []
   bin: FakeLens[] = []
   unlocked = false
@@ -202,6 +209,64 @@ export class FakeVault implements VaultApi {
     this.password = next
     this.strengths.push(stronger ? 'stronger' : 'standard')
     return { state: this.now(), olderCopies: this.olderCopies }
+  }
+
+  async backupSave() {
+    this.calls.push('backupSave')
+    if (!this.unlocked) throw new VaultApiError('locked')
+    if (this.oldFormat) throw new VaultApiError('needs-upgrade')
+    if (this.failChanges) throw new VaultApiError('write-failed')
+    return { saved: this.backupSavedAs }
+  }
+
+  async restoreChoose() {
+    this.calls.push('restoreChoose')
+    if (!this.unlocked && this.status() === 'locked') throw new VaultApiError('unlock-first')
+    this.backupChecked = false
+    const chosen = this.backupChosen
+    if (chosen === null) return { name: null }
+    if (chosen === 'not-a-vault') throw new VaultApiError('not-a-vault')
+    return { name: chosen.name, modifiedAt: chosen.modifiedAt }
+  }
+
+  async restoreCheck(password: string) {
+    this.calls.push('restoreCheck')
+    const chosen = this.backupChosen
+    if (!chosen || chosen === 'not-a-vault') throw new VaultApiError('nothing-chosen')
+    if (password !== chosen.password) throw new VaultApiError('wrong-password')
+    this.backupChecked = true
+    return chosen.summary
+  }
+
+  async restoreConfirm() {
+    this.calls.push('restoreConfirm')
+    const chosen = this.backupChosen
+    if (!chosen || chosen === 'not-a-vault' || !this.backupChecked) throw new VaultApiError('not-checked')
+    if (this.failChanges) throw new VaultApiError('write-failed')
+    const kept = this.password !== null ? 'vault-before-restore.json' : null
+    // As in Rust: the backup becomes the vault, and the vault locks.
+    this.password = chosen.password
+    this.lenses = chosen.lenses
+    this.bin = []
+    this.unreadableFile = false
+    this.orphaned = false
+    this.unlocked = false
+    this.backupChecked = false
+    return { kept }
+  }
+
+  async keptList() {
+    this.calls.push('keptList')
+    if (!this.unlocked) throw new VaultApiError('locked')
+    return this.kept
+  }
+
+  async keptTrash(name: string) {
+    this.calls.push('keptTrash')
+    if (!this.unlocked) throw new VaultApiError('locked')
+    if (!this.kept.some((k) => k.name === name)) throw new VaultApiError('trash-failed')
+    this.kept = this.kept.filter((k) => k.name !== name)
+    return this.kept
   }
 
   async createLens(name: string) {

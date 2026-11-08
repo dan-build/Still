@@ -20,6 +20,9 @@ interface SidebarProps {
   onNewLens: () => void
   onLock: () => void
   onChangePassword: () => void
+  onBackup: () => void
+  onRestore: () => void
+  onKeptCopies: () => void
 }
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -29,7 +32,7 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
  * at the bottom. The top 52px are the overlay title bar: they hold the
  * window's traffic lights and drag the window.
  */
-export default function Sidebar({ lenses, selected, archiveCount, onSelect, onNewLens, onLock, onChangePassword, query, onQuery, searchRef }: SidebarProps) {
+export default function Sidebar({ lenses, selected, archiveCount, onSelect, onNewLens, onLock, onChangePassword, onBackup, onRestore, onKeptCopies, query, onQuery, searchRef }: SidebarProps) {
   return (
     <div
      
@@ -117,7 +120,12 @@ export default function Sidebar({ lenses, selected, archiveCount, onSelect, onNe
           label="Vault actions"
           side="above"
           align="end"
-          items={[{ label: 'Change master password…', icon: 'password', onSelect: onChangePassword }]}
+          items={[
+            { label: 'Save a backup…', icon: 'copy', onSelect: onBackup },
+            { label: 'Restore from a backup…', icon: 'restore', onSelect: onRestore },
+            { label: 'Kept copies…', icon: 'archive', onSelect: onKeptCopies },
+            { label: 'Change master password…', icon: 'password', onSelect: onChangePassword },
+          ]}
         />
       </div>
     </div>

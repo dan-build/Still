@@ -20,6 +20,15 @@ vi.mock('@/platform/tauri/startup', () => ({
   openOldFormat: startup.oldFormat,
   restoreKeptCopy: startup.restore,
 }))
+const restore = vi.hoisted(() => ({
+  choose: vi.fn(),
+  check: vi.fn(),
+  confirm: vi.fn(),
+}))
+vi.mock('@/platform/tauri/vaultApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/platform/tauri/vaultApi')>()),
+  createTauriVaultApi: () => ({ restoreChoose: restore.choose, restoreCheck: restore.check, restoreConfirm: restore.confirm }),
+}))
 vi.mock('./App', () => ({
   default: ({ notice, onDamaged }: { notice?: string; onDamaged?: () => void }) =>
     createElement('div', null, createElement('p', null, `the app${notice ? ` (${notice})` : ''}`), createElement('button', { onClick: onDamaged }, 'found damage')),
@@ -33,6 +42,9 @@ afterEach(() => {
   startup.move.mockReset()
   startup.oldFormat.mockReset()
   startup.restore.mockReset()
+  restore.choose.mockReset()
+  restore.check.mockReset()
+  restore.confirm.mockReset()
 })
 
 describe('start-up screens', () => {
@@ -49,12 +61,29 @@ describe('start-up screens', () => {
     expect(screen.queryByRole('button')).toBeNull()
   })
 
-  it('explains a damaged vault file without offering to replace it', async () => {
+  it('explains a damaged vault file and offers only to restore a saved backup', async () => {
     startup.open.mockResolvedValue({ kind: 'unreadable' })
     render(createElement(StillApp))
     await screen.findByText("Still can't read its vault file")
     expect(screen.getByText(/from a newer version of Still/)).toBeTruthy()
-    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Restore from a backup…'])
+  })
+
+  it('restores a saved backup over a vault file it cannot read, then opens it', async () => {
+    startup.open.mockResolvedValueOnce({ kind: 'unreadable' }).mockResolvedValue({ kind: 'ready' })
+    restore.choose.mockResolvedValue({ name: 'Still backup 2026-11-01.json', modifiedAt: Date.now() })
+    restore.check.mockResolvedValue({ lenses: 2, secrets: 5, archived: 0 })
+    restore.confirm.mockResolvedValue({ kept: 'vault-before-restore.json' })
+    render(createElement(StillApp))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore from a backup…' }))
+    fireEvent.change(await screen.findByLabelText("The backup's password"), { target: { value: 'old-pass' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Check backup' }))
+    await screen.findByText('This backup holds 2 Lenses with 5 secrets.')
+    fireEvent.click(screen.getByRole('button', { name: 'Replace my vault' }))
+
+    await screen.findByText('the app')
+    expect(restore.check).toHaveBeenCalledWith('old-pass')
+    expect(restore.confirm).toHaveBeenCalledOnce()
   })
 
   it('offers the kept copy when unlocking finds the vault damaged', async () => {

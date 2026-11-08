@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-08
+
+### Added
+
+- **Save a backup** from the vault menu next to Lock, to anywhere you choose: a USB stick, your Documents, cloud storage. A backup is your vault file itself, fully encrypted, and it opens with the master password your vault had when you saved it.
+- **Restore from a backup.** Still asks for the backup's password and shows what it holds (and how old it is) before replacing anything, keeps your current vault as a copy, then locks so you unlock the restored vault. It's also offered when Still can't read its vault file.
+- **Kept copies.** See the copies Still kept next to your vault, such as the one from before the upgrade to the new format, and move any of them to the Trash, after a confirmation. Still still never removes them by itself.
+
 ## [0.7.1] - 2026-11-08
 
 ### Added
@@ -183,7 +191,8 @@ First public pre-release, for macOS.
 - An Archive (recycle bin) that keeps forgotten Lenses for 7 days.
 - Offline by design: no accounts, servers or telemetry.
 
-[Unreleased]: https://github.com/dan-build/Still/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/dan-build/Still/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/dan-build/Still/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/dan-build/Still/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/dan-build/Still/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/dan-build/Still/compare/v0.6.2...v0.6.3
