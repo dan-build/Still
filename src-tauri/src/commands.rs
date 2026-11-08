@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use serde_json::{json, Value};
 use still_core::session::{SecretText, Unlocked};
-use still_core::vault::backend::{Notice, Status, UnlockFailure};
+use still_core::vault::backend::{Notice, Status, Strength, UnlockFailure};
 use tauri::State;
 
 use crate::autolock::AutoLock;
@@ -19,7 +19,7 @@ use crate::vault::{self, state, CommandError, Revealed, Vault};
 
 /// Every command, as named in build.rs and the capability.
 #[cfg(test)]
-pub const ALL: [&str; 20] = [
+pub const ALL: [&str; 21] = [
     "vault_create",
     "vault_unlock",
     "vault_lock",
@@ -31,6 +31,7 @@ pub const ALL: [&str; 20] = [
     "startup_restore_v1",
     "vault_state",
     "vault_set_aside",
+    "vault_change_password",
     "lens_create",
     "lens_rename",
     "lens_forget",
@@ -64,6 +65,40 @@ pub async fn vault_create(
     let mut backend = vault.backend();
     backend.finish_create(plan, created)?;
     Ok(state(&backend))
+}
+
+/// Changes the master password, given the current one, the new one (the
+/// same rules as creating a vault) and whether to use stronger Argon2id
+/// settings. Argon2id runs three times, outside the backend's lock; a Lock
+/// or a save meanwhile wins. Returns {state, olderCopies}: the kept copies
+/// that may still open with the old password.
+#[tauri::command]
+pub async fn vault_change_password(
+    vault: State<'_, Vault>,
+    autolock: State<'_, AutoLock>,
+    current: String,
+    new: String,
+    stronger: bool,
+) -> Result<Value, CommandError> {
+    check_new_password(&new)?;
+    let current = SecretText::from(current);
+    let new = SecretText::from(new);
+    let strength = if stronger {
+        Strength::Stronger
+    } else {
+        Strength::Standard
+    };
+    let plan = vault.backend().prepare_change_password()?;
+    let (plan, changed) = tauri::async_runtime::spawn_blocking(move || {
+        let changed = plan.change::<Unlocked>(&current, &new, strength);
+        (plan, changed)
+    })
+    .await
+    .map_err(|_| CommandError("failed"))?;
+    autolock.touch(Instant::now());
+    let mut backend = vault.backend();
+    let kept = backend.finish_change_password(plan, changed)?;
+    Ok(json!({ "state": state(&backend), "olderCopies": kept }))
 }
 
 /// Unlocks the vault: {ok: true, state} or {ok: false, reason, canRestore?}. Argon2id

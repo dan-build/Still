@@ -15,6 +15,7 @@
     "allow-startup-restore-v1",
     "allow-vault-state",
     "allow-vault-set-aside",
+    "allow-vault-change-password",
     "allow-lens-create",
     "allow-lens-rename",
     "allow-lens-forget",
