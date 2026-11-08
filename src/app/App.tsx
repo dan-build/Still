@@ -3,6 +3,7 @@ import LensView from '@/features/lenses/ui/LensView'
 import SearchView from '@/features/lenses/ui/SearchView'
 import type { SecretOps } from '@/features/lenses/ui/SecretList'
 import LensNameDialog from '@/features/lenses/ui/LensNameDialog'
+import ChangePasswordDialog from '@/features/vault/ui/ChangePasswordDialog'
 import ArchiveView from '@/features/recycle-bin/ui/ArchiveView'
 import { onAutoLocked, reportActivity } from '@/platform/tauri/session'
 import { createTauriVaultApi, type VaultApi } from '@/platform/tauri/vaultApi'
@@ -61,6 +62,7 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
   /** Why the vault locked itself, shown on the unlock screen until the next unlock. */
   const [lockedBecause, setLockedBecause] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isPasswordOpen, setIsPasswordOpen] = useState(false)
   const [selection, setSelection] = useState<Selection | null>(null)
   // The sidebar search; while it has text, the main area shows the results.
   const [query, setQuery] = useState('')
@@ -226,6 +228,7 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
     setSelection(null)
     setQuery('')
     setIsCreateOpen(false)
+    setIsPasswordOpen(false)
     setView({ lenses: [], bin: [], unreadable: 0 })
     // A copy toast would outlive what it describes; Rust clears the clipboard on lock.
     setToast((current) => (current?.countdown ? null : current))
@@ -306,6 +309,7 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
             searchRef={searchField}
             onNewLens={() => setIsCreateOpen(true)}
             onLock={() => lock()}
+            onChangePassword={() => setIsPasswordOpen(true)}
           />
           <main className="flex min-w-0 flex-1 flex-col">
             {view.unreadable > 0 && (
@@ -355,6 +359,19 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
           </main>
 
           <LensNameDialog open={isCreateOpen} onClose={() => setIsCreateOpen(false)} onSubmit={createLens} />
+          <ChangePasswordDialog
+            open={isPasswordOpen}
+            onClose={() => setIsPasswordOpen(false)}
+            onChange={async (current, next, stronger) => {
+              const { state, olderCopies } = await api().changePassword(current, next, stronger)
+              show(state)
+              return olderCopies
+            }}
+            onChanged={() => {
+              setIsPasswordOpen(false)
+              showToast({ message: 'Master password changed' })
+            }}
+          />
         </div>
       )}
 

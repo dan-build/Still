@@ -3,6 +3,7 @@ import type { LensView } from '@/features/vault/model/types'
 import { IconButton } from '@/shared/ui/Button'
 import { Icon, Mark, type IconName } from '@/shared/ui/Icon'
 import { Kbd } from '@/shared/ui/Kbd'
+import { Menu } from '@/shared/ui/Menu'
 
 export type Selection = { kind: 'lens'; id: string } | { kind: 'archive' }
 
@@ -18,6 +19,7 @@ interface SidebarProps {
   onSelect: (selection: Selection) => void
   onNewLens: () => void
   onLock: () => void
+  onChangePassword: () => void
 }
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -27,7 +29,7 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
  * at the bottom. The top 52px are the overlay title bar: they hold the
  * window's traffic lights and drag the window.
  */
-export default function Sidebar({ lenses, selected, archiveCount, onSelect, onNewLens, onLock, query, onQuery, searchRef }: SidebarProps) {
+export default function Sidebar({ lenses, selected, archiveCount, onSelect, onNewLens, onLock, onChangePassword, query, onQuery, searchRef }: SidebarProps) {
   return (
     <div
      
@@ -99,16 +101,25 @@ export default function Sidebar({ lenses, selected, archiveCount, onSelect, onNe
           </NavItem>
         </div>
       </nav>
-      <button
-        type="button"
-        onClick={onLock}
-        aria-keyshortcuts="Meta+L"
-        className={NAV}
-      >
-        <Icon name="lock" className="text-g5" />
-        <span className="min-w-0 flex-1 truncate">Lock</span>
-        <Kbd>⌘L</Kbd>
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={onLock}
+          aria-keyshortcuts="Meta+L"
+          className={`${NAV} min-w-0 flex-1`}
+        >
+          <Icon name="lock" className="text-g5" />
+          <span className="min-w-0 flex-1 truncate">Lock</span>
+          <Kbd>⌘L</Kbd>
+        </button>
+        {/* Actions for the whole vault. */}
+        <Menu
+          label="Vault actions"
+          side="above"
+          align="end"
+          items={[{ label: 'Change master password…', icon: 'password', onSelect: onChangePassword }]}
+        />
+      </div>
     </div>
   )
 }

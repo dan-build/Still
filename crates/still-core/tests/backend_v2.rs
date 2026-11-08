@@ -8,9 +8,12 @@ use std::sync::Arc;
 
 use common::vault::{FastKeys, Memory};
 use serde_json::Value;
+use still_core::session::SessionError;
 use still_core::session::{SecretText, Unlocked};
 use still_core::v2;
-use still_core::vault::backend::{Backend, Keys, Notice, Status, UnlockFailure, VaultError};
+use still_core::vault::backend::{
+    Backend, Keys, Notice, Status, Strength, UnlockFailure, VaultError,
+};
 
 const NOW: i64 = 1_791_460_800_000; // 2026-10-08T12:00:00.000Z
 
@@ -712,4 +715,185 @@ fn forgets_everything_at_lock_and_reopens_in_the_same_format() {
             assert!(disk.0.borrow().data["still-lenses"].contains("Renamed"));
         }
     }
+}
+
+// ---- changing the master password ------------------------------------------------
+
+/// A v2 vault on `disk` with one Lens holding one secret, unlocked with "old-pass-1".
+fn vault_to_rekey(disk: &Memory) -> (Backend<Memory, FastKeys>, String, String) {
+    let mut vault = backend::<FastKeys>(disk);
+    vault.create(&secret("old-pass-1")).unwrap();
+    let lens = vault.create_lens("Work").unwrap();
+    vault
+        .add_item(&lens, "Email", "password", &secret(" exact "))
+        .unwrap();
+    let item = vault.view().lenses[0]["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    (vault, lens, item)
+}
+
+#[test]
+fn changes_the_master_password_and_keeps_everything_else() {
+    let disk = v2_disk();
+    disk.0.borrow_mut().kept_copies = vec!["vault-v1.json".into()];
+    let (mut vault, lens, item) = vault_to_rekey(&disk);
+    let shown = vault.view();
+    let lists = stored_lists(&disk, "old-pass-1");
+
+    let kept = vault
+        .change_password(
+            &secret("old-pass-1"),
+            &secret("new-pass-2"),
+            Strength::Stronger,
+        )
+        .unwrap();
+    assert_eq!(kept, ["vault-v1.json"]);
+    let file = v2::File::parse(disk.0.borrow().v2.as_deref().unwrap()).unwrap();
+    assert_eq!(file.kdf.ops_limit, v2::OPS_MIN * 2);
+    // The lists are carried over byte for byte, and the vault stays open.
+    let after = stored_lists(&disk, "new-pass-2");
+    assert_eq!(after.lenses, lists.lenses);
+    assert_eq!(after.bin, lists.bin);
+    assert_eq!(vault.view(), shown);
+    assert_eq!(vault.reveal_item(&lens, &item).unwrap().expose(), " exact ");
+    // Saves seal onto the new file.
+    vault.rename_lens(&lens, "Renamed").unwrap();
+    assert!(stored_lists(&disk, "new-pass-2").lenses.contains("Renamed"));
+
+    // Only the new password opens it now.
+    vault.lock();
+    assert_eq!(
+        vault.unlock(&secret("old-pass-1")),
+        Err(UnlockFailure::WrongPassword)
+    );
+    vault.unlock(&secret("new-pass-2")).unwrap();
+    assert_eq!(vault.reveal_item(&lens, &item).unwrap().expose(), " exact ");
+}
+
+#[test]
+fn keeps_standard_settings_when_asked() {
+    let disk = v2_disk();
+    let (mut vault, _, _) = vault_to_rekey(&disk);
+    vault
+        .change_password(
+            &secret("old-pass-1"),
+            &secret("old-pass-1"),
+            Strength::Standard,
+        )
+        .unwrap();
+    let file = v2::File::parse(disk.0.borrow().v2.as_deref().unwrap()).unwrap();
+    assert_eq!(
+        (file.kdf.ops_limit, file.kdf.mem_limit),
+        (v2::OPS_MIN, v2::MEM_MIN)
+    );
+}
+
+#[test]
+fn changes_nothing_on_a_wrong_password_a_failed_write_or_an_old_vault() {
+    let disk = v2_disk();
+    let (mut vault, lens, _) = vault_to_rekey(&disk);
+    let before = disk.0.borrow().v2.clone();
+
+    assert_eq!(
+        vault.change_password(&secret("wrong"), &secret("new-pass-2"), Strength::Standard),
+        Err(VaultError::Crypto(SessionError::WrongPassword))
+    );
+    disk.0.borrow_mut().fail_keys.insert("v2".into());
+    assert_eq!(
+        vault.change_password(
+            &secret("old-pass-1"),
+            &secret("new-pass-2"),
+            Strength::Standard
+        ),
+        Err(VaultError::WriteFailed)
+    );
+    disk.0.borrow_mut().fail_keys.clear();
+    assert_eq!(disk.0.borrow().v2, before);
+    assert_eq!(disk.0.borrow().rekeys, 0);
+    // The vault is still the same vault, on the old password.
+    vault.rename_lens(&lens, "Still works").unwrap();
+    vault.lock();
+    vault.unlock(&secret("old-pass-1")).unwrap();
+
+    // An old-format vault must be upgraded first; a locked one can't change.
+    let v1 = Memory::default();
+    let mut old = backend::<FastKeys>(&v1);
+    old.create(&secret("old-pass-1")).unwrap();
+    assert_eq!(
+        old.change_password(
+            &secret("old-pass-1"),
+            &secret("new-pass-2"),
+            Strength::Standard
+        ),
+        Err(VaultError::NeedsUpgrade)
+    );
+    old.lock();
+    assert_eq!(
+        old.change_password(
+            &secret("old-pass-1"),
+            &secret("new-pass-2"),
+            Strength::Standard
+        ),
+        Err(VaultError::Locked)
+    );
+}
+
+// The password step runs outside the backend's lock, as unlocking does.
+#[test]
+fn refuses_a_change_overtaken_during_the_password_step() {
+    let step = |vault: &Backend<Memory, FastKeys>| {
+        let plan = vault.prepare_change_password().unwrap();
+        let changed = plan.change::<FastKeys>(
+            &secret("old-pass-1"),
+            &secret("new-pass-2"),
+            Strength::Standard,
+        );
+        (plan, changed)
+    };
+
+    // A save meanwhile: the new file would hold the lists from before it.
+    let disk = v2_disk();
+    let (mut vault, lens, _) = vault_to_rekey(&disk);
+    let (plan, changed) = step(&vault);
+    vault.rename_lens(&lens, "Saved meanwhile").unwrap();
+    assert_eq!(
+        vault.finish_change_password(plan, changed),
+        Err(VaultError::WriteFailed)
+    );
+    assert!(stored_lists(&disk, "old-pass-1")
+        .lenses
+        .contains("Saved meanwhile"));
+
+    // A Lock meanwhile wins.
+    let (plan, changed) = step(&vault);
+    vault.lock();
+    assert_eq!(
+        vault.finish_change_password(plan, changed),
+        Err(VaultError::Locked)
+    );
+
+    // Another vault's file put in place, or a new file for another vault.
+    vault.unlock(&secret("old-pass-1")).unwrap();
+    let (plan, changed) = step(&vault);
+    let other = v2_disk();
+    let (other_vault, _, _) = vault_to_rekey(&other);
+    let theirs = other.0.borrow().v2.clone();
+    let ours = disk.0.borrow().v2.clone();
+    disk.0.borrow_mut().v2 = theirs;
+    assert_eq!(
+        vault.finish_change_password(plan, changed),
+        Err(VaultError::WriteFailed)
+    );
+    disk.0.borrow_mut().v2 = ours;
+    let (plan, changed) = step(&other_vault);
+    assert_eq!(
+        vault.finish_change_password(plan, changed),
+        Err(VaultError::WriteFailed)
+    );
+
+    assert_eq!(disk.0.borrow().rekeys, 0);
+    vault.lock();
+    vault.unlock(&secret("old-pass-1")).unwrap();
 }

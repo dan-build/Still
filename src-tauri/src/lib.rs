@@ -44,6 +44,7 @@ pub fn run() {
             commands::startup_restore_v1,
             commands::vault_state,
             commands::vault_set_aside,
+            commands::vault_change_password,
             commands::lens_create,
             commands::lens_rename,
             commands::lens_forget,

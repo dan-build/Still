@@ -13,6 +13,7 @@ const COMMANDS: &[&str] = &[
     "startup_restore_v1",
     "vault_state",
     "vault_set_aside",
+    "vault_change_password",
     "lens_create",
     "lens_rename",
     "lens_forget",

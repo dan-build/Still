@@ -15,6 +15,8 @@ interface MenuProps {
   items: readonly MenuItem[]
   /** Which edge of the trigger the menu lines up with. */
   align?: 'start' | 'end'
+  /** Open above the trigger (at the bottom of a window) instead of below. */
+  side?: 'below' | 'above'
 }
 
 /**
@@ -22,7 +24,7 @@ interface MenuProps {
  * them, Return or a click runs one, and Escape, Tab or a click outside closes
  * the menu; focus goes back to the button.
  */
-export function Menu({ label, items, align = 'end' }: MenuProps) {
+export function Menu({ label, items, align = 'end', side = 'below' }: MenuProps) {
   const [open, setOpen] = useState(false)
   const id = useId()
   const root = useRef<HTMLDivElement>(null)
@@ -82,7 +84,8 @@ export function Menu({ label, items, align = 'end' }: MenuProps) {
           tabIndex={-1}
           onKeyDown={onKeyDown}
           className={[
-            'absolute top-full z-30 mt-1 min-w-[180px] rounded-8 bg-raised p-1',
+            'absolute z-30 min-w-[180px] rounded-8 bg-raised p-1',
+            side === 'above' ? 'bottom-full mb-1' : 'top-full mt-1',
             'shadow-[var(--shadow-menu)]',
             align === 'end' ? 'right-0' : 'left-0',
           ].join(' ')}

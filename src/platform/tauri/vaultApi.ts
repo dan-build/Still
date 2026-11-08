@@ -10,7 +10,7 @@ import { CONVERTED_MARKER } from './startup'
 
 /**
  * A refused command, by code: locked, vault-exists, password-too-short,
- * password-blank, unknown-lens, unknown-item, empty-label, empty-name,
+ * password-blank, needs-upgrade, unknown-lens, unknown-item, empty-label, empty-name,
  * empty-value, write-failed, storage-failed, crypto-<code>, or failed
  * (anything else).
  */
@@ -32,6 +32,11 @@ export interface VaultApi {
    * the originals, so a new vault can be created. Nothing is deleted.
    */
   setAside(): Promise<string>
+  /**
+   * Changes the master password (Argon2id runs three times, a few seconds).
+   * `olderCopies` names kept copies that may still open with the old one.
+   */
+  changePassword(current: string, next: string, stronger: boolean): Promise<{ state: VaultState; olderCopies: string[] }>
   createLens(name: string): Promise<{ id: string; state: VaultState }>
   renameLens(lensId: string, name: string): Promise<VaultState>
   forgetLens(lensId: string): Promise<VaultState>
@@ -76,6 +81,7 @@ export function createTauriVaultApi(): VaultApi {
     },
     lock: () => call('vault_lock'),
     setAside: () => call('vault_set_aside'),
+    changePassword: (current, next, stronger) => call('vault_change_password', { current, new: next, stronger }),
     createLens: (name) => call('lens_create', { name }),
     renameLens: (lensId, name) => call('lens_rename', { lensId, name }),
     forgetLens: (lensId) => call('lens_forget', { lensId }),

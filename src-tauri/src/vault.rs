@@ -90,6 +90,13 @@ impl Storage for FileStorage {
         !self.0.already_open && self.0.store().load() == Loaded::Unreadable
     }
 
+    fn write_rekeyed_v2(&mut self, file: &v2::File) -> Result<Vec<String>, StorageError> {
+        self.0
+            .store()
+            .write_rekeyed_v2(file)
+            .map_err(|_| StorageError)
+    }
+
     fn convert_to_v2(
         &mut self,
         file: &v2::File,

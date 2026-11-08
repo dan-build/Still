@@ -789,6 +789,109 @@ describe('creating a vault (B4)', () => {
   })
 })
 
+describe('changing the master password', () => {
+  const NEW_PASSWORD = 'new-password-2'
+
+  async function openChangePassword() {
+    fireEvent.click(screen.getByRole('button', { name: 'Vault actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Change master password…' }))
+    await screen.findByRole('dialog', { name: 'Change master password' })
+  }
+
+  function fill(current: string, next: string, confirm = next) {
+    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: current } })
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: next } })
+    fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: confirm } })
+  }
+
+  const submit = () => screen.getByRole('button', { name: 'Change password' }) as HTMLButtonElement
+
+  it('changes it from the vault menu, with stronger settings when chosen', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    await unlock()
+    await openChangePassword()
+    fill(PASSWORD, NEW_PASSWORD)
+    fireEvent.click(screen.getByRole('radio', { name: 'Stronger' }))
+    fireEvent.click(submit())
+
+    await screen.findByText('Master password changed')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(vault.strengths).toEqual(['stronger'])
+    // Only the new password opens it now.
+    fireEvent.click(screen.getByRole('button', { name: /^Lock/ }))
+    await enterPassword(PASSWORD)
+    await screen.findByText('Incorrect password. Try again.')
+    await enterPassword(NEW_PASSWORD)
+    await screen.findByRole('button', { name: /^Archive/ })
+  })
+
+  it('allows the change only once the new password follows the rules and is confirmed', async () => {
+    const vault = seedVault()
+    await unlock()
+    await openChangePassword()
+    fill(PASSWORD, 'short')
+    expect(submit().disabled).toBe(true)
+    fill(PASSWORD, '          ')
+    expect(screen.getByText("A password can't be only spaces.")).toBeTruthy()
+    expect(submit().disabled).toBe(true)
+    fill(PASSWORD, NEW_PASSWORD, 'new-password-3')
+    expect(screen.getByText("The passwords don't match.")).toBeTruthy()
+    expect(submit().disabled).toBe(true)
+    fill('', NEW_PASSWORD)
+    expect(submit().disabled).toBe(true)
+    fill(PASSWORD, NEW_PASSWORD)
+    expect(submit().disabled).toBe(false)
+    expect(vault.calls).not.toContain('changePassword')
+  })
+
+  it('says when the current password is wrong, and changes nothing', async () => {
+    const vault = seedVault()
+    await unlock()
+    await openChangePassword()
+    fill('not-the-password', NEW_PASSWORD)
+    fireEvent.click(submit())
+
+    await screen.findByText('Incorrect password.')
+    expect(screen.getByRole('dialog', { name: 'Change master password' })).toBeTruthy()
+    expect(vault.strengths).toEqual([])
+  })
+
+  it('asks to upgrade an old-format vault first', async () => {
+    const vault = seedVault()
+    vault.oldFormat = true
+    await unlock()
+    await openChangePassword()
+    fill(PASSWORD, NEW_PASSWORD)
+    fireEvent.click(submit())
+
+    await screen.findByText(/Your vault is still in the old format/)
+    expect(vault.strengths).toEqual([])
+  })
+
+  it('names older copies that still open with the old password', async () => {
+    const vault = seedVault()
+    vault.olderCopies = ['vault-v1.json']
+    await unlock()
+    await openChangePassword()
+    fill(PASSWORD, NEW_PASSWORD)
+    fireEvent.click(submit())
+
+    await screen.findByRole('dialog', { name: 'Master password changed' })
+    expect(screen.getByText('vault-v1.json')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('closes when the vault locks', async () => {
+    seedVault()
+    await unlock()
+    await openChangePassword()
+    fireEvent.keyDown(window, { key: 'l', metaKey: true })
+    await screen.findByPlaceholderText('Master password')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+})
+
 describe('PIN (B6)', () => {
   it('offers no PIN when creating a vault', async () => {
     freshInstall()
