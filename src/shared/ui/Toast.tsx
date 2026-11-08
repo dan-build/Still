@@ -64,7 +64,8 @@ function Toast({ message, detail, tone = 'info', countdown, action }: ToastMessa
           type="button"
           onClick={action.onAction}
           // The toast area lets clicks through; its button must take them.
-          className="focus-ring pointer-events-auto -my-0.5 shrink-0 rounded-4 px-1.5 text-13 font-semibold text-accent-text transition-[background-color] duration-150 hover:bg-wash"
+          // Centred in the toast, whatever the message's length.
+          className="focus-ring pointer-events-auto shrink-0 self-center rounded-4 px-1.5 py-0.5 text-13 font-semibold text-accent-text transition-[background-color] duration-150 hover:bg-wash"
         >
           {action.label}
         </button>

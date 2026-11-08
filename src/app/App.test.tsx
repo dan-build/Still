@@ -541,6 +541,8 @@ describe('secrets', () => {
       await unlock()
       await openLens('Alpha')
       await deleteAlphaSecret()
+      // The bar along the bottom counts the 10 seconds down.
+      expect(document.querySelector('[style*="still-countdown 10s"]')).not.toBeNull()
       act(() => vi.advanceTimersByTime(9_000))
       expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy()
       act(() => vi.advanceTimersByTime(1_000))

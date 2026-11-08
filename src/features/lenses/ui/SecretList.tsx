@@ -141,7 +141,8 @@ export default function SecretList({ groups, headings, highlight, label, ops, on
         onToast({ message: `Couldn't restore ${item.label}. It stays deleted.`, tone: 'error' })
       }
     }
-    onToast({ message: 'Secret deleted', action: { label: 'Undo', onAction: undo } })
+    // The bar along the bottom shows the 10 seconds Undo is offered for.
+    onToast({ message: 'Secret deleted', action: { label: 'Undo', onAction: undo }, countdown: 10 })
   }
 
   const rows = (group: Group) =>
