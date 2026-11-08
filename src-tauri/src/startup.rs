@@ -1115,4 +1115,25 @@ mod tests {
         }
         assert_eq!(checked, 2 * 4 * 2 * 3 * 2 * 2);
     }
+
+    // KNOWN GAP: an older copy of the vault file put back (a single-file
+    // restore, a sync tool) opens as if nothing happened. Not yet fixed.
+    #[test]
+    #[should_panic(expected = "an older vault file opens without a warning")]
+    fn warns_when_an_older_vault_file_is_put_back() {
+        let tmp = TempDir::new();
+        let store = tmp.store();
+        let file = tmp.0.join("vault").join("vault.json");
+        open(&store, Values::new(), None, None, NOW);
+        store.store().write_v2(&a_v2_file()).unwrap();
+        let older = std::fs::read(&file).unwrap();
+        store.store().write_v2(&a_v2_file()).unwrap();
+        std::fs::write(&file, older).unwrap();
+
+        assert_ne!(
+            open(&store, Values::new(), None, None, NOW),
+            Startup::Ready { notice: None },
+            "an older vault file opens without a warning"
+        );
+    }
 }
