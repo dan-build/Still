@@ -226,6 +226,47 @@ impl Unlocked {
 
     /// The same file with this body sealed in (for a save). Its settings and
     /// wrapped app key stay as they are.
+    /// The same vault under a new password: `file` is opened with the current
+    /// password (a wrong one is `WrongPassword`), its app key is wrapped under
+    /// `new` with `kdf`, and `body` is sealed in again. Like `create_v2`, it is
+    /// checked before it's returned, with a second, independent Argon2id run:
+    /// it must open to this very app key and these very lists, because a
+    /// wrong derivation here would lock the vault for good.
+    pub fn change_password_v2(
+        file: &v2::File,
+        current: &SecretText,
+        new: &SecretText,
+        kdf: v2::Kdf,
+        body: &v2::Body,
+    ) -> Result<(Self, v2::File), SessionError> {
+        let (session, _) = Self::open_v2(file, current)?;
+        let password_key = kdf
+            .password_key(new.expose())
+            .map_err(|_| SessionError::Failed)?;
+        let changed = v2::seal_file(
+            &session.app_key,
+            &password_key,
+            kdf,
+            body,
+            file.migrated_from.clone(),
+        );
+        drop(password_key);
+        let (check, opened) = Self::open_v2(&changed, new).map_err(|_| SessionError::Failed)?;
+        let same = check.app_key.same_as(&session.app_key)
+            && opened.lenses == body.lenses
+            && opened.bin == body.bin;
+        if same {
+            Ok((session, changed))
+        } else {
+            Err(SessionError::Failed)
+        }
+    }
+
+    /// Whether both hold the same app key: the same vault.
+    pub fn same_app_key(&self, other: &Self) -> bool {
+        self.app_key.same_as(&other.app_key)
+    }
+
     pub fn seal_v2(&self, file: &v2::File, body: &v2::Body) -> v2::File {
         file.with_body(body, &self.app_key)
     }

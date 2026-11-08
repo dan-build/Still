@@ -68,6 +68,20 @@ impl Kdf {
         Self::sensitive(salt)
     }
 
+    /// These limits with a fresh random salt; refused outside the allowed
+    /// range (SENSITIVE up to OPS_MAX passes and MEM_MAX bytes).
+    pub fn new(ops_limit: u64, mem_limit: u64) -> Result<Self, FormatError> {
+        let mut salt = [0u8; SALT_BYTES];
+        sodium::random_bytes(&mut salt);
+        let kdf = Self {
+            ops_limit,
+            mem_limit,
+            salt,
+        };
+        kdf.check_limits()?;
+        Ok(kdf)
+    }
+
     /// The fixed binary layout bound into the associated data: algorithm id,
     /// ops limit and mem limit (u64 little-endian), salt.
     pub fn block(&self) -> [u8; 33] {
