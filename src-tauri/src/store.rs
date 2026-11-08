@@ -175,6 +175,62 @@ impl Store {
     /// bytes first, crash-safe; then writes v2 atomically and reads it back,
     /// putting the v1 file back if it doesn't read back exactly. Returns the
     /// kept copy's file name.
+    /// Replaces the v2 vault with `file`, the same vault under a new
+    /// password: written atomically and read back (if it doesn't read back
+    /// exactly, the previous file goes back in place). Then the backup is
+    /// made a copy of it too, so the everyday backup doesn't keep the old
+    /// password. Returns the names of the other kept copies, which may still
+    /// open with the old password and are never deleted; if the backup
+    /// couldn't be replaced, it's listed first.
+    pub fn write_rekeyed_v2(&self, file: &v2::File) -> Result<Vec<String>, StoreError> {
+        let previous = fs::read(self.file())?;
+        if !matches!(read_vault(&previous), Loaded::V2(_)) {
+            return Err(StoreError::OtherFormat);
+        }
+        let bytes = file.to_json();
+        self.save_bytes(bytes.as_bytes())?;
+        match self.load() {
+            Loaded::V2(stored) if *stored == *file => {}
+            _ => {
+                write_atomically(&self.dir, &self.file(), &previous)?;
+                return Err(StoreError::VerifyFailed);
+            }
+        }
+        let mut kept = self.kept_copies();
+        if write_atomically(&self.dir, &self.backup(), bytes.as_bytes()).is_err() {
+            kept.insert(0, BACKUP_NAME.to_owned());
+        }
+        Ok(kept)
+    }
+
+    /// The copies Still kept next to the vault, by name, sorted: from before
+    /// the upgrade (vault-v1*.json), of a backup (vault-bak*.json), and of a
+    /// file it couldn't read (vault-unreadable*.json).
+    fn kept_copies(&self) -> Vec<String> {
+        let is_kept = |name: &str| {
+            ["vault-v1", "vault-bak", "vault-unreadable"]
+                .iter()
+                .any(|stem| {
+                    name.strip_prefix(stem)
+                        .and_then(|rest| rest.strip_suffix(".json"))
+                        .is_some_and(|n| {
+                            n.is_empty()
+                                || n.strip_prefix('-').is_some_and(|d| {
+                                    !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit())
+                                })
+                        })
+                })
+        };
+        let mut names: Vec<String> = fs::read_dir(&self.dir)
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .filter(|name| is_kept(name))
+            .collect();
+        names.sort();
+        names
+    }
+
     pub fn convert_to_v2(
         &self,
         file: &v2::File,
@@ -849,6 +905,60 @@ mod tests {
         assert!(matches!(store.load(), Loaded::Values(_)));
         // The copy kept before writing stays, as every kept copy does.
         assert_eq!(fs::read(store.dir.join("vault-v1.json")).unwrap(), v1_bytes);
+    }
+
+    /// A v2 vault saved twice, so the backup holds the first save.
+    fn v2_store(tmp: &TempDir) -> (Store, v2::File) {
+        let store = tmp.store();
+        store.write_v2(&a_v2_file()).unwrap();
+        let second = a_v2_file();
+        store.write_v2(&second).unwrap();
+        (store, second)
+    }
+
+    #[test]
+    fn rekeys_a_v2_vault_and_keeps_no_old_password_in_the_backup() {
+        let tmp = TempDir::new();
+        let (store, old) = v2_store(&tmp);
+        fs::write(store.dir.join("vault-v1.json"), b"kept before the upgrade").unwrap();
+        fs::write(store.dir.join("vault-bak-2.json"), b"kept backup").unwrap();
+        fs::write(store.dir.join("vault-v1-notes.json"), b"not one of Still's").unwrap();
+
+        let rekeyed = a_v2_file();
+        let kept = store.write_rekeyed_v2(&rekeyed).unwrap();
+        assert_eq!(store.load(), Loaded::V2(Box::new(rekeyed.clone())));
+        assert_eq!(
+            fs::read(store.backup()).unwrap(),
+            rekeyed.to_json().as_bytes()
+        );
+        assert_ne!(fs::read(store.backup()).unwrap(), old.to_json().as_bytes());
+        // Other kept copies are listed, never touched.
+        assert_eq!(kept, ["vault-bak-2.json", "vault-v1.json"]);
+        assert_eq!(
+            fs::read(store.dir.join("vault-v1.json")).unwrap(),
+            b"kept before the upgrade"
+        );
+    }
+
+    #[test]
+    fn rekeys_only_a_v2_vault_and_puts_the_old_file_back_if_the_new_one_misreads() {
+        let tmp = TempDir::new();
+        let (store, old) = v2_store(&tmp);
+        // Written, but refused on reading back: stands in for a disk that
+        // returns something else.
+        let mut bad = a_v2_file();
+        bad.body.truncate(8);
+        assert_eq!(store.write_rekeyed_v2(&bad), Err(StoreError::VerifyFailed));
+        assert_eq!(store.load(), Loaded::V2(Box::new(old)));
+
+        let tmp = TempDir::new();
+        let (store, _) = real_v1(&tmp);
+        let before = fs::read(store.file()).unwrap();
+        assert_eq!(
+            store.write_rekeyed_v2(&a_v2_file()),
+            Err(StoreError::OtherFormat)
+        );
+        assert_eq!(fs::read(store.file()).unwrap(), before);
     }
 
     #[test]
