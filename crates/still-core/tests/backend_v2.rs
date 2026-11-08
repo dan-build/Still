@@ -12,7 +12,7 @@ use still_core::session::SessionError;
 use still_core::session::{SecretText, Unlocked};
 use still_core::v2;
 use still_core::vault::backend::{
-    Backend, Keys, Notice, Status, Strength, UnlockFailure, VaultError,
+    Backend, Keys, Notice, Status, Strength, UnlockFailure, VaultError, RESTORE_MS,
 };
 
 const NOW: i64 = 1_791_460_800_000; // 2026-10-08T12:00:00.000Z
@@ -896,4 +896,127 @@ fn refuses_a_change_overtaken_during_the_password_step() {
     assert_eq!(disk.0.borrow().rekeys, 0);
     vault.lock();
     vault.unlock(&secret("old-pass-1")).unwrap();
+}
+
+// ---- undoing the deletion of a secret ---------------------------------------------
+
+/// A v2 vault with a Lens holding secrets A, B and C, on a clock the test moves.
+fn vault_with_three(
+    disk: &Memory,
+) -> (
+    Backend<Memory, FastKeys>,
+    String,
+    Vec<String>,
+    Arc<std::sync::atomic::AtomicI64>,
+) {
+    use std::sync::atomic::{AtomicI64, Ordering};
+    let clock = Arc::new(AtomicI64::new(NOW));
+    let at = clock.clone();
+    let mut vault = Backend::new(disk.clone(), Arc::new(move || at.load(Ordering::SeqCst)));
+    vault.create(&secret("pw")).unwrap();
+    let lens = vault.create_lens("Work").unwrap();
+    for label in ["A", "B", "C"] {
+        vault
+            .add_item(
+                &lens,
+                label,
+                "password",
+                &secret(&format!("value of {label}")),
+            )
+            .unwrap();
+    }
+    let ids = vault.view().lenses[0]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["id"].as_str().unwrap().to_owned())
+        .collect();
+    (vault, lens, ids, clock)
+}
+
+#[test]
+fn puts_a_deleted_secret_back_exactly_where_it_was() {
+    let disk = v2_disk();
+    let (mut vault, lens, ids, _) = vault_with_three(&disk);
+    let before = stored_lists(&disk, "pw");
+    let shown = vault.view();
+
+    vault.delete_item(&lens, &ids[1]).unwrap();
+    assert!(
+        !stored_lists(&disk, "pw").lenses.contains(&ids[1]),
+        "deleting is saved at once"
+    );
+    vault.restore_item(&lens, &ids[1]).unwrap();
+
+    // The stored list is byte for byte what it was before the delete.
+    assert_eq!(stored_lists(&disk, "pw").lenses, before.lenses);
+    assert_eq!(vault.view(), shown);
+    assert_eq!(
+        vault.reveal_item(&lens, &ids[1]).unwrap().expose(),
+        "value of B"
+    );
+    // Only once.
+    assert_eq!(
+        vault.restore_item(&lens, &ids[1]),
+        Err(VaultError::UnknownItem)
+    );
+}
+
+#[test]
+fn puts_back_only_the_last_deleted_secret_within_30_seconds_and_before_lock() {
+    use std::sync::atomic::Ordering;
+    let disk = v2_disk();
+    let (mut vault, lens, ids, clock) = vault_with_three(&disk);
+
+    // A later delete replaces the earlier one.
+    vault.delete_item(&lens, &ids[0]).unwrap();
+    vault.delete_item(&lens, &ids[1]).unwrap();
+    assert_eq!(
+        vault.restore_item(&lens, &ids[0]),
+        Err(VaultError::UnknownItem)
+    );
+    clock.fetch_add(RESTORE_MS - 1, Ordering::SeqCst);
+    vault.restore_item(&lens, &ids[1]).unwrap();
+
+    // Not after 30 seconds.
+    vault.delete_item(&lens, &ids[2]).unwrap();
+    clock.fetch_add(RESTORE_MS, Ordering::SeqCst);
+    assert_eq!(
+        vault.restore_item(&lens, &ids[2]),
+        Err(VaultError::UnknownItem)
+    );
+
+    // Not after a lock: it was never written, so it's gone.
+    vault.delete_item(&lens, &ids[1]).unwrap();
+    vault.lock();
+    vault.unlock(&secret("pw")).unwrap();
+    assert_eq!(
+        vault.restore_item(&lens, &ids[1]),
+        Err(VaultError::UnknownItem)
+    );
+    assert!(!stored_lists(&disk, "pw").lenses.contains(&ids[1]));
+}
+
+#[test]
+fn restores_nothing_into_a_forgotten_lens_and_nothing_on_a_failed_save() {
+    let disk = v2_disk();
+    let (mut vault, lens, ids, _) = vault_with_three(&disk);
+
+    vault.delete_item(&lens, &ids[0]).unwrap();
+    disk.0.borrow_mut().fail_keys.insert("v2".into());
+    assert_eq!(
+        vault.restore_item(&lens, &ids[0]),
+        Err(VaultError::WriteFailed)
+    );
+    disk.0.borrow_mut().fail_keys.clear();
+    assert!(!stored_lists(&disk, "pw").lenses.contains(&ids[0]));
+    // A failed save keeps it restorable.
+    vault.restore_item(&lens, &ids[0]).unwrap();
+
+    vault.delete_item(&lens, &ids[2]).unwrap();
+    vault.forget_lens(&lens).unwrap();
+    assert_eq!(
+        vault.restore_item(&lens, &ids[2]),
+        Err(VaultError::UnknownLens)
+    );
 }

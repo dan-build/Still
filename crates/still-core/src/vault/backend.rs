@@ -554,7 +554,22 @@ struct Session<K> {
     /// Lens ids whose key opened. Others are kept but not shown.
     readable: HashSet<String>,
     format: Format,
+    /// The secret deleted last, so it can be put back (`restore_item`).
+    /// Memory only, never written; it goes with the session at lock.
+    deleted: Option<Deleted>,
 }
+
+/// A deleted secret as it was stored: its value stays encrypted.
+struct Deleted {
+    lens_id: String,
+    item: Value,
+    /// Its position in the Lens when it was deleted.
+    index: usize,
+    at_ms: i64,
+}
+
+/// How long a deleted secret can be put back.
+pub const RESTORE_MS: i64 = 30_000;
 
 /// How the unlocked vault is saved, with what each format's saves check.
 enum Format {
@@ -578,6 +593,7 @@ impl<K: Keys> Session<K> {
             lists: Lists::default(),
             readable: HashSet::new(),
             format,
+            deleted: None,
         }
     }
 
@@ -1180,13 +1196,57 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         if !lens.get("items").is_some_and(Value::is_array) {
             return Err(VaultError::UnknownItem);
         }
-        let items = items_of(lens)
+        let items = items_of(lens);
+        let deleted = items
+            .iter()
+            .position(|i| id_of(i) == Some(item_id))
+            .map(|index| Deleted {
+                lens_id: lens_id.to_owned(),
+                item: items[index].clone(),
+                index,
+                at_ms: (self.clock)(),
+            });
+        let kept = items
             .iter()
             .filter(|i| id_of(i) != Some(item_id))
             .cloned()
             .collect();
+        let change = model::set_items(&session.lists, lens_id, kept);
+        self.write(change)?;
+        if let (Some(session), Some(deleted)) = (self.session.as_mut(), deleted) {
+            session.deleted = Some(deleted);
+        }
+        Ok(())
+    }
+
+    /// Puts back the secret deleted last, exactly as it was stored (the same
+    /// id, label, type and encrypted value), at the position it had, or at
+    /// the end if the Lens has fewer secrets now. Only within RESTORE_MS of
+    /// the delete, and only once; a later delete replaces it, and lock
+    /// forgets it. Saved like any change: on failure nothing changes.
+    pub fn restore_item(&mut self, lens_id: &str, item_id: &str) -> Result<(), VaultError> {
+        let now = (self.clock)();
+        let session = self.session_for(lens_id)?;
+        let deleted = session
+            .deleted
+            .as_ref()
+            .filter(|d| d.lens_id == lens_id && id_of(&d.item) == Some(item_id))
+            .filter(|d| (0..RESTORE_MS).contains(&(now - d.at_ms)))
+            .ok_or(VaultError::UnknownItem)?;
+        let lens = session
+            .active_lens(lens_id)
+            .ok_or(VaultError::UnknownLens)?;
+        let mut items = items_of(lens).to_vec();
+        if items.iter().any(|i| id_of(i) == Some(item_id)) {
+            return Err(VaultError::UnknownItem);
+        }
+        items.insert(deleted.index.min(items.len()), deleted.item.clone());
         let change = model::set_items(&session.lists, lens_id, items);
-        self.write(change)
+        self.write(change)?;
+        if let Some(session) = self.session.as_mut() {
+            session.deleted = None;
+        }
+        Ok(())
     }
 
     pub fn rename_lens(&mut self, lens_id: &str, name: &str) -> Result<(), VaultError> {
