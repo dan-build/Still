@@ -1216,12 +1216,6 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         self.write(change)
     }
 
-    // ---- set-aside ------------------------------------------------------------------
-
-    /// Keeps a copy of every stored vault value under a new name, then
-    /// removes the originals, so a new vault can be created. Nothing is
-    /// deleted, and copies from an earlier set-aside are never overwritten:
-    /// if the time-based prefix is taken, a number is added. Returns the prefix.
     // ---- changing the master password -------------------------------------------
 
     /// What a password change starts from: the vault as last saved. v2 only.
@@ -1286,6 +1280,12 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         self.finish_change_password(plan, changed)
     }
 
+    // ---- set-aside ------------------------------------------------------------------
+
+    /// Keeps a copy of every stored vault value under a new name, then
+    /// removes the originals, so a new vault can be created. Nothing is
+    /// deleted, and copies from an earlier set-aside are never overwritten:
+    /// if the time-based prefix is taken, a number is added. Returns the prefix.
     pub fn set_aside(&mut self) -> Result<String, VaultError> {
         let base = format!("still-set-aside-{}-", time::to_iso((self.clock)()));
         let taken = self.storage.keys();
