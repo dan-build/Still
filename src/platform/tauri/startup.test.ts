@@ -4,7 +4,7 @@ import { fakeWebStorage } from '@/test/fakeWebStorage'
 const invoke = vi.fn()
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(...args) }))
 
-import { CONVERTED_MARKER, MOVED_MARKER, openOldFormat, openVault, restoreKeptCopy, restoreOldCopy } from './startup'
+import { CONVERTED_MARKER, MOVED_MARKER, openOldFormat, openReplaced, openVault, restoreKeptCopy, restoreOldCopy } from './startup'
 
 afterEach(() => invoke.mockReset())
 
@@ -55,6 +55,18 @@ describe('start-up, seen from the page', () => {
     const converted = '{"convertedAt":"2026-10-13T09:00:00.000Z","fingerprint":"ab"}'
     await openVault(fakeWebStorage({ [CONVERTED_MARKER]: converted }))
     expect(invoke).toHaveBeenCalledWith('startup_open', { legacy: {}, marker: null, converted })
+  })
+
+  it('opens a vault file Still did not save last when asked, then starts up again', async () => {
+    const legacy = fakeWebStorage({ 'still-salt': 's' })
+    invoke.mockResolvedValueOnce({ kind: 'ready' }).mockResolvedValueOnce({ kind: 'ready', notice: 'old-copy-changed' })
+    expect(await openReplaced(legacy)).toEqual({ kind: 'ready', notice: 'old-copy-changed' })
+    expect(invoke.mock.calls.map((call) => call[0])).toEqual(['startup_open_replaced', 'startup_open'])
+
+    invoke.mockReset()
+    invoke.mockResolvedValueOnce({ kind: 'failed' })
+    expect(await openReplaced(legacy)).toEqual({ kind: 'failed' })
+    expect(invoke).toHaveBeenCalledOnce()
   })
 
   it('opens an old-format vault as it is, or upgrading it', async () => {

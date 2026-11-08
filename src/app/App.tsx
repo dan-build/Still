@@ -56,9 +56,11 @@ interface StillHomeProps {
   notice?: 'moved' | 'old-copy-changed' | 'restored'
   /** Unlocking found the vault's data damaged, and Still kept a copy it can put back. */
   onDamaged?: () => void
+  /** Unlock found a vault file Still didn't save last: start-up asks about it (StillApp). */
+  onReplaced?: () => void
 }
 
-export default function StillHome({ notice, onDamaged }: StillHomeProps) {
+export default function StillHome({ notice, onDamaged, onReplaced }: StillHomeProps) {
   const apiRef = useRef<VaultApi | null>(null)
   const [view, setView] = useState<VaultView>({ lenses: [], bin: [], unreadable: 0 })
   /** Why the vault locked itself, shown on the unlock screen until the next unlock. */
@@ -200,6 +202,10 @@ export default function StillHome({ notice, onDamaged }: StillHomeProps) {
       if (result.reason === 'unreadable-data' && result.canRestore && onDamaged) {
         onDamaged()
         return result.reason
+      }
+      if (result.reason === 'file-replaced') {
+        onReplaced?.()
+        return 'failed'
       }
       if (result.reason !== 'no-vault') return result.reason
       // Start-up couldn't tell; there's no vault to unlock, so offer the right screen.

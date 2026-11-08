@@ -486,11 +486,19 @@ pub async fn backup_save(
 
 /// Whether a backup may replace the vault now: while it's unlocked, or when
 /// there's no vault that could be unlocked (none, orphaned data, or a file
-/// that can't be read). A locked vault must be unlocked first.
-fn may_restore(vault: &Vault) -> Result<(), CommandError> {
+/// that can't be read). A locked vault must be unlocked first, unless its
+/// file isn't the one Still saved last (an older copy put back, which may
+/// not open with the current password); that file is kept too.
+fn may_restore(vault: &Vault, store: &AppStore) -> Result<(), CommandError> {
     let backend = vault.backend();
     match backend.status() {
         Status::Unlocked | Status::Empty | Status::Orphaned | Status::Unreadable => Ok(()),
+        Status::Locked
+            if !store.already_open
+                && matches!(store.store().check_file(), FileCheck::Replaced { .. }) =>
+        {
+            Ok(())
+        }
         Status::Locked => Err(CommandError("unlock-first")),
     }
 }
@@ -502,9 +510,10 @@ fn may_restore(vault: &Vault) -> Result<(), CommandError> {
 pub async fn restore_choose(
     app: AppHandle,
     vault: State<'_, Vault>,
+    store: State<'_, Arc<AppStore>>,
     pending: State<'_, PendingRestore>,
 ) -> Result<Value, CommandError> {
-    may_restore(&vault)?;
+    may_restore(&vault, &store)?;
     let Some(chosen) = dialog(&app).pick_file().await else {
         return Ok(json!({ "name": null }));
     };
@@ -567,7 +576,7 @@ pub fn restore_confirm(
     pending: State<'_, PendingRestore>,
     clipboard: State<'_, ClipboardGuard>,
 ) -> Result<Value, CommandError> {
-    may_restore(&vault)?;
+    may_restore(&vault, &store)?;
     let mut chosen = pending.get();
     let file = match chosen.as_ref() {
         Some(c) if c.checked => c.file.clone(),
@@ -625,6 +634,42 @@ pub fn kept_trash(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // A backup never replaces a locked vault, unless its file isn't the one
+    // Still saved last: an older copy put back may not open with the
+    // current password, and restoring keeps it too.
+    #[test]
+    fn restores_over_a_locked_vault_only_when_its_file_was_replaced() {
+        let mut id = [0u8; 8];
+        still_core::sodium::random_bytes(&mut id);
+        let hex: String = id.iter().map(|b| format!("{b:02x}")).collect();
+        let dir = std::env::temp_dir().join(format!("still-commands-test-{hex}"));
+        let store = Arc::new(AppStore::open(dir.clone()));
+        let values: Values =
+            serde_json::from_str(include_str!("../../fixtures/vault-v1-real/vault.json")).unwrap();
+        store.store().set_record(&Default::default()).unwrap();
+        store.store().import_legacy(values).unwrap();
+        let vault = Vault::new(vault::FileStorage(store.clone()));
+        assert_eq!(vault.backend().status(), Status::Locked);
+        assert_eq!(
+            may_restore(&vault, &store),
+            Err(CommandError("unlock-first"))
+        );
+
+        // Another copy of the same vault in its place (one value differs).
+        let file = dir.join("vault.json");
+        let older = std::fs::read_to_string(&file).unwrap().replace(
+            "\"still-has-pin\": \"false\"",
+            "\"still-has-pin\": \"true\"",
+        );
+        std::fs::write(&file, older).unwrap();
+        assert_eq!(vault.backend().status(), Status::Locked);
+        assert_eq!(may_restore(&vault, &store), Ok(()));
+
+        drop(vault);
+        drop(store);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     // The UI never sends these; a page that does gets a code, not a change.
     #[test]

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import RestoreBackupDialog from '@/features/vault/ui/RestoreBackupDialog'
 import { createTauriVaultApi, VaultApiError } from '@/platform/tauri/vaultApi'
-import { openOldFormat, openVault, restoreKeptCopy, restoreOldCopy, type Startup } from '@/platform/tauri/startup'
+import { openOldFormat, openReplaced, openVault, restoreKeptCopy, restoreOldCopy, type Startup } from '@/platform/tauri/startup'
 import { Button } from '@/shared/ui/Button'
 import StillHome from './App'
 import LockLayout from './lock/LockLayout'
@@ -60,7 +60,13 @@ export default function StillApp() {
 
   switch (startup.kind) {
     case 'ready':
-      return <StillHome notice={startup.notice} onDamaged={() => setStartup({ kind: 'unreadable', canRestore: true })} />
+      return (
+        <StillHome
+          notice={startup.notice}
+          onDamaged={() => setStartup({ kind: 'unreadable', canRestore: true })}
+          onReplaced={() => run(() => openVault(window.localStorage))}
+        />
+      )
     case 'already-open':
       return (
         <Message title="Still is already open">
@@ -99,6 +105,22 @@ export default function StillApp() {
           Your vault was upgraded to the new format on {new Date(startup.convertedAt).toLocaleDateString()}, but the file there now is in the
           old format: an older copy, or one that was changed. Open it only if you put it back on purpose. Open anyway keeps it as it is;
           upgrading makes it your vault from now on.
+        </Message>
+      )
+    case 'replaced':
+      return (
+        <Message
+          title="This isn't the vault file Still saved last"
+          action={{ label: 'Open it', busy, onClick: () => run(() => openReplaced(window.localStorage)) }}
+          secondary={{ label: 'Restore from a backup…', onClick: chooseBackup }}
+        >
+          Nothing was changed. Another file is in its place: an older copy put back (from a backup or another disk, say), or one that
+          was changed. It won't have anything saved after that copy was made.
+          {!startup.samePassword &&
+            ' It also has different password settings, so it may be from before you changed your master password, and your old password may open it. If you open it, change the master password again.'}{' '}
+          Open it only if you put it back on purpose. Nothing is deleted either way.
+          {problem}
+          {restoreDialog}
         </Message>
       )
     case 'file-missing':

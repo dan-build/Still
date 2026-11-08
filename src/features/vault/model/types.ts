@@ -86,4 +86,4 @@ export type UnlockResult =
    */
   | { ok: true; state: VaultState; notice?: 'upgraded' | 'upgrade-failed'; kept?: string }
   /** canRestore: with unreadable-data, a kept copy can be put back (startup_restore_v1). */
-  | { ok: false; reason: 'wrong-password' | 'unreadable-data' | 'failed' | 'no-vault'; canRestore?: boolean }
+  | { ok: false; reason: 'wrong-password' | 'unreadable-data' | 'failed' | 'no-vault' | 'file-replaced'; canRestore?: boolean }

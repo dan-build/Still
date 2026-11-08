@@ -20,6 +20,11 @@ export type Startup =
   /** The file is in the old format, but the vault was converted on convertedAt: it opens only if the user says so. */
   | { kind: 'old-format'; convertedAt: string }
   | { kind: 'file-missing'; movedAt: string }
+  /**
+   * The vault file isn't the one Still saved last (an older copy put back, say): it opens only if
+   * the user says so. samePassword false: it may be from before a password change.
+   */
+  | { kind: 'replaced'; samePassword: boolean }
   | { kind: 'failed' }
 
 /**
@@ -87,6 +92,16 @@ export function restoreOldCopy(legacy: Storage): Promise<Startup> {
  */
 export function openOldFormat(upgrade: boolean): Promise<Startup> {
   return run('startup_open_old_format', { upgrade })
+}
+
+/**
+ * The user's choice for a vault file that isn't the one Still saved last: open
+ * it, making it the vault from now on. Start-up then runs again, for anything
+ * else it has to say.
+ */
+export async function openReplaced(legacy: Storage): Promise<Startup> {
+  const accepted = await run('startup_open_replaced')
+  return accepted.kind === 'ready' ? openVault(legacy) : accepted
 }
 
 /**
