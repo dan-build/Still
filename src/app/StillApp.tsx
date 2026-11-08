@@ -71,7 +71,7 @@ export default function StillApp() {
       return startup.canRestore ? (
         <Message
           title="Still can't open its vault file"
-          action={{ label: 'Use the kept copy', busy, onClick: () => run(() => restoreKeptCopy(window.localStorage)) }}
+          action={{ label: 'Use the kept copy', busy, onClick: () => run(restoreKeptCopy) }}
           secondary={{ label: 'Restore from a backup…', onClick: chooseBackup }}
         >
           Nothing was changed. The file is missing, damaged, or from a newer version of Still. Still kept an earlier copy: the file as it
@@ -93,8 +93,8 @@ export default function StillApp() {
       return (
         <Message
           title="This vault is in the old format"
-          action={{ label: 'Open anyway', busy, onClick: () => run(() => openOldFormat(window.localStorage, false)) }}
-          secondary={{ label: 'Open and upgrade it', onClick: () => run(() => openOldFormat(window.localStorage, true)) }}
+          action={{ label: 'Open anyway', busy, onClick: () => run(() => openOldFormat(false)) }}
+          secondary={{ label: 'Open and upgrade it', onClick: () => run(() => openOldFormat(true)) }}
         >
           Your vault was upgraded to the new format on {new Date(startup.convertedAt).toLocaleDateString()}, but the file there now is in the
           old format: an older copy, or one that was changed. Open it only if you put it back on purpose. Open anyway keeps it as it is;

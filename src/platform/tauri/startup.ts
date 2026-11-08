@@ -1,14 +1,15 @@
 // Where the vault comes from when Still starts. Rust decides (src-tauri/src/startup.rs):
 // the vault file, or, once, the localStorage of versions before the file. Only
 // the page can read that localStorage, so this sends Rust what an older version
-// left there and writes the marker Rust asks for. The old copy itself is never
-// changed or deleted.
+// left there. Rust keeps its own record (state.json); the two markers versions
+// up to 0.8 kept in localStorage are sent too, and taken into it once. Nothing
+// in localStorage is ever written, changed or deleted.
 
 import { invoke } from '@tauri-apps/api/core'
 
-/** Set in localStorage once the vault has moved to the file. */
+/** Set in localStorage by versions up to 0.8, once the vault had moved to the file. */
 export const MOVED_MARKER = 'still-moved-to-file'
-/** Set in localStorage once the vault was converted to format v2 (vaultApi.ts writes it). */
+/** Set in localStorage by versions up to 0.8, once the vault was converted to format v2. */
 export const CONVERTED_MARKER = 'still-converted-v2'
 
 export type Startup =
@@ -56,65 +57,42 @@ function legacyValues(legacy: Storage): Record<string, string> {
   return values
 }
 
-async function run(command: string, args: Record<string, unknown>, legacy: Storage): Promise<Startup> {
-  let result: Startup & { marker?: string }
+async function run(command: string, args: Record<string, unknown> = {}): Promise<Startup> {
   try {
-    result = await invoke(command, args)
+    return await invoke<Startup>(command, args)
   } catch {
     return { kind: 'failed' }
   }
-  const { marker, ...startup } = result
-  if (marker !== undefined) {
-    try {
-      legacy.setItem(MOVED_MARKER, marker)
-    } catch {
-      // The move itself succeeded; without the marker only the downgrade notice is lost.
-    }
-  }
-  return startup
 }
 
 /** Opens the vault file, moving an older version's vault into it the first time. */
 export function openVault(legacy: Storage): Promise<Startup> {
   const marker = legacy.getItem(MOVED_MARKER)
   const converted = legacy.getItem(CONVERTED_MARKER)
-  return run(
-    'startup_open',
-    {
-      legacy: legacyValues(legacy),
-      marker: marker === null ? null : wellFormed(marker),
-      converted: converted === null ? null : wellFormed(converted),
-    },
-    legacy,
-  )
+  return run('startup_open', {
+    legacy: legacyValues(legacy),
+    marker: marker === null ? null : wellFormed(marker),
+    converted: converted === null ? null : wellFormed(converted),
+  })
 }
 
 /** The user's choice when the moved vault file has gone: bring back the older copy. */
 export function restoreOldCopy(legacy: Storage): Promise<Startup> {
-  return run('startup_use_old_copy', { legacy: legacyValues(legacy) }, legacy)
+  return run('startup_use_old_copy', { legacy: legacyValues(legacy) })
 }
 
 /**
  * The user's choice for an old-format vault file: open it as it is (it isn't
  * converted), or open and upgrade it, making that copy the vault from now on.
  */
-export function openOldFormat(legacy: Storage, upgrade: boolean): Promise<Startup> {
-  return run('startup_open_old_format', { upgrade }, legacy)
+export function openOldFormat(upgrade: boolean): Promise<Startup> {
+  return run('startup_open_old_format', { upgrade })
 }
 
 /**
  * The user's choice for a vault file that can't be opened: put back the newest
- * copy Still kept. When that is the file from before the upgrade, going back
- * was their choice, so the conversion marker goes.
+ * copy Still kept.
  */
-export async function restoreKeptCopy(legacy: Storage): Promise<Startup> {
-  const { forgetConversion, ...startup } = (await run('startup_restore_v1', {}, legacy)) as Startup & { forgetConversion?: boolean }
-  if (startup.kind === 'ready' && forgetConversion) {
-    try {
-      legacy.removeItem(CONVERTED_MARKER)
-    } catch {
-      // Without this, the next start asks before opening the restored copy.
-    }
-  }
-  return startup
+export function restoreKeptCopy(): Promise<Startup> {
+  return run('startup_restore_v1')
 }

@@ -122,7 +122,7 @@ describe('start-up screens', () => {
     expect(screen.getByRole('button', { name: 'Open and upgrade it' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Open anyway' }))
     await screen.findByText('the app')
-    expect(startup.oldFormat).toHaveBeenCalledWith(expect.anything(), false)
+    expect(startup.oldFormat).toHaveBeenCalledWith(false)
   })
 
   it('can open and upgrade an old-format vault instead', async () => {
@@ -131,7 +131,7 @@ describe('start-up screens', () => {
     render(createElement(StillApp))
     fireEvent.click(await screen.findByRole('button', { name: 'Open and upgrade it' }))
     await screen.findByText('the app')
-    expect(startup.oldFormat).toHaveBeenCalledWith(expect.anything(), true)
+    expect(startup.oldFormat).toHaveBeenCalledWith(true)
   })
 
   it('offers the kept copy for an unreadable file only when there is one, and only when asked', async () => {

@@ -6,7 +6,6 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import type { BackupSummary, ItemEdit, KeptCopy, NewItem, UnlockResult, VaultState } from '@/features/vault/model/types'
-import { CONVERTED_MARKER } from './startup'
 
 /**
  * A refused command, by code: locked, vault-exists, password-too-short,
@@ -77,21 +76,7 @@ export function createTauriVaultApi(): VaultApi {
   return {
     state: () => call('vault_state'),
     create: (password) => call('vault_create', { password }),
-    unlock: async (password) => {
-      const result = await call<UnlockResult & { marker?: string }>('vault_unlock', { password })
-      if (!result.ok) return result
-      const { marker, ...unlocked } = result
-      if (marker !== undefined) {
-        // The vault was converted to v2: remember it, so an old v1 copy put
-        // back later asks before it opens (see platform/tauri/startup.ts).
-        try {
-          localStorage.setItem(CONVERTED_MARKER, marker)
-        } catch {
-          // Only that question is lost; the vault itself is converted and safe.
-        }
-      }
-      return unlocked
-    },
+    unlock: (password) => call('vault_unlock', { password }),
     lock: () => call('vault_lock'),
     setAside: () => call('vault_set_aside'),
     backupSave: () => call('backup_save'),

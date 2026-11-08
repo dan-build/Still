@@ -20,18 +20,16 @@ describe('start-up, seen from the page', () => {
     expect(invoke).toHaveBeenLastCalledWith('startup_use_old_copy', { legacy: { 'still-salt': 's', 'still-lenses': '[]' } })
   })
 
-  it('writes the marker Rust asks for, and keeps everything else in localStorage as it was', async () => {
-    const marker = '{"movedAt":"2026-10-05T10:00:00.000Z","fingerprint":"ab"}'
-    invoke.mockResolvedValue({ kind: 'ready', notice: 'moved', marker })
-    const legacy = fakeWebStorage({ 'still-salt': 's' })
+  it('writes nothing to localStorage: Rust keeps its own record', async () => {
+    const legacy = fakeWebStorage({ 'still-salt': 's', [MOVED_MARKER]: '{"m":1}', [CONVERTED_MARKER]: '{"c":1}' })
+    const before = Object.fromEntries(legacy.data)
+    invoke.mockResolvedValue({ kind: 'ready', notice: 'moved' })
     expect(await openVault(legacy)).toEqual({ kind: 'ready', notice: 'moved' })
-    expect(Object.fromEntries(legacy.data)).toEqual({ 'still-salt': 's', [MOVED_MARKER]: marker })
-  })
-
-  it('still opens the vault if the marker can\'t be written', async () => {
-    invoke.mockResolvedValue({ kind: 'ready', notice: 'moved', marker: '{}' })
-    const legacy = fakeWebStorage({ 'still-salt': 's' }, [MOVED_MARKER])
-    expect(await openVault(legacy)).toEqual({ kind: 'ready', notice: 'moved' })
+    await restoreOldCopy(legacy)
+    invoke.mockResolvedValue({ kind: 'ready', notice: 'restored' })
+    expect(await restoreKeptCopy()).toEqual({ kind: 'ready', notice: 'restored' })
+    expect(invoke).toHaveBeenLastCalledWith('startup_restore_v1', {})
+    expect(Object.fromEntries(legacy.data)).toEqual(before)
   })
 
   it('passes other outcomes through, and reports a failed command as failed', async () => {
@@ -52,7 +50,7 @@ describe('start-up, seen from the page', () => {
     })
   })
 
-  it('sends Rust the conversion marker', async () => {
+  it('sends Rust the conversion marker an older version left', async () => {
     invoke.mockResolvedValue({ kind: 'ready' })
     const converted = '{"convertedAt":"2026-10-13T09:00:00.000Z","fingerprint":"ab"}'
     await openVault(fakeWebStorage({ [CONVERTED_MARKER]: converted }))
@@ -61,28 +59,9 @@ describe('start-up, seen from the page', () => {
 
   it('opens an old-format vault as it is, or upgrading it', async () => {
     invoke.mockResolvedValue({ kind: 'ready' })
-    const legacy = fakeWebStorage({ [CONVERTED_MARKER]: '{}' })
-    expect(await openOldFormat(legacy, false)).toEqual({ kind: 'ready' })
+    expect(await openOldFormat(false)).toEqual({ kind: 'ready' })
     expect(invoke).toHaveBeenLastCalledWith('startup_open_old_format', { upgrade: false })
-    await openOldFormat(legacy, true)
+    await openOldFormat(true)
     expect(invoke).toHaveBeenLastCalledWith('startup_open_old_format', { upgrade: true })
-    expect(legacy.getItem(CONVERTED_MARKER)).toBe('{}')
-  })
-
-  it('forgets the conversion only when the copy from before it is put back', async () => {
-    const legacy = fakeWebStorage({ [CONVERTED_MARKER]: '{}' })
-    invoke.mockResolvedValueOnce({ kind: 'failed' })
-    await restoreKeptCopy(legacy)
-    expect(legacy.getItem(CONVERTED_MARKER)).toBe('{}')
-
-    // The v2 backup was put back: still converted.
-    invoke.mockResolvedValueOnce({ kind: 'ready', notice: 'restored', forgetConversion: false })
-    expect(await restoreKeptCopy(legacy)).toEqual({ kind: 'ready', notice: 'restored' })
-    expect(legacy.getItem(CONVERTED_MARKER)).toBe('{}')
-
-    invoke.mockResolvedValueOnce({ kind: 'ready', notice: 'restored', forgetConversion: true })
-    expect(await restoreKeptCopy(legacy)).toEqual({ kind: 'ready', notice: 'restored' })
-    expect(invoke).toHaveBeenLastCalledWith('startup_restore_v1', {})
-    expect(legacy.getItem(CONVERTED_MARKER)).toBeNull()
   })
 })

@@ -80,19 +80,14 @@ describe('the vault commands', () => {
     await expect(api.forgetLens('a')).rejects.toEqual(new VaultApiError('failed'))
   })
 
-  it('remembers an upgrade to v2 in localStorage, and hands the page only the notice', async () => {
+  it('passes an upgrade to v2 through, writing nothing to localStorage (Rust records it)', async () => {
     const legacy = fakeWebStorage()
     vi.stubGlobal('localStorage', legacy)
     try {
       const state = { status: 'unlocked', view: { lenses: [], bin: [], unreadable: 0 } }
-      const marker = '{"convertedAt":"2026-10-13T09:00:00.000Z","fingerprint":"ab"}'
-      invoke.mockResolvedValueOnce({ ok: true, state, notice: 'upgraded', marker, kept: 'vault-v1.json' })
+      invoke.mockResolvedValueOnce({ ok: true, state, notice: 'upgraded', kept: 'vault-v1.json' })
       expect(await api.unlock('pw')).toEqual({ ok: true, state, notice: 'upgraded', kept: 'vault-v1.json' })
-      expect(legacy.getItem('still-converted-v2')).toBe(marker)
-
-      invoke.mockResolvedValueOnce({ ok: true, state })
-      expect(await api.unlock('pw')).toEqual({ ok: true, state })
-      expect(legacy.data.size).toBe(1)
+      expect(legacy.data.size).toBe(0)
     } finally {
       vi.unstubAllGlobals()
     }
