@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-08
+
+### Added
+
+- **Undo after deleting a secret.** The "Secret deleted" message now has an Undo button for 10 seconds, which puts the secret back exactly as it was, in the same place. Deleting is still saved at once, and Still still asks before deleting; Undo is a second safety net. Only the last deletion can be undone, and locking forgets it.
+
 ## [0.7.0] - 2026-11-07
 
 ### Added
@@ -177,7 +183,8 @@ First public pre-release, for macOS.
 - An Archive (recycle bin) that keeps forgotten Lenses for 7 days.
 - Offline by design: no accounts, servers or telemetry.
 
-[Unreleased]: https://github.com/dan-build/Still/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/dan-build/Still/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/dan-build/Still/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/dan-build/Still/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/dan-build/Still/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/dan-build/Still/compare/v0.6.1...v0.6.2
