@@ -4,13 +4,14 @@
 
 No account, no sync, no telemetry. Still never connects to the internet.
 
-> **Early pre-release (v0.7.1).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
+> **Early pre-release (v0.8.0).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
 
 ![Still in dark mode: the sidebar lists the Lenses, and the selected Lens shows its secrets, one revealed](docs/screenshot.png)
 
 ## Features
 
 - **One master password** unlocks everything. It goes through Argon2id at libsodium's highest-cost ("sensitive") setting, which makes guessing it slow and expensive.
+- **Backups you control:** save an encrypted backup anywhere you choose, and restore one after checking its password.
 - **Change your master password** at any time, and choose stronger settings that make it even slower to guess.
 - **Lenses:** separate collections for different parts of your life, such as work, personal or banking. Each Lens has its own encryption key.
 - **Three kinds of secret:** passwords, API keys or tokens, and multi-line notes. Reveal, copy, edit or delete a secret (with Undo), and rename a Lens.
@@ -51,7 +52,9 @@ Still is a macOS app. The current release is a pre-release: a universal build th
 3. Open the `.dmg` and drag **Still** into your **Applications** folder.
 4. The app isn't signed with an Apple Developer ID yet, so macOS blocks it the first time you open it. Go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the message about Still.
 
-**Where your vault lives:** `~/Library/Application Support/com.still.app/vault.json`, with the previous version kept as `vault.json.bak`. Deleting them deletes your vault. To back it up, quit Still and copy both files somewhere safe.
+**Backups:** choose **Save a backup…** from the vault menu next to Lock. A backup is your vault file itself, fully encrypted, so it's safe on a USB stick or in cloud storage, and it opens with the master password your vault had when you saved it. **Restore from a backup…** checks the backup's password and shows what's in it before replacing anything, and keeps your current vault as a copy.
+
+**Where your vault lives:** `~/Library/Application Support/com.still.app/vault.json`, with the previous version kept as `vault.json.bak`. Deleting them deletes your vault. To back it up by hand instead, quit Still and copy both files somewhere safe.
 
 There are no Windows or Linux downloads yet. Still's tests pass on both, but it hasn't been tested there as an installed app.
 
