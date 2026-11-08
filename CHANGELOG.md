@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **Undo after deleting a secret.** The "Secret deleted" message now has an Undo button for 10 seconds, which puts the secret back exactly as it was, in the same place. Deleting is still saved at once, and Still still asks before deleting; Undo is a second safety net. Only the last deletion can be undone, and locking forgets it.
+- **Undo after deleting a secret.** The "Secret deleted" message now has an Undo button for 10 seconds, with a bar along its bottom showing the time left, and Undo puts the secret back exactly as it was, in the same place. Deleting is still saved at once, and Still still asks before deleting; Undo is a second safety net. Only the last deletion can be undone, and locking forgets it.
 
 ## [0.7.0] - 2026-11-07
 
