@@ -594,6 +594,8 @@ describe('search', () => {
   it('moves to the search field on ⌘F', async () => {
     seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
     await unlock()
+    // The shortcuts are attached by the same effect as the auto-lock listener.
+    await waitFor(() => expect(autoLock.fire).toBeDefined())
     fireEvent.keyDown(window, { key: 'f', metaKey: true })
     expect(document.activeElement).toBe(screen.getByLabelText('Search secrets'))
   })
