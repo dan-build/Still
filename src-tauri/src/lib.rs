@@ -24,6 +24,7 @@ pub fn run() {
                 clipboard::Arboard::default(),
             )));
             app.manage(autolock::AutoLock::new(autolock::idle_timeout()));
+            app.manage(vault::PendingRestore::default());
             watcher::start(app.handle().clone());
             #[cfg(target_os = "macos")]
             macos_lock::watch(app.handle());
@@ -54,6 +55,12 @@ pub fn run() {
             commands::item_update,
             commands::item_delete,
             commands::item_restore,
+            commands::backup_save,
+            commands::restore_choose,
+            commands::restore_check,
+            commands::restore_confirm,
+            commands::kept_list,
+            commands::kept_trash,
             commands::item_reveal,
         ])
         .build(tauri::generate_context!())

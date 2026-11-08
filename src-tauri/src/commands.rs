@@ -9,17 +9,18 @@ use std::time::Instant;
 use serde_json::{json, Value};
 use still_core::session::{SecretText, Unlocked};
 use still_core::vault::backend::{Notice, Status, Strength, UnlockFailure};
-use tauri::State;
+use still_core::vault::backup;
+use tauri::{AppHandle, Manager, State};
 
 use crate::autolock::AutoLock;
 use crate::clipboard::ClipboardGuard;
 use crate::startup;
 use crate::store::{AppStore, Values};
-use crate::vault::{self, state, CommandError, Revealed, Vault};
+use crate::vault::{self, state, ChosenBackup, CommandError, PendingRestore, Revealed, Vault};
 
 /// Every command, as named in build.rs and the capability.
 #[cfg(test)]
-pub const ALL: [&str; 22] = [
+pub const ALL: [&str; 28] = [
     "vault_create",
     "vault_unlock",
     "vault_lock",
@@ -41,6 +42,12 @@ pub const ALL: [&str; 22] = [
     "item_update",
     "item_delete",
     "item_restore",
+    "backup_save",
+    "restore_choose",
+    "restore_check",
+    "restore_confirm",
+    "kept_list",
+    "kept_trash",
     "item_reveal",
 ];
 
@@ -423,6 +430,185 @@ pub fn item_reveal(
 ) -> Result<Revealed, CommandError> {
     autolock.touch(Instant::now());
     Ok(Revealed(vault.backend().reveal_item(&lens_id, &item_id)?))
+}
+
+// ---- backups ------------------------------------------------------------------
+
+/// The largest file Still reads as a backup (a vault is a few KiB per Lens).
+const BACKUP_MAX_BYTES: u64 = 64 << 20;
+
+/// The native dialogs' parent: Still's window, so they open as its sheets.
+fn dialog(app: &AppHandle) -> rfd::AsyncFileDialog {
+    let dialog = rfd::AsyncFileDialog::new().add_filter("Still vault", &["json"]);
+    match app.get_webview_window("main") {
+        Some(window) => dialog.set_parent(&window),
+        None => dialog,
+    }
+}
+
+/// Saves a backup of the unlocked vault where the user chooses: the vault
+/// file itself, already encrypted. Returns {saved: file name} or {saved:
+/// null} when the dialog was cancelled.
+#[tauri::command]
+pub async fn backup_save(
+    app: AppHandle,
+    vault: State<'_, Vault>,
+    store: State<'_, Arc<AppStore>>,
+    autolock: State<'_, AutoLock>,
+) -> Result<Value, CommandError> {
+    let file = vault.backend().backup_file()?;
+    let today = &still_core::vault::time::to_iso(now_ms())[..10];
+    let chosen = dialog(&app)
+        .set_file_name(format!("Still backup {today}.json"))
+        .save_file()
+        .await;
+    autolock.touch(Instant::now());
+    let Some(chosen) = chosen else {
+        return Ok(json!({ "saved": null }));
+    };
+    store
+        .store()
+        .write_backup(&file, chosen.path())
+        .map_err(|_| CommandError("write-failed"))?;
+    Ok(json!({ "saved": chosen.file_name() }))
+}
+
+/// Whether a backup may replace the vault now: while it's unlocked, or when
+/// there's no vault that could be unlocked (none, orphaned data, or a file
+/// that can't be read). A locked vault must be unlocked first.
+fn may_restore(vault: &Vault) -> Result<(), CommandError> {
+    let backend = vault.backend();
+    match backend.status() {
+        Status::Unlocked | Status::Empty | Status::Orphaned | Status::Unreadable => Ok(()),
+        Status::Locked => Err(CommandError("unlock-first")),
+    }
+}
+
+/// Chooses a backup to restore: a native open dialog, then the file is read
+/// as a v2 vault (nothing is replaced yet). Returns {name, modifiedAt} or
+/// {name: null} when the dialog was cancelled.
+#[tauri::command]
+pub async fn restore_choose(
+    app: AppHandle,
+    vault: State<'_, Vault>,
+    pending: State<'_, PendingRestore>,
+) -> Result<Value, CommandError> {
+    may_restore(&vault)?;
+    let Some(chosen) = dialog(&app).pick_file().await else {
+        return Ok(json!({ "name": null }));
+    };
+    let path = chosen.path();
+    let meta = std::fs::metadata(path).map_err(|_| CommandError("not-a-vault"))?;
+    if meta.len() > BACKUP_MAX_BYTES {
+        return Err(CommandError("not-a-vault"));
+    }
+    let text = std::fs::read_to_string(path).map_err(|_| CommandError("not-a-vault"))?;
+    let file = backup::parse(&text).map_err(|e| CommandError(e.code()))?;
+    *pending.get() = Some(ChosenBackup {
+        file,
+        checked: false,
+    });
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|d| i64::try_from(d.as_millis()).ok());
+    Ok(json!({ "name": chosen.file_name(), "modifiedAt": modified }))
+}
+
+/// Opens the chosen backup with its password (Argon2id with its own
+/// settings, outside any lock) and returns what it holds: {lenses,
+/// secrets, archived}.
+#[tauri::command]
+pub async fn restore_check(
+    pending: State<'_, PendingRestore>,
+    password: String,
+) -> Result<Value, CommandError> {
+    let file = pending
+        .get()
+        .as_ref()
+        .map(|chosen| chosen.file.clone())
+        .ok_or(CommandError("nothing-chosen"))?;
+    let password = SecretText::from(password);
+    let checked = file.clone();
+    let summary = tauri::async_runtime::spawn_blocking(move || {
+        backup::check::<Unlocked>(&checked, &password)
+    })
+    .await
+    .map_err(|_| CommandError("failed"))?
+    .map_err(|e| CommandError(e.code()))?;
+    // Mark it checked only if it is still the backup chosen.
+    if let Some(chosen) = pending.get().as_mut().filter(|c| c.file == file) {
+        chosen.checked = true;
+    }
+    Ok(
+        json!({ "lenses": summary.lenses, "secrets": summary.secrets, "archived": summary.archived }),
+    )
+}
+
+/// Replaces the vault with the checked backup, keeping the current vault
+/// file (and its backup) first, and locks: the restored vault opens with
+/// the backup's password. Returns {kept}: the replaced vault's name, if any.
+#[tauri::command]
+pub fn restore_confirm(
+    vault: State<'_, Vault>,
+    store: State<'_, Arc<AppStore>>,
+    pending: State<'_, PendingRestore>,
+    clipboard: State<'_, ClipboardGuard>,
+) -> Result<Value, CommandError> {
+    may_restore(&vault)?;
+    let mut chosen = pending.get();
+    let file = match chosen.as_ref() {
+        Some(c) if c.checked => c.file.clone(),
+        Some(_) => return Err(CommandError("not-checked")),
+        None => return Err(CommandError("nothing-chosen")),
+    };
+    let mut backend = vault.backend();
+    backend.lock();
+    clipboard.clear_now();
+    let kept = store
+        .store()
+        .restore_backup(&file)
+        .map_err(|_| CommandError("write-failed"))?;
+    *chosen = None;
+    Ok(json!({ "kept": kept }))
+}
+
+/// The copies Still kept next to the vault, while it's unlocked:
+/// [{name, modifiedAt, size}].
+#[tauri::command]
+pub fn kept_list(
+    vault: State<'_, Vault>,
+    store: State<'_, Arc<AppStore>>,
+) -> Result<Value, CommandError> {
+    if !vault.backend().is_unlocked() {
+        return Err(CommandError("locked"));
+    }
+    let kept: Vec<Value> = store
+        .store()
+        .kept_details()
+        .into_iter()
+        .map(|(name, modified, size)| json!({ "name": name, "modifiedAt": modified, "size": size }))
+        .collect();
+    Ok(Value::Array(kept))
+}
+
+/// Moves one kept copy to the Trash, while the vault is unlocked, and
+/// returns the list that's left.
+#[tauri::command]
+pub fn kept_trash(
+    vault: State<'_, Vault>,
+    store: State<'_, Arc<AppStore>>,
+    name: String,
+) -> Result<Value, CommandError> {
+    if !vault.backend().is_unlocked() {
+        return Err(CommandError("locked"));
+    }
+    store
+        .store()
+        .trash_kept(&name)
+        .map_err(|_| CommandError("trash-failed"))?;
+    kept_list(vault, store)
 }
 
 #[cfg(test)]

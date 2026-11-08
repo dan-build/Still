@@ -15,6 +15,11 @@ serde_json = "1"
 still-core = { path = "../crates/still-core" }
 # Maintained by 1Password. No image support: Still only copies text.
 arboard = { version = "3.6.1", default-features = false }
+# Moves a kept copy to the Trash (or Recycle Bin), where it can still be recovered.
+trash = { version = "5", default-features = false, features = ["freedesktop", "coinit_apartmentthreaded"] }
+# Native open and save dialogs, opened by Rust only (the page can't open any).
+# GTK on Linux, which Tauri already uses (0.17 is the newest on its gtk-sys 0.18).
+rfd = { version = "0.17", default-features = false, features = ["gtk3"] }
 
 # macOS sleep and screen-lock notifications (macos_lock.rs). The same versions
 # Tauri and arboard already build on, so nothing new comes in.
