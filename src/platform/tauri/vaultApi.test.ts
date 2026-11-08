@@ -20,6 +20,12 @@ describe('the vault commands', () => {
     await api.unlock('  pw  ')
     await api.lock()
     await api.setAside()
+    await api.backupSave()
+    await api.restoreChoose()
+    await api.restoreCheck(' backup pw ')
+    await api.restoreConfirm()
+    await api.keptList()
+    await api.keptTrash('vault-v1.json')
     await api.changePassword('old pw', ' new pw ', true)
     await api.createLens('Work')
     await api.renameLens('a', 'Home')
@@ -39,6 +45,12 @@ describe('the vault commands', () => {
       ['vault_unlock', { password: '  pw  ' }],
       ['vault_lock', undefined],
       ['vault_set_aside', undefined],
+      ['backup_save', undefined],
+      ['restore_choose', undefined],
+      ['restore_check', { password: ' backup pw ' }],
+      ['restore_confirm', undefined],
+      ['kept_list', undefined],
+      ['kept_trash', { name: 'vault-v1.json' }],
       ['vault_change_password', { current: 'old pw', new: ' new pw ', stronger: true }],
       ['lens_create', { name: 'Work' }],
       ['lens_rename', { lensId: 'a', name: 'Home' }],

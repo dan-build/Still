@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import RestoreBackupDialog from '@/features/vault/ui/RestoreBackupDialog'
+import { createTauriVaultApi, VaultApiError } from '@/platform/tauri/vaultApi'
 import { openOldFormat, openVault, restoreKeptCopy, restoreOldCopy, type Startup } from '@/platform/tauri/startup'
 import { Button } from '@/shared/ui/Button'
 import StillHome from './App'
@@ -24,6 +26,36 @@ export default function StillApp() {
     }
   }
 
+  const api = useRef(createTauriVaultApi())
+  const [restoreChosen, setRestoreChosen] = useState<{ name: string; modifiedAt?: number | null } | null>(null)
+  const [restoreProblem, setRestoreProblem] = useState('')
+
+  // The vault file can't be read: a backup the user saved can replace it.
+  const chooseBackup = async () => {
+    setRestoreProblem('')
+    try {
+      const chosen = await api.current.restoreChoose()
+      if (chosen.name) setRestoreChosen({ name: chosen.name, modifiedAt: chosen.modifiedAt })
+    } catch (error) {
+      const code = error instanceof VaultApiError ? error.code : 'failed'
+      setRestoreProblem(code === 'not-a-vault' ? "That file isn't a Still backup." : "Couldn't open the backup.")
+    }
+  }
+
+  const restoreDialog = (
+    <RestoreBackupDialog
+      chosen={restoreChosen}
+      onClose={() => setRestoreChosen(null)}
+      onCheck={(password) => api.current.restoreCheck(password)}
+      onConfirm={async () => (await api.current.restoreConfirm()).kept}
+      onRestored={() => {
+        setRestoreChosen(null)
+        run(() => openVault(window.localStorage))
+      }}
+    />
+  )
+  const problem = restoreProblem && <span className="mt-2 block text-danger">{restoreProblem}</span>
+
   if (startup === null) return <Message title="Opening Still…" />
 
   switch (startup.kind) {
@@ -40,15 +72,21 @@ export default function StillApp() {
         <Message
           title="Still can't open its vault file"
           action={{ label: 'Use the kept copy', busy, onClick: () => run(() => restoreKeptCopy(window.localStorage)) }}
+          secondary={{ label: 'Restore from a backup…', onClick: chooseBackup }}
         >
           Nothing was changed. The file is missing, damaged, or from a newer version of Still. Still kept an earlier copy: the file as it
           was before your last change, or the file from before the upgrade to the new format. Either may lack your most recent changes.
-          Restore vault.json from a backup if you have one, or use the kept copy. Nothing is deleted either way.
+          Restore from a backup you saved, or use the kept copy. Nothing is deleted either way.
+          {problem}
+          {restoreDialog}
         </Message>
       ) : (
-        <Message title="Still can't read its vault file">
+        <Message title="Still can't read its vault file" action={{ label: 'Restore from a backup…', busy, onClick: chooseBackup }}>
           Nothing was changed. It may be damaged, or from a newer version of Still. The file and its previous version (vault.json.bak) are
-          in Still's app data folder. Keep both safe, and don't create a new vault until they're dealt with.
+          in Still's app data folder. Keep both safe, and don't create a new vault until they're dealt with. If you saved a backup, you can
+          restore it.
+          {problem}
+          {restoreDialog}
         </Message>
       )
     case 'old-format':

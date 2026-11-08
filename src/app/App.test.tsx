@@ -941,6 +941,85 @@ describe('changing the master password', () => {
   })
 })
 
+describe('backups', () => {
+  const vaultMenu = (item: string) => {
+    fireEvent.click(screen.getByRole('button', { name: 'Vault actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: item }))
+  }
+
+  it('saves a backup from the vault menu, and says nothing if the dialog is cancelled', async () => {
+    const vault = seedVault()
+    await unlock()
+    vaultMenu('Save a backup…')
+    await screen.findByText('Backup saved as Still backup 2026-11-08.json')
+
+    vault.backupSavedAs = null
+    vaultMenu('Save a backup…')
+    await waitFor(() => expect(vault.calls.filter((c) => c === 'backupSave')).toHaveLength(2))
+    expect(screen.queryAllByText(/Backup saved/).length).toBeLessThanOrEqual(1)
+  })
+
+  it('restores a backup after checking its password, then locks', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Current')] })
+    vault.backupChosen = {
+      name: 'Still backup 2026-11-01.json',
+      modifiedAt: Date.now() - 7 * DAY,
+      password: 'backup-pass-1',
+      summary: { lenses: 1, secrets: 1, archived: 0 },
+      lenses: [fakeLens('b1', 'From backup')],
+    }
+    await unlock()
+    vaultMenu('Restore from a backup…')
+    const field = await screen.findByLabelText("The backup's password")
+    expect(screen.getByText(/Still backup 2026-11-01.json, saved .*7 days ago/)).toBeTruthy()
+
+    fireEvent.change(field, { target: { value: 'wrong' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Check backup' }))
+    await screen.findByText('Incorrect password for this backup.')
+    expect(vault.calls).not.toContain('restoreConfirm')
+
+    fireEvent.change(screen.getByLabelText("The backup's password"), { target: { value: 'backup-pass-1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Check backup' }))
+    await screen.findByText('This backup holds 1 Lens with 1 secret.')
+    fireEvent.click(screen.getByRole('button', { name: 'Replace my vault' }))
+
+    await screen.findByText("Backup restored. Unlock it with the backup's password.")
+    await enterPassword('backup-pass-1')
+    await screen.findAllByText('From backup')
+    expect(screen.queryByText('Current')).toBeNull()
+  })
+
+  it('says when the chosen file is not a Still backup', async () => {
+    const vault = seedVault()
+    vault.backupChosen = 'not-a-vault'
+    await unlock()
+    vaultMenu('Restore from a backup…')
+    await screen.findByText("That file isn't a Still backup.")
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('lists kept copies and moves one to the Trash after asking', async () => {
+    const vault = seedVault()
+    vault.kept = [
+      { name: 'vault-v1.json', modifiedAt: Date.now() - 30 * DAY, size: 2729 },
+      { name: 'vault-bak.json', modifiedAt: Date.now() - 20 * DAY, size: 5943 },
+    ]
+    await unlock()
+    vaultMenu('Kept copies…')
+    await screen.findByText('vault-v1.json')
+    expect(screen.getByText(/Lens names and labels in it are readable/)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Move vault-v1.json to the Trash' }))
+    await screen.findByText('Move vault-v1.json to the Trash?')
+    expect(vault.calls).not.toContain('keptTrash')
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Trash' }))
+
+    await waitFor(() => expect(screen.queryByText('vault-v1.json')).toBeNull())
+    expect(screen.getByText('vault-bak.json')).toBeTruthy()
+    expect(vault.kept.map((k) => k.name)).toEqual(['vault-bak.json'])
+  })
+})
+
 describe('PIN (B6)', () => {
   it('offers no PIN when creating a vault', async () => {
     freshInstall()

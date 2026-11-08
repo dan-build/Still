@@ -5,7 +5,7 @@
 // the user reveals it. This is the only code that calls the vault commands.
 
 import { invoke } from '@tauri-apps/api/core'
-import type { ItemEdit, NewItem, UnlockResult, VaultState } from '@/features/vault/model/types'
+import type { BackupSummary, ItemEdit, KeptCopy, NewItem, UnlockResult, VaultState } from '@/features/vault/model/types'
 import { CONVERTED_MARKER } from './startup'
 
 /**
@@ -37,6 +37,17 @@ export interface VaultApi {
    * `olderCopies` names kept copies that may still open with the old one.
    */
   changePassword(current: string, next: string, stronger: boolean): Promise<{ state: VaultState; olderCopies: string[] }>
+  /** Saves a backup where the user chooses (a native dialog); `saved` is null if cancelled. */
+  backupSave(): Promise<{ saved: string | null }>
+  /** Chooses a backup to restore (a native dialog); `name` is null if cancelled. Nothing changes yet. */
+  restoreChoose(): Promise<{ name: string | null; modifiedAt?: number | null }>
+  /** Opens the chosen backup with its own password and says what it holds. */
+  restoreCheck(password: string): Promise<BackupSummary>
+  /** Replaces the vault with the checked backup (the current one is kept) and locks. */
+  restoreConfirm(): Promise<{ kept: string | null }>
+  keptList(): Promise<KeptCopy[]>
+  /** Moves one kept copy to the Trash; returns what's left. */
+  keptTrash(name: string): Promise<KeptCopy[]>
   createLens(name: string): Promise<{ id: string; state: VaultState }>
   renameLens(lensId: string, name: string): Promise<VaultState>
   forgetLens(lensId: string): Promise<VaultState>
@@ -83,6 +94,12 @@ export function createTauriVaultApi(): VaultApi {
     },
     lock: () => call('vault_lock'),
     setAside: () => call('vault_set_aside'),
+    backupSave: () => call('backup_save'),
+    restoreChoose: () => call('restore_choose'),
+    restoreCheck: (password) => call('restore_check', { password }),
+    restoreConfirm: () => call('restore_confirm'),
+    keptList: () => call('kept_list'),
+    keptTrash: (name) => call('kept_trash', { name }),
     changePassword: (current, next, stronger) => call('vault_change_password', { current, new: next, stronger }),
     createLens: (name) => call('lens_create', { name }),
     renameLens: (lensId, name) => call('lens_rename', { lensId, name }),
