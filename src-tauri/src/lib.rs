@@ -53,6 +53,7 @@ pub fn run() {
             commands::item_add,
             commands::item_update,
             commands::item_delete,
+            commands::item_restore,
             commands::item_reveal,
         ])
         .build(tauri::generate_context!())

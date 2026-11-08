@@ -19,7 +19,7 @@ use crate::vault::{self, state, CommandError, Revealed, Vault};
 
 /// Every command, as named in build.rs and the capability.
 #[cfg(test)]
-pub const ALL: [&str; 21] = [
+pub const ALL: [&str; 22] = [
     "vault_create",
     "vault_unlock",
     "vault_lock",
@@ -40,6 +40,7 @@ pub const ALL: [&str; 21] = [
     "item_add",
     "item_update",
     "item_delete",
+    "item_restore",
     "item_reveal",
 ];
 
@@ -399,6 +400,17 @@ pub fn item_delete(
     item_id: String,
 ) -> Result<Value, CommandError> {
     change(&vault, &autolock, |b| b.delete_item(&lens_id, &item_id))
+}
+
+/// Puts back the secret deleted last (Undo), within 30 seconds of the delete.
+#[tauri::command]
+pub fn item_restore(
+    vault: State<'_, Vault>,
+    autolock: State<'_, AutoLock>,
+    lens_id: String,
+    item_id: String,
+) -> Result<Value, CommandError> {
+    change(&vault, &autolock, |b| b.restore_item(&lens_id, &item_id))
 }
 
 /// The one command that sends a value to the page, to show it.

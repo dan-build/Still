@@ -19,6 +19,8 @@ export interface SecretOps {
   copy: (lensId: string, itemId: string) => Promise<void>
   update: (lensId: string, itemId: string, edit: ItemEdit) => Promise<void>
   remove: (lensId: string, itemId: string) => Promise<void>
+  /** Puts back the secret just deleted (Undo). */
+  restore: (lensId: string, itemId: string) => Promise<void>
 }
 
 interface Group {
@@ -129,8 +131,18 @@ export default function SecretList({ groups, headings, highlight, label, ops, on
       onToast({ message: "Couldn't delete the secret. Nothing was changed.", tone: 'error' })
       return
     }
-    forget(keyOf(deleting.lensId, deleting.item.id))
-    onToast({ message: 'Secret deleted' })
+    const { lensId, item } = deleting
+    forget(keyOf(lensId, item.id))
+    const undo = async () => {
+      try {
+        await ops.restore(lensId, item.id)
+        onToast({ message: `${item.label} restored` })
+      } catch {
+        onToast({ message: `Couldn't restore ${item.label}. It stays deleted.`, tone: 'error' })
+      }
+    }
+    // The bar along the bottom shows the 10 seconds Undo is offered for.
+    onToast({ message: 'Secret deleted', action: { label: 'Undo', onAction: undo }, countdown: 10 })
   }
 
   const rows = (group: Group) =>

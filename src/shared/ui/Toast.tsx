@@ -11,6 +11,8 @@ export interface ToastMessage {
   tone?: 'info' | 'error'
   /** Seconds for the countdown bar along the bottom (the clipboard clear). */
   countdown?: number
+  /** A button on the toast, such as Undo. */
+  action?: { label: string; onAction: () => void }
 }
 
 /**
@@ -35,7 +37,7 @@ export function Toaster({ toast }: { toast: (ToastMessage & { id: number }) | nu
   )
 }
 
-function Toast({ message, detail, tone = 'info', countdown }: ToastMessage) {
+function Toast({ message, detail, tone = 'info', countdown, action }: ToastMessage) {
   // Enter on the next frame, so the transition runs.
   const [shown, setShown] = useState(false)
   useEffect(() => {
@@ -57,6 +59,17 @@ function Toast({ message, detail, tone = 'info', countdown }: ToastMessage) {
       <Icon name={tone === 'error' ? 'warning' : 'check'} className={`mt-0.5 ${tone === 'error' ? 'text-danger' : 'text-accent'}`} />
       <span>{message}</span>
       {detail && <span className="shrink-0 font-normal whitespace-nowrap text-g4 tabular-nums">{detail}</span>}
+      {action && (
+        <button
+          type="button"
+          onClick={action.onAction}
+          // The toast area lets clicks through; its button must take them.
+          // Centred in the toast, whatever the message's length.
+          className="focus-ring pointer-events-auto shrink-0 self-center rounded-4 px-1.5 py-0.5 text-13 font-semibold text-accent-text transition-[background-color] duration-150 hover:bg-wash"
+        >
+          {action.label}
+        </button>
+      )}
       {countdown && (
         <span
           aria-hidden

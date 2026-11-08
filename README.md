@@ -4,7 +4,7 @@
 
 No account, no sync, no telemetry. Still never connects to the internet.
 
-> **Early pre-release (v0.7.0).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
+> **Early pre-release (v0.7.1).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
 
 ![Still in dark mode: the sidebar lists the Lenses, and the selected Lens shows its secrets, one revealed](docs/screenshot.png)
 
@@ -13,7 +13,7 @@ No account, no sync, no telemetry. Still never connects to the internet.
 - **One master password** unlocks everything. It goes through Argon2id at libsodium's highest-cost ("sensitive") setting, which makes guessing it slow and expensive.
 - **Change your master password** at any time, and choose stronger settings that make it even slower to guess.
 - **Lenses:** separate collections for different parts of your life, such as work, personal or banking. Each Lens has its own encryption key.
-- **Three kinds of secret:** passwords, API keys or tokens, and multi-line notes. Reveal, copy, edit or delete a secret, and rename a Lens.
+- **Three kinds of secret:** passwords, API keys or tokens, and multi-line notes. Reveal, copy, edit or delete a secret (with Undo), and rename a Lens.
 - **Copy without leaving a trace.** A copied secret is cleared from the clipboard after 30 seconds, when the vault locks, and when Still quits.
 - **Search** every Lens by label or Lens name with ⌘F. Values stay encrypted and are never searched.
 - **A 7-day Archive.** A Lens you forget moves to the Archive for 7 days, where you can restore it or delete it for good.
