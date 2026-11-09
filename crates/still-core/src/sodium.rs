@@ -297,6 +297,14 @@ pub fn random_u32() -> u32 {
     unsafe { ffi::randombytes_random() }
 }
 
+/// A uniformly random number below `upper_bound` (libsodium's
+/// randombytes_uniform, which avoids modulo bias). 0 if `upper_bound` < 2.
+pub fn random_uniform(upper_bound: u32) -> u32 {
+    let _ = init();
+    // SAFETY: takes a value and returns a value; no pointers.
+    unsafe { ffi::randombytes_uniform(upper_bound) }
+}
+
 /// Constant-time equality of two byte strings (sodium_memcmp). Lengths are
 /// not secret: different lengths are simply unequal.
 pub fn memeq(a: &[u8], b: &[u8]) -> bool {

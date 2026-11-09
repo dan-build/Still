@@ -39,6 +39,15 @@ const ICONS = {
       {dot(11, 8)}
     </>
   ),
+  // A die showing three: the password generator.
+  dice: () => (
+    <>
+      <rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2" />
+      {dot(5.5, 5.5)}
+      {dot(8, 8)}
+      {dot(10.5, 10.5)}
+    </>
+  ),
   key: () => (
     <>
       <circle cx="5" cy="8.25" r="3.25" />

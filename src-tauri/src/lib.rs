@@ -64,6 +64,7 @@ pub fn run() {
             commands::kept_list,
             commands::kept_trash,
             commands::item_reveal,
+            commands::password_generate,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

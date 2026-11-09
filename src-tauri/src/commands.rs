@@ -6,7 +6,9 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use serde::Serialize;
 use serde_json::{json, Value};
+use still_core::generate::{self, Options};
 use still_core::session::{SecretText, Unlocked};
 use still_core::vault::backend::{Notice, Status, Strength, UnlockFailure};
 use still_core::vault::backup;
@@ -20,7 +22,7 @@ use crate::vault::{self, state, ChosenBackup, CommandError, PendingRestore, Reve
 
 /// Every command, as named in build.rs and the capability.
 #[cfg(test)]
-pub const ALL: [&str; 29] = [
+pub const ALL: [&str; 30] = [
     "vault_create",
     "vault_unlock",
     "vault_lock",
@@ -50,6 +52,7 @@ pub const ALL: [&str; 29] = [
     "kept_list",
     "kept_trash",
     "item_reveal",
+    "password_generate",
 ];
 
 /// Creates a vault and unlocks it. Argon2id runs twice (the new key is
@@ -443,6 +446,57 @@ pub fn item_reveal(
     Ok(Revealed(vault.backend().reveal_item(&lens_id, &item_id)?))
 }
 
+/// A new password, on its way to the Add or Edit secret dialog.
+#[derive(Serialize)]
+pub struct GeneratedPassword {
+    value: Revealed,
+    bits: u32,
+}
+
+/// A new random password (still-core's `generate`, from libsodium) and its
+/// strength in bits. Only while unlocked, where the dialogs are; counts as
+/// activity. Codes: locked, bad-length, no-characters.
+#[tauri::command]
+pub fn password_generate(
+    vault: State<'_, Vault>,
+    autolock: State<'_, AutoLock>,
+    options: GenerateOptions,
+) -> Result<GeneratedPassword, CommandError> {
+    if vault.backend().status() != Status::Unlocked {
+        return Err(CommandError("locked"));
+    }
+    autolock.touch(Instant::now());
+    generate_password(options)
+}
+
+/// The generator's options as the page sends them.
+#[derive(serde::Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GenerateOptions {
+    length: usize,
+    lower: bool,
+    upper: bool,
+    digits: bool,
+    symbols: bool,
+    avoid_look_alikes: bool,
+}
+
+fn generate_password(options: GenerateOptions) -> Result<GeneratedPassword, CommandError> {
+    let generated = generate::generate(&Options {
+        length: options.length,
+        lower: options.lower,
+        upper: options.upper,
+        digits: options.digits,
+        symbols: options.symbols,
+        avoid_look_alikes: options.avoid_look_alikes,
+    })
+    .map_err(|e| CommandError(e.code()))?;
+    Ok(GeneratedPassword {
+        value: Revealed(generated.value),
+        bits: generated.bits,
+    })
+}
+
 // ---- backups ------------------------------------------------------------------
 
 /// The largest file Still reads as a backup (a vault is a few KiB per Lens).
@@ -669,6 +723,48 @@ mod tests {
         drop(vault);
         drop(store);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // What the page gets: {value, bits}, the options as it names them, and
+    // a code for options the generator can't follow.
+    #[test]
+    fn sends_a_generated_password_and_refuses_bad_options() {
+        let options: GenerateOptions = serde_json::from_value(json!({
+            "length": 12, "lower": true, "upper": false, "digits": true,
+            "symbols": false, "avoidLookAlikes": true
+        }))
+        .unwrap();
+        let sent = serde_json::to_value(generate_password(options).unwrap()).unwrap();
+        let value = sent["value"].as_str().unwrap();
+        assert_eq!(value.len(), 12);
+        assert!(value
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()));
+        assert_eq!(sent["bits"], 59); // 12 × log2(24 + 8) = 60, less the rule: 59.95
+
+        let too_short = GenerateOptions {
+            length: 4,
+            ..options
+        };
+        assert_eq!(
+            generate_password(too_short).err(),
+            Some(CommandError("bad-length"))
+        );
+        let nothing = GenerateOptions {
+            lower: false,
+            digits: false,
+            ..options
+        };
+        assert_eq!(
+            generate_password(nothing).err(),
+            Some(CommandError("no-characters"))
+        );
+        // A field it doesn't know is refused, not ignored.
+        assert!(serde_json::from_value::<GenerateOptions>(json!({
+            "length": 12, "lower": true, "upper": false, "digits": true,
+            "symbols": false, "avoidLookAlikes": true, "extra": 1
+        }))
+        .is_err());
     }
 
     // The UI never sends these; a page that does gets a code, not a change.

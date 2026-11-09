@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import LensView from '@/features/lenses/ui/LensView'
 import SearchView from '@/features/lenses/ui/SearchView'
 import type { SecretOps } from '@/features/lenses/ui/SecretList'
+import { GENERATOR_DEFAULTS, GeneratorContext } from '@/features/lenses/model/generator'
 import LensNameDialog from '@/features/lenses/ui/LensNameDialog'
 import ChangePasswordDialog from '@/features/vault/ui/ChangePasswordDialog'
 import KeptCopiesDialog from '@/features/vault/ui/KeptCopiesDialog'
@@ -9,7 +10,7 @@ import RestoreBackupDialog from '@/features/vault/ui/RestoreBackupDialog'
 import ArchiveView from '@/features/recycle-bin/ui/ArchiveView'
 import { onAutoLocked, reportActivity } from '@/platform/tauri/session'
 import { createTauriVaultApi, VaultApiError, type VaultApi } from '@/platform/tauri/vaultApi'
-import type { KeptCopy, LensView as Lens, VaultState, VaultStatus, VaultView } from '@/features/vault/model/types'
+import type { GeneratorOptions, KeptCopy, LensView as Lens, VaultState, VaultStatus, VaultView } from '@/features/vault/model/types'
 import { Button } from '@/shared/ui/Button'
 import { Icon } from '@/shared/ui/Icon'
 import { Toaster, type ToastMessage } from '@/shared/ui/Toast'
@@ -100,6 +101,14 @@ export default function StillHome({ notice, onDamaged, onReplaced }: StillHomePr
   const searching = query.trim() !== ''
   const showArchive = !searching && selection?.kind === 'archive'
   const sidebarSelection: Selection | null = searching ? null : currentLens ? { kind: 'lens', id: currentLens.id } : selection
+
+  // The password generator's options last until Still quits; nothing is stored.
+  const [generatorOptions, setGeneratorOptions] = useState<GeneratorOptions>(GENERATOR_DEFAULTS)
+  const generator = {
+    generate: (options: GeneratorOptions) => api().generatePassword(options),
+    options: generatorOptions,
+    setOptions: setGeneratorOptions,
+  }
 
   // Reveal, copy, edit and delete, for the Lens view and search alike.
   const ops: SecretOps = {
@@ -335,105 +344,107 @@ export default function StillHome({ notice, onDamaged, onReplaced }: StillHomePr
       {screen !== 'unlocked' ? (
         lockedView[screen]
       ) : (
-        <div className="flex h-screen w-full overflow-hidden bg-bg text-13 text-g1">
-          <Sidebar
-            lenses={lenses}
-            selected={sidebarSelection}
-            archiveCount={recycleBin.length}
-            onSelect={(next) => {
-              setQuery('')
-              setSelection(next)
-            }}
-            query={query}
-            onQuery={setQuery}
-            searchRef={searchField}
-            onNewLens={() => setIsCreateOpen(true)}
-            onLock={() => lock()}
-            onChangePassword={() => setIsPasswordOpen(true)}
-            onBackup={handleBackup}
-            onRestore={handleRestore}
-            onKeptCopies={() =>
-              api()
-                .keptList()
-                .then(setKeptCopies)
-                .catch(() => showToast({ message: "Couldn't list the kept copies.", tone: 'error' }))
-            }
-          />
-          <main className="flex min-w-0 flex-1 flex-col">
-            {view.unreadable > 0 && (
-              <div role="status" className="mx-3 mt-3 flex items-start gap-2.5 rounded-8 bg-sidebar px-3 py-3 text-13 leading-[1.45] text-g2 shadow-[inset_0_0_0_1px_var(--hairline)]">
-                <Icon name="warning" className="mt-0.5 text-warning" />
-                {view.unreadable === 1
-                  ? "1 Lens couldn't be opened. It's kept safe and unchanged."
-                  : `${view.unreadable} Lenses couldn't be opened. They're kept safe and unchanged.`}
-              </div>
-            )}
-            {searching ? (
-              <SearchView lenses={lenses} query={query} ops={ops} onClear={() => setQuery('')} onToast={showToast} />
-            ) : showArchive ? (
-              <ArchiveView bin={recycleBin} onRestore={restoreFromRecycleBin} onDeleteForever={deleteForever} />
-            ) : currentLens ? (
-              <LensView
-                key={currentLens.id}
-                lens={currentLens}
-                onAddItem={async (item) => show(await api().addItem(currentLens.id, item))}
-                ops={ops}
-                onToast={showToast}
-                onForget={() => forgetLens(currentLens)}
-                onRename={async (name) => {
-                  try {
-                    show(await api().renameLens(currentLens.id, name))
-                  } catch {
-                    showToast(SAVE_FAILED)
-                    return false
-                  }
-                  return true
-                }}
-              />
-            ) : (
-              <div className="flex flex-1 flex-col items-center justify-center gap-2 pb-10 text-center">
-                <div className="mb-2 flex size-10 items-center justify-center rounded-8 bg-sidebar text-g4 shadow-[inset_0_0_0_1px_var(--hairline)]">
-                  <Icon name="lens" />
+        <GeneratorContext.Provider value={generator}>
+          <div className="flex h-screen w-full overflow-hidden bg-bg text-13 text-g1">
+            <Sidebar
+              lenses={lenses}
+              selected={sidebarSelection}
+              archiveCount={recycleBin.length}
+              onSelect={(next) => {
+                setQuery('')
+                setSelection(next)
+              }}
+              query={query}
+              onQuery={setQuery}
+              searchRef={searchField}
+              onNewLens={() => setIsCreateOpen(true)}
+              onLock={() => lock()}
+              onChangePassword={() => setIsPasswordOpen(true)}
+              onBackup={handleBackup}
+              onRestore={handleRestore}
+              onKeptCopies={() =>
+                api()
+                  .keptList()
+                  .then(setKeptCopies)
+                  .catch(() => showToast({ message: "Couldn't list the kept copies.", tone: 'error' }))
+              }
+            />
+            <main className="flex min-w-0 flex-1 flex-col">
+              {view.unreadable > 0 && (
+                <div role="status" className="mx-3 mt-3 flex items-start gap-2.5 rounded-8 bg-sidebar px-3 py-3 text-13 leading-[1.45] text-g2 shadow-[inset_0_0_0_1px_var(--hairline)]">
+                  <Icon name="warning" className="mt-0.5 text-warning" />
+                  {view.unreadable === 1
+                    ? "1 Lens couldn't be opened. It's kept safe and unchanged."
+                    : `${view.unreadable} Lenses couldn't be opened. They're kept safe and unchanged.`}
                 </div>
-                <h1 className="text-14 font-semibold">No Lenses yet</h1>
-                <p className="mb-3 max-w-[300px] text-13 leading-[1.5] text-g3">
-                  A Lens is an encrypted collection of secrets. Make one for each part of your life.
-                </p>
-                <Button variant="primary" size="md" icon="plus" onClick={() => setIsCreateOpen(true)}>
-                  Create a Lens
-                </Button>
-              </div>
-            )}
-          </main>
+              )}
+              {searching ? (
+                <SearchView lenses={lenses} query={query} ops={ops} onClear={() => setQuery('')} onToast={showToast} />
+              ) : showArchive ? (
+                <ArchiveView bin={recycleBin} onRestore={restoreFromRecycleBin} onDeleteForever={deleteForever} />
+              ) : currentLens ? (
+                <LensView
+                  key={currentLens.id}
+                  lens={currentLens}
+                  onAddItem={async (item) => show(await api().addItem(currentLens.id, item))}
+                  ops={ops}
+                  onToast={showToast}
+                  onForget={() => forgetLens(currentLens)}
+                  onRename={async (name) => {
+                    try {
+                      show(await api().renameLens(currentLens.id, name))
+                    } catch {
+                      showToast(SAVE_FAILED)
+                      return false
+                    }
+                    return true
+                  }}
+                />
+              ) : (
+                <div className="flex flex-1 flex-col items-center justify-center gap-2 pb-10 text-center">
+                  <div className="mb-2 flex size-10 items-center justify-center rounded-8 bg-sidebar text-g4 shadow-[inset_0_0_0_1px_var(--hairline)]">
+                    <Icon name="lens" />
+                  </div>
+                  <h1 className="text-14 font-semibold">No Lenses yet</h1>
+                  <p className="mb-3 max-w-[300px] text-13 leading-[1.5] text-g3">
+                    A Lens is an encrypted collection of secrets. Make one for each part of your life.
+                  </p>
+                  <Button variant="primary" size="md" icon="plus" onClick={() => setIsCreateOpen(true)}>
+                    Create a Lens
+                  </Button>
+                </div>
+              )}
+            </main>
 
-          <LensNameDialog open={isCreateOpen} onClose={() => setIsCreateOpen(false)} onSubmit={createLens} />
-          <RestoreBackupDialog
-            chosen={restoreChosen}
-            onClose={() => setRestoreChosen(null)}
-            onCheck={(password) => api().restoreCheck(password)}
-            onConfirm={async () => (await api().restoreConfirm()).kept}
-            onRestored={() => lock("Backup restored. Unlock it with the backup's password.")}
-          />
-          <KeptCopiesDialog
-            copies={keptCopies}
-            onClose={() => setKeptCopies(null)}
-            onTrash={(name) => api().keptTrash(name)}
-            onError={(message) => showToast({ message, tone: 'error' })}
-          />
-          <ChangePasswordDialog
-            open={isPasswordOpen}
-            onClose={() => setIsPasswordOpen(false)}
-            onChange={async (current, next, stronger) => {
-              const { state, olderCopies } = await api().changePassword(current, next, stronger)
-              show(state)
-              return olderCopies
-            }}
-            onChanged={() => {
-              setIsPasswordOpen(false)
-              showToast({ message: 'Master password changed' })
-            }}
-          />
-        </div>
+            <LensNameDialog open={isCreateOpen} onClose={() => setIsCreateOpen(false)} onSubmit={createLens} />
+            <RestoreBackupDialog
+              chosen={restoreChosen}
+              onClose={() => setRestoreChosen(null)}
+              onCheck={(password) => api().restoreCheck(password)}
+              onConfirm={async () => (await api().restoreConfirm()).kept}
+              onRestored={() => lock("Backup restored. Unlock it with the backup's password.")}
+            />
+            <KeptCopiesDialog
+              copies={keptCopies}
+              onClose={() => setKeptCopies(null)}
+              onTrash={(name) => api().keptTrash(name)}
+              onError={(message) => showToast({ message, tone: 'error' })}
+            />
+            <ChangePasswordDialog
+              open={isPasswordOpen}
+              onClose={() => setIsPasswordOpen(false)}
+              onChange={async (current, next, stronger) => {
+                const { state, olderCopies } = await api().changePassword(current, next, stronger)
+                show(state)
+                return olderCopies
+              }}
+              onChanged={() => {
+                setIsPasswordOpen(false)
+                showToast({ message: 'Master password changed' })
+              }}
+            />
+          </div>
+        </GeneratorContext.Provider>
       )}
 
       {shownNotice && (

@@ -1,6 +1,7 @@
-import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import type { NewItem } from '@/features/vault/model/types'
-import { Button } from '@/shared/ui/Button'
+import { useContext, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import type { GeneratorOptions, NewItem } from '@/features/vault/model/types'
+import { GeneratorContext, MAX_LENGTH, MIN_LENGTH, strengthWord } from '@/features/lenses/model/generator'
+import { Button, IconButton } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Dialog'
 import { Kbd } from '@/shared/ui/Kbd'
 import { SegmentedControl } from '@/shared/ui/SegmentedControl'
@@ -37,6 +38,12 @@ export default function SecretDialog({ open, onClose, editing, onSave, onFailed 
   const [value, setValue] = useState('')
   const [saving, setSaving] = useState(false)
   const labelField = useRef<HTMLInputElement>(null)
+  // The generator (Rust's, through App) for passwords; null when not offered.
+  const generator = useContext(GeneratorContext)
+  const canGenerate = generator !== null && type === 'password'
+  // The strength of the generated password in the field, while it's there.
+  const [generatedBits, setGeneratedBits] = useState<number | null>(null)
+  const [generateFailed, setGenerateFailed] = useState(false)
 
   const onlyBlank = value !== '' && value.trim() === ''
   const edgeSpace = value.trim() !== '' && value !== value.trim()
@@ -48,6 +55,28 @@ export default function SecretDialog({ open, onClose, editing, onSave, onFailed 
     setLabel(editing?.label ?? '')
     setValue('')
     setType(editing?.type ?? 'password')
+    setGeneratedBits(null)
+    setGenerateFailed(false)
+  }
+
+  const generate = async (options: GeneratorOptions) => {
+    if (!generator) return
+    try {
+      const { value: password, bits } = await generator.generate(options)
+      setValue(password)
+      setGeneratedBits(bits)
+      setGenerateFailed(false)
+    } catch {
+      setGenerateFailed(true)
+    }
+  }
+
+  // A changed option makes a new password at once, and is kept until Still quits.
+  const changeOptions = (change: Partial<GeneratorOptions>) => {
+    if (!generator) return
+    const options = { ...generator.options, ...change }
+    generator.setOptions(options)
+    void generate(options)
   }
 
   const close = () => {
@@ -130,8 +159,30 @@ export default function SecretDialog({ open, onClose, editing, onSave, onFailed 
           placeholder={editing ? 'Leave empty to keep the current value' : 'Paste or type the secret here…'}
           onKeyDown={onKeyDown}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
-          error={onlyBlank ? "A secret can't be only spaces or line breaks." : undefined}
+          onChange={(e) => {
+            setValue(e.target.value)
+            // Typing makes it a different password: its strength no longer applies.
+            setGeneratedBits(null)
+          }}
+          trailing={
+            canGenerate ? (
+              <IconButton
+                icon="dice"
+                label="Generate a password"
+                title="Generate a password"
+                size="sm"
+                className="mt-1 mr-1"
+                onClick={() => void generate(generator.options)}
+              />
+            ) : undefined
+          }
+          error={
+            onlyBlank
+              ? "A secret can't be only spaces or line breaks."
+              : canGenerate && generateFailed
+                ? "Couldn't make a password. Try again."
+                : undefined
+          }
           hint={
             edgeSpace ? (
               <span className="flex items-start justify-between gap-3">
@@ -151,7 +202,84 @@ export default function SecretDialog({ open, onClose, editing, onSave, onFailed 
             )
           }
         />
+        {canGenerate && generatedBits !== null && (
+          <GeneratorOptionsRow options={generator.options} bits={generatedBits} onChange={changeOptions} />
+        )}
       </form>
     </Dialog>
+  )
+}
+
+const KINDS = [
+  { key: 'lower', text: 'a–z', label: 'Lowercase letters' },
+  { key: 'upper', text: 'A–Z', label: 'Uppercase letters' },
+  { key: 'digits', text: '0–9', label: 'Digits' },
+  { key: 'symbols', text: '!#$', label: 'Symbols' },
+] as const
+
+const CHIP =
+  'focus-ring h-6 rounded-4 px-2 text-12 font-medium text-g4 shadow-[inset_0_0_0_1px_var(--g6)] ' +
+  'transition-[background-color,color,box-shadow] duration-150 hover:text-g2 ' +
+  'aria-pressed:bg-selected aria-pressed:text-g1 aria-pressed:shadow-none disabled:opacity-45'
+
+/** The generator's options, under the field once a password was generated. */
+function GeneratorOptionsRow({
+  options,
+  bits,
+  onChange,
+}: {
+  options: GeneratorOptions
+  bits: number
+  onChange: (change: Partial<GeneratorOptions>) => void
+}) {
+  const chosen = KINDS.filter((kind) => options[kind.key]).length
+  const lengthId = useId()
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-3">
+        <label htmlFor={lengthId} className="text-12 font-medium text-g3">
+          Length
+        </label>
+        <input
+          id={lengthId}
+          type="range"
+          min={MIN_LENGTH}
+          max={MAX_LENGTH}
+          value={options.length}
+          onChange={(e) => onChange({ length: Number(e.target.value) })}
+          className="focus-ring min-w-0 flex-1 rounded-4 accent-accent-fill"
+        />
+        <span className="w-6 text-right font-mono text-12 text-g2 tabular-nums">{options.length}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {KINDS.map((kind) => (
+          <button
+            key={kind.key}
+            type="button"
+            aria-label={kind.label}
+            title={kind.label}
+            aria-pressed={options[kind.key]}
+            // At least one kind stays chosen.
+            disabled={options[kind.key] && chosen === 1}
+            onClick={() => onChange({ [kind.key]: !options[kind.key] })}
+            className={CHIP}
+          >
+            {kind.text}
+          </button>
+        ))}
+        <button
+          type="button"
+          aria-pressed={options.avoidLookAlikes}
+          title="Leave out 0 O o 1 l I, easy to misread"
+          onClick={() => onChange({ avoidLookAlikes: !options.avoidLookAlikes })}
+          className={CHIP}
+        >
+          No look-alikes
+        </button>
+        <p className="ml-auto text-12 text-g4" aria-live="polite">
+          About {bits} bits: {strengthWord(bits)}
+        </p>
+      </div>
+    </div>
   )
 }

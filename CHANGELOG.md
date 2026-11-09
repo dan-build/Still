@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-08
+
+### Added
+
+- **Generate a password.** In Add secret and Edit secret, the die button in the value field makes a strong random password, kept masked like a typed one. Choose its length (8 to 64, 20 by default) and which characters it uses: lowercase and uppercase letters, digits and symbols, and whether to leave out look-alikes such as 0 and O. Every chosen kind appears at least once, and Still shows how strong the result is. The options last until Still quits; nothing about them is stored. Passwords come from the same libsodium random generator as Still's encryption keys.
+
 ## [0.9.0] - 2026-11-08
 
 ### Added
