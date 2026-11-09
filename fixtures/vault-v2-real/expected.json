@@ -1,0 +1,18 @@
+{
+  "password": "throwaway-vault-202",
+  "lenses": {
+    "muk8tmfq": {
+      "name": "Export Test",
+      "items": {
+        "muk8u0z2": { "label": "Email", "type": "password", "value": "dummy-Pässwörd-🔐-42" },
+        "muk8ubyb": { "label": "API token", "type": "key", "value": "sk-dummy-0123456789" },
+        "muk8uoqr": { "label": "Recovery note", "type": "note", "value": "first line\nsecond line — ünïcødé ✓" },
+        "87f2a45cd1f6b9c9a1f118e303a92ade": { "label": "added-by-3b", "type": "password", "value": "3b-Wörks-🦀" },
+        "bfd01d6076ffb89d851c829cfedaee22": { "label": "moved-to-file", "type": "password", "value": "stage-4 ✓" },
+        "f494389500c93f29a240929c5f7b3dd0": { "label": "rollback-check", "type": "password", "value": "newer" },
+        "e88eea8757ad03aa8a116d819a0d41b2": { "label": "generated-check", "type": "password", "value": "w%zByV@D&kemM5q=Hd=_" }
+      }
+    }
+  },
+  "recycleBin": {}
+}

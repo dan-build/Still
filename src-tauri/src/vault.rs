@@ -261,6 +261,81 @@ mod tests {
         );
     }
 
+    // The real v2 vault a release build wrote (fixtures/vault-v2-real),
+    // through the vault file as the app uses it: start-up trusts it (first
+    // record), it unlocks to every secret, takes a change in v2, and opens
+    // again after a restart, with nothing else lost.
+    #[test]
+    fn opens_and_changes_the_real_v2_vault_from_a_release_build() {
+        let dir = TempDir::new();
+        let folder = dir.0.join("vault");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("vault.json"),
+            include_str!("../../fixtures/vault-v2-real/vault.json"),
+        )
+        .unwrap();
+        let expected: Value =
+            serde_json::from_str(include_str!("../../fixtures/vault-v2-real/expected.json"))
+                .unwrap();
+        let password = secret(expected["password"].as_str().unwrap());
+        let reveal_all = |backend: &mut AppBackend| {
+            let mut count = 0;
+            for (lens_id, lens) in expected["lenses"].as_object().unwrap() {
+                for (item_id, item) in lens["items"].as_object().unwrap() {
+                    let value = backend.reveal_item(lens_id, item_id).unwrap();
+                    assert_eq!(value.expose(), item["value"].as_str().unwrap());
+                    count += 1;
+                }
+            }
+            count
+        };
+
+        let store = Arc::new(AppStore::open(folder.clone()));
+        let started = crate::startup::open(&store, Default::default(), None, None, 0);
+        assert_eq!(started.to_json(), json!({ "kind": "ready" }));
+        let vault = Vault::new(FileStorage(store.clone()));
+        let mut backend = vault.backend();
+        backend.unlock(&password).unwrap();
+        assert_eq!(
+            backend.take_notice(),
+            None,
+            "already v2: nothing to convert"
+        );
+        assert_eq!(state(&backend)["view"]["lenses"][0]["name"], "Export Test");
+        assert_eq!(reveal_all(&mut backend), 7);
+
+        let lens = "muk8tmfq";
+        backend
+            .add_item(lens, "fixture-check", "password", &secret("added ✓"))
+            .unwrap();
+        drop(backend);
+        drop(vault);
+        let Loaded::V2(_) = store.store().load() else {
+            panic!("saved in v2");
+        };
+        assert_eq!(store.store().check_file(), crate::store::FileCheck::Matches);
+
+        let reopened = Vault::new(FileStorage(store));
+        let mut backend = reopened.backend();
+        backend.unlock(&password).unwrap();
+        assert_eq!(reveal_all(&mut backend), 7);
+        let items = backend.view().lenses[0]["items"].clone();
+        let added = items
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["label"] == "fixture-check")
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(
+            backend.reveal_item(lens, &added).unwrap().expose(),
+            "added ✓"
+        );
+    }
+
     /// A v2 vault with two saves, so `.bak` is a good v2 copy, and the vault
     /// file then changed so it still passes every header check but its body
     /// doesn't open: a consistent edit, or a bug.

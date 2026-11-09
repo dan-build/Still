@@ -125,3 +125,54 @@ fn reproduces_every_vector() {
         hex(&vectors["goldenPasswordKey"])
     );
 }
+
+// A v2 vault as a release build left it on disk (fixtures/vault-v2-real):
+// moved from localStorage, converted by v0.6.0, last written by v0.10.0.
+// It must parse, write back byte for byte, and open to every secret.
+#[test]
+fn opens_the_real_v2_vault_from_a_release_build() {
+    let text = std::fs::read_to_string(format!(
+        "{}/../../fixtures/vault-v2-real/vault.json",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    let file = File::parse(&text).unwrap();
+    assert_eq!(file.to_json(), text);
+    assert_eq!(file.migrated_from.as_deref(), Some("vault-v1"));
+    // Converted at libsodium's SENSITIVE limits.
+    assert_eq!((file.kdf.ops_limit, file.kdf.mem_limit), (4, 1 << 30));
+
+    let expected = fixture("vault-v2-real/expected.json");
+    let password = expected["password"].as_str().unwrap();
+    let app_key = file
+        .open_master_key(&file.kdf.password_key(password).unwrap())
+        .unwrap();
+    let body = file.open_body(&app_key).unwrap();
+    assert_eq!(body.bin, "[]");
+
+    let lenses: serde_json::Value = serde_json::from_str(&body.lenses).unwrap();
+    let lenses = lenses.as_array().unwrap();
+    let want = expected["lenses"].as_object().unwrap();
+    assert_eq!(lenses.len(), want.len());
+    let mut revealed = 0;
+    for lens in lenses {
+        let want = &want[lens["id"].as_str().unwrap()];
+        assert_eq!(lens["name"], want["name"]);
+        let lens_key =
+            decrypt_lens_key(lens["encryptedMasterKey"].as_str().unwrap(), &app_key).unwrap();
+        let items = lens["items"].as_array().unwrap();
+        assert_eq!(items.len(), want["items"].as_object().unwrap().len());
+        for item in items {
+            let want = &want["items"][item["id"].as_str().unwrap()];
+            assert_eq!(item["label"], want["label"]);
+            assert_eq!(item["type"], want["type"]);
+            let value = decrypt_item(item["encryptedValue"].as_str().unwrap(), &lens_key).unwrap();
+            assert_eq!(value, want["value"].as_str().unwrap());
+            revealed += 1;
+        }
+    }
+    assert_eq!(revealed, 7);
+
+    let wrong = file.kdf.password_key(&format!("{password}x")).unwrap();
+    assert_eq!(file.open_master_key(&wrong).err(), Some(Error::WrongKey));
+}

@@ -51,7 +51,7 @@ This runs exactly what CI runs:
 
   Tests enforce all of these.
 - **Keep the content security policy strict.** Never add a remote origin or inline code to the release `csp` in `src-tauri/tauri.conf.json`. Tests check every source.
-- **Never regenerate or edit the fixtures** (`fixtures/vault-v1*`, `fixtures/vault-v2`, `fixtures/vault-behaviour-v1`) to make a test pass. A failing golden test means existing vaults would break.
+- **Never regenerate or edit the fixtures** (`fixtures/vault-v1*`, `fixtures/vault-v2*`, `fixtures/vault-behaviour-v1`) to make a test pass. A failing golden test means existing vaults would break. Every fixture is pinned in `fixtures/SHA256SUMS` (checked by `crates/still-core/tests/fixtures_pinned.rs`); a new fixture adds its line there in the same commit.
 - **Write the tests first, then refactor** the code they cover.
 - **Tests marked `it.fails` are known bugs.** When you fix one, change it to `it` in the same commit.
 - **Dependency advisories block CI.** `npm audit` and `cargo audit` fail on any high or critical advisory, dev tools included. To accept one that can't be fixed yet, add an entry with a reason and a review date to `scripts/npm-audit-allowlist.json` (or `.cargo/audit.toml`); an npm entry stops counting after its review date.
