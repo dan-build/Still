@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-09
+
+### Added
+
+- **A username and website on passwords.** Add secret and Edit secret have two optional fields for passwords. The username shows under the label, and the row's ⋯ menu copies the username or the website; like a copied password, it's cleared from the clipboard after 30 seconds. Search also finds secrets by username and website. Still never opens or fetches anything from a website: it's only text.
+
+### Changed
+
+- **Older versions keep the new fields.** A vault with usernames and websites still opens in v0.6.0 and later, which keep them when they change a secret, but don't show them.
+
 ## [0.10.0] - 2026-11-08
 
 ### Added

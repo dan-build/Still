@@ -1,6 +1,7 @@
 import type { ItemView } from '@/features/vault/model/types'
 import { IconButton } from '@/shared/ui/Button'
 import { Icon } from '@/shared/ui/Icon'
+import { Menu, type MenuItem } from '@/shared/ui/Menu'
 
 const TYPE_NAMES = { password: 'Password', key: 'API key', note: 'Note' } as const
 
@@ -15,6 +16,8 @@ interface SecretRowProps {
   busy: boolean
   onReveal: () => void
   onCopy: () => void
+  /** Copies the username or website (offered when the secret has one). */
+  onCopyField: (field: 'username' | 'url') => void
   onEdit: () => void
   onDelete: () => void
 }
@@ -37,9 +40,13 @@ function Label({ text, highlight }: { text: string; highlight?: string }) {
   )
 }
 
-export default function SecretRow({ item, highlight, revealed, copied, busy, onReveal, onCopy, onEdit, onDelete }: SecretRowProps) {
+export default function SecretRow({ item, highlight, revealed, copied, busy, onReveal, onCopy, onCopyField, onEdit, onDelete }: SecretRowProps) {
   const isRevealed = revealed !== undefined
   const tall = isRevealed && item.type === 'note'
+  const more: MenuItem[] = [
+    ...(item.username ? [{ label: 'Copy username', icon: 'copy' as const, onSelect: () => onCopyField('username') }] : []),
+    ...(item.url ? [{ label: 'Copy website', icon: 'copy' as const, onSelect: () => onCopyField('url') }] : []),
+  ]
   return (
     <li
       className={[
@@ -52,8 +59,15 @@ export default function SecretRow({ item, highlight, revealed, copied, busy, onR
       <span className={`flex text-g5 ${tall ? 'mt-[13px]' : ''}`}>
         <Icon name={item.type === 'key' ? 'key' : item.type} label={TYPE_NAMES[item.type]} />
       </span>
-      <span className={`w-[220px] shrink-0 truncate text-13 font-medium ${tall ? 'mt-3 leading-[1.5]' : ''}`}>
-        <Label text={item.label} highlight={highlight} />
+      <span className={`flex w-[220px] shrink-0 flex-col ${tall ? 'mt-3' : ''}`}>
+        <span className={`truncate text-13 font-medium ${tall ? 'leading-[1.5]' : ''}`}>
+          <Label text={item.label} highlight={highlight} />
+        </span>
+        {item.username && (
+          <span className="truncate text-12 text-g4" title={item.username}>
+            <Label text={item.username} highlight={highlight} />
+          </span>
+        )}
       </span>
       <span
         data-testid="secret-value"
@@ -102,6 +116,7 @@ export default function SecretRow({ item, highlight, revealed, copied, busy, onR
             </span>
           </span>
         </button>
+        {more.length > 0 && <Menu label={`More for ${item.label}`} items={more} />}
         <IconButton icon="edit" label={`Edit ${item.label}`} onClick={onEdit} />
         <IconButton icon="trash" label={`Delete ${item.label}`} danger onClick={onDelete} />
       </span>

@@ -17,6 +17,8 @@ const REVEAL_MS = 30_000
 export interface SecretOps {
   reveal: (lensId: string, itemId: string) => Promise<string>
   copy: (lensId: string, itemId: string) => Promise<void>
+  /** Copies a password's username or website (Rust clears it after 30 seconds). */
+  copyField: (lensId: string, itemId: string, field: 'username' | 'url') => Promise<void>
   update: (lensId: string, itemId: string, edit: ItemEdit) => Promise<void>
   remove: (lensId: string, itemId: string) => Promise<void>
   /** Puts back the secret just deleted (Undo). */
@@ -122,6 +124,17 @@ export default function SecretList({ groups, headings, highlight, label, ops, on
     onToast({ message: `${item.label} copied`, detail: 'Clears in 30 s', countdown: 30 })
   }
 
+  const copyField = async (lensId: string, item: ItemView, field: 'username' | 'url') => {
+    const name = field === 'username' ? 'Username' : 'Website'
+    try {
+      await ops.copyField(lensId, item.id, field)
+    } catch {
+      onToast({ message: `Couldn't copy the ${name.toLowerCase()}.`, tone: 'error' })
+      return
+    }
+    onToast({ message: `${name} copied`, detail: 'Clears in 30 s', countdown: 30 })
+  }
+
   const confirmDelete = async () => {
     if (!deleting) return
     setDeleteOpen(false)
@@ -158,6 +171,7 @@ export default function SecretList({ groups, headings, highlight, label, ops, on
           busy={busy === key}
           onReveal={() => toggleReveal(group.lens.id, item)}
           onCopy={() => copy(group.lens.id, item)}
+          onCopyField={(field) => copyField(group.lens.id, item, field)}
           onEdit={() => {
             setEditing({ lensId: group.lens.id, item })
             setEditOpen(true)

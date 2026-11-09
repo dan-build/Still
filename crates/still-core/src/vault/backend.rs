@@ -226,6 +226,10 @@ pub enum VaultError {
     NeedsUpgrade,
     /// create or set-aside could not be saved; nothing changed.
     StorageFailed,
+    /// A password's username is longer than USERNAME_MAX.
+    UsernameTooLong,
+    /// A password's website is longer than URL_MAX.
+    UrlTooLong,
     /// The keys refused: a Lens whose key didn't open, a damaged value, or
     /// a failed password step.
     Crypto(SessionError),
@@ -244,6 +248,8 @@ impl VaultError {
             Self::WriteFailed => "write-failed",
             Self::NeedsUpgrade => "needs-upgrade",
             Self::StorageFailed => "storage-failed",
+            Self::UsernameTooLong => "username-too-long",
+            Self::UrlTooLong => "url-too-long",
             Self::Crypto(SessionError::WrongPassword) => "crypto-wrong-password",
             Self::Crypto(SessionError::Corrupt) => "crypto-corrupt",
             Self::Crypto(SessionError::Failed) => "crypto-failed",
@@ -643,6 +649,75 @@ pub struct Backend<S: Storage, K: Keys> {
     clock: Clock,
 }
 
+/// The longest username and website a password keeps, in UTF-16 code units
+/// (as the page counts them).
+pub const USERNAME_MAX: usize = 256;
+pub const URL_MAX: usize = 2048;
+
+/// A password's username and website (v0.11.0), as the page sends them.
+/// Each is trimmed (JavaScript's whitespace); blank means none. They're
+/// kept as `username` and `url` on the stored secret, plain text inside the
+/// encrypted vault like its label, and only on passwords.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Details {
+    pub username: Option<String>,
+    pub url: Option<String>,
+}
+
+impl Details {
+    /// Each field as it will be stored: trimmed, or None if blank or if the
+    /// secret isn't a password. Refuses one that is too long.
+    fn stored(&self, item_type: &str) -> Result<[(&'static str, Option<&str>); 2], VaultError> {
+        fn field<'a>(
+            text: &'a Option<String>,
+            item_type: &str,
+            max: usize,
+            error: VaultError,
+        ) -> Result<Option<&'a str>, VaultError> {
+            let text = text
+                .as_deref()
+                .map(js_trim)
+                .filter(|t| !t.is_empty() && item_type == "password");
+            match text {
+                Some(t) if t.encode_utf16().count() > max => Err(error),
+                text => Ok(text),
+            }
+        }
+        Ok([
+            (
+                "username",
+                field(
+                    &self.username,
+                    item_type,
+                    USERNAME_MAX,
+                    VaultError::UsernameTooLong,
+                )?,
+            ),
+            (
+                "url",
+                field(&self.url, item_type, URL_MAX, VaultError::UrlTooLong)?,
+            ),
+        ])
+    }
+}
+
+/// The secret with its username and website set as given: a field keeps its
+/// place, a new one goes last, and one with no value is removed.
+fn with_details(item: &Value, details: [(&str, Option<&str>); 2]) -> Value {
+    let mut map = item.as_object().cloned().unwrap_or_default();
+    for (key, text) in details {
+        match text {
+            Some(text) => {
+                map.insert(key.to_owned(), Value::String(text.to_owned()));
+            }
+            None => {
+                map.shift_remove(key);
+            }
+        }
+    }
+    Value::Object(map)
+}
+
 /// What an unlock has to tell the user, once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Notice {
@@ -1023,6 +1098,32 @@ impl<S: Storage, K: Keys> Backend<S, K> {
             .map_err(VaultError::Crypto)
     }
 
+    /// A password's username or website (`field`: "username" or "url"), for
+    /// copying. Refused for a hidden Lens, as reveal is.
+    pub fn item_field(
+        &self,
+        lens_id: &str,
+        item_id: &str,
+        field: &str,
+    ) -> Result<SecretText, VaultError> {
+        let session = self.session()?;
+        if !session.readable.contains(lens_id) {
+            return Err(VaultError::UnknownLens);
+        }
+        let lens = session
+            .lists
+            .lenses
+            .iter()
+            .chain(&session.lists.bin)
+            .find(|l| id_of(l) == Some(lens_id));
+        lens.and_then(|lens| items_of(lens).iter().find(|i| id_of(i) == Some(item_id)))
+            .filter(|_| ["username", "url"].contains(&field))
+            .and_then(|item| item.get(field))
+            .and_then(Value::as_str)
+            .map(|text| SecretText::from(text.to_owned()))
+            .ok_or(VaultError::UnknownItem)
+    }
+
     // ---- changes ------------------------------------------------------------------
 
     fn session(&self) -> Result<&Session<K>, VaultError> {
@@ -1128,24 +1229,41 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         item_type: &str,
         value: &SecretText,
     ) -> Result<(), VaultError> {
+        self.add_item_with(lens_id, label, item_type, value, &Details::default())
+    }
+
+    /// Adds a secret with its username and website, in the same one write.
+    pub fn add_item_with(
+        &mut self,
+        lens_id: &str,
+        label: &str,
+        item_type: &str,
+        value: &SecretText,
+        details: &Details,
+    ) -> Result<(), VaultError> {
+        let details = details.stored(item_type)?;
         let session = self.session_for(lens_id)?;
         let lens = session
             .active_lens(lens_id)
             .ok_or(VaultError::UnknownLens)?;
         let encrypted_value = session.encrypt(lens_id, value)?;
         let mut items = items_of(lens).to_vec();
-        items.push(json!({
-            "id": new_id(),
-            "label": label,
-            "type": item_type,
-            "encryptedValue": encrypted_value,
-        }));
+        items.push(with_details(
+            &json!({
+                "id": new_id(),
+                "label": label,
+                "type": item_type,
+                "encryptedValue": encrypted_value,
+            }),
+            details,
+        ));
         let change = model::set_items(&session.lists, lens_id, items);
         self.write(change)
     }
 
     /// Changes a secret in place (same id and position). Without a new
-    /// value, the stored one is kept byte for byte.
+    /// value, the stored one is kept byte for byte. Its username and website,
+    /// and any field this version doesn't know, are kept as they are.
     pub fn update_item(
         &mut self,
         lens_id: &str,
@@ -1154,6 +1272,22 @@ impl<S: Storage, K: Keys> Backend<S, K> {
         item_type: &str,
         value: Option<&SecretText>,
     ) -> Result<(), VaultError> {
+        self.update_item_with(lens_id, item_id, label, item_type, value, None)
+    }
+
+    /// `update_item`, also setting the username and website when `details`
+    /// is given (a blank one, or any on a secret that isn't a password, is
+    /// removed). Fields this version doesn't know are kept either way.
+    pub fn update_item_with(
+        &mut self,
+        lens_id: &str,
+        item_id: &str,
+        label: &str,
+        item_type: &str,
+        value: Option<&SecretText>,
+        details: Option<&Details>,
+    ) -> Result<(), VaultError> {
+        let details = details.map(|d| d.stored(item_type)).transpose()?;
         let session = self.session_for(lens_id)?;
         let lens = session.active_lens(lens_id);
         let items = lens.map(items_of).unwrap_or_default();
@@ -1177,7 +1311,11 @@ impl<S: Storage, K: Keys> Backend<S, K> {
                 }
                 let i = with_field(i, "label", Value::String(label.to_owned()));
                 let i = with_field(&i, "type", Value::String(item_type.to_owned()));
-                with_field(&i, "encryptedValue", encrypted_value.clone())
+                let i = with_field(&i, "encryptedValue", encrypted_value.clone());
+                match details {
+                    Some(details) => with_details(&i, details),
+                    None => i,
+                }
             })
             .collect();
         let change = model::set_items(&session.lists, lens_id, items);
@@ -1408,7 +1546,16 @@ fn to_view(lens: &Value) -> Value {
     let field = |value: &Value, key: &str| value.get(key).cloned().unwrap_or(Value::Null);
     let items: Vec<Value> = items_of(lens)
         .iter()
-        .map(|i| json!({ "id": field(i, "id"), "label": field(i, "label"), "type": field(i, "type") }))
+        .map(|i| {
+            let mut view = json!({ "id": field(i, "id"), "label": field(i, "label"), "type": field(i, "type") });
+            // A password's username and website, when stored as text.
+            for key in ["username", "url"] {
+                if let Some(text) = i.get(key).filter(|v| v.is_string()) {
+                    view[key] = text.clone();
+                }
+            }
+            view
+        })
         .collect();
     let mut view = json!({
         "id": field(lens, "id"),

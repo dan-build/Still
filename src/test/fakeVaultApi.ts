@@ -8,6 +8,8 @@
 import { VaultApiError, type VaultApi } from '@/platform/tauri/vaultApi'
 import {
   RECYCLE_DAYS,
+  URL_MAX,
+  USERNAME_MAX,
   type BackupSummary,
   type GeneratorOptions,
   type ItemType,
@@ -24,6 +26,23 @@ export interface FakeItem {
   label: string
   type: ItemType
   value: string
+  username?: string
+  url?: string
+}
+
+/** As in Rust: trimmed, only on passwords, blank means none; too long is refused. */
+function details(type: ItemType, given: { username?: string; url?: string }): { username?: string; url?: string } {
+  const out: { username?: string; url?: string } = {}
+  for (const [key, max, code] of [
+    ['username', USERNAME_MAX, 'username-too-long'],
+    ['url', URL_MAX, 'url-too-long'],
+  ] as const) {
+    const text = given[key]?.trim()
+    if (!text || type !== 'password') continue
+    if (text.length > max) throw new VaultApiError(code)
+    out[key] = text
+  }
+  return out
 }
 
 export interface FakeLens {
@@ -113,7 +132,13 @@ export class FakeVault implements VaultApi {
       name: lens.name,
       createdAt: lens.createdAt,
       itemCount: lens.items.length,
-      items: lens.items.map(({ id, label, type }) => ({ id, label, type })),
+      items: lens.items.map(({ id, label, type, username, url }) => ({
+        id,
+        label,
+        type,
+        ...(username === undefined ? {} : { username }),
+        ...(url === undefined ? {} : { url }),
+      })),
       ...(lens.deletedAt ? { deletedAt: lens.deletedAt } : {}),
     })
     // As in Rust, Archive entries say when the purge deletes them.
@@ -324,19 +349,27 @@ export class FakeVault implements VaultApi {
     })
   }
 
-  addItem(lensId: string, item: { label: string; type: ItemType; value: string }) {
+  addItem(lensId: string, item: { label: string; type: ItemType; value: string; username?: string; url?: string }) {
     return this.change('addItem', () => {
       if (item.value.trim() === '') throw new VaultApiError('empty-value')
-      this.lens(lensId).items.push({ id: this.newId(), ...item })
+      const fields = details(item.type, item)
+      this.lens(lensId).items.push({ id: this.newId(), label: item.label, type: item.type, value: item.value, ...fields })
     })
   }
 
-  updateItem(lensId: string, itemId: string, edit: { label: string; type: ItemType; value?: string }) {
+  updateItem(
+    lensId: string,
+    itemId: string,
+    edit: { label: string; type: ItemType; value?: string; username?: string; url?: string },
+  ) {
     return this.change('updateItem', () => {
       this.lens(lensId)
       const item = this.item(lensId, itemId)
       if (edit.label.trim() === '') throw new VaultApiError('empty-label')
-      Object.assign(item, { label: edit.label.trim(), type: edit.type }, edit.value === undefined ? {} : { value: edit.value })
+      const fields = details(edit.type, edit)
+      delete item.username
+      delete item.url
+      Object.assign(item, { label: edit.label.trim(), type: edit.type }, edit.value === undefined ? {} : { value: edit.value }, fields)
     })
   }
 
@@ -372,6 +405,14 @@ export class FakeVault implements VaultApi {
     this.calls.push('copyItem')
     if (!this.unlocked) throw new VaultApiError('locked')
     this.clipboard.push(this.item(lensId, itemId).value)
+  }
+
+  async copyItemField(lensId: string, itemId: string, field: 'username' | 'url') {
+    this.calls.push('copyItemField')
+    if (!this.unlocked) throw new VaultApiError('locked')
+    const text = this.item(lensId, itemId)[field]
+    if (text === undefined) throw new VaultApiError('unknown-item')
+    this.clipboard.push(text)
   }
 
   /** Not random: `generated-<n>`, padded with x to the length; 6 bits a character. */

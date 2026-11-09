@@ -263,8 +263,9 @@ mod tests {
 
     // The real v2 vault a release build wrote (fixtures/vault-v2-real),
     // through the vault file as the app uses it: start-up trusts it (first
-    // record), it unlocks to every secret, takes a change in v2, and opens
-    // again after a restart, with nothing else lost.
+    // record), it unlocks to every secret, takes a change in v2 (a new
+    // secret, and a username and website on an old one), and opens again
+    // after a restart, with nothing else lost.
     #[test]
     fn opens_and_changes_the_real_v2_vault_from_a_release_build() {
         let dir = TempDir::new();
@@ -309,6 +310,20 @@ mod tests {
         backend
             .add_item(lens, "fixture-check", "password", &secret("added ✓"))
             .unwrap();
+        // A username and website on a secret v0.1.x saved (v0.11.0's fields).
+        backend
+            .update_item_with(
+                lens,
+                "muk8u0z2",
+                "Email",
+                "password",
+                None,
+                Some(&backend::Details {
+                    username: Some("dummy@example.com".into()),
+                    url: Some("https://mail.example".into()),
+                }),
+            )
+            .unwrap();
         drop(backend);
         drop(vault);
         let Loaded::V2(_) = store.store().load() else {
@@ -333,6 +348,21 @@ mod tests {
         assert_eq!(
             backend.reveal_item(lens, &added).unwrap().expose(),
             "added ✓"
+        );
+        let email = items
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == "muk8u0z2")
+            .unwrap();
+        assert_eq!(email["username"], "dummy@example.com");
+        assert_eq!(email["url"], "https://mail.example");
+        assert_eq!(
+            backend
+                .item_field(lens, "muk8u0z2", "username")
+                .unwrap()
+                .expose(),
+            "dummy@example.com"
         );
     }
 

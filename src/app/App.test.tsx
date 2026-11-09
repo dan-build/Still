@@ -481,7 +481,8 @@ describe('secrets', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await screen.findByText('Renamed')
-    expect(update).toHaveBeenCalledWith('l1', 'l1-item', { label: 'Renamed', type: 'key' })
+    // An edit always sends the username and website; an API key has neither.
+    expect(update).toHaveBeenCalledWith('l1', 'l1-item', { label: 'Renamed', type: 'key', username: '', url: '' })
     expect(lens(vault, 'Alpha').items[0]).toMatchObject({ id: 'l1-item', label: 'Renamed', type: 'key', value: 'value-of-l1' })
   })
 
@@ -593,6 +594,109 @@ describe('secrets', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Generate a password' }))
     await screen.findByText("Couldn't make a password. Try again.")
     expect((screen.getByPlaceholderText('Paste or type the secret here…') as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('adds a password with a username and website, shown under its label and found by search', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    await unlock()
+    await openLens('Alpha')
+    openAddSecret()
+    fireEvent.change(await screen.findByPlaceholderText('What is this for?'), { target: { value: 'Shop' } })
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: ' me@example.com ' } })
+    fireEvent.change(screen.getByPlaceholderText('Paste or type the secret here…'), { target: { value: 'pw' } })
+    fireEvent.change(screen.getByLabelText('Website'), { target: { value: 'https://shop.example' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add secret' }))
+
+    await screen.findByText('me@example.com')
+    expect(lens(vault, 'Alpha').items.find((i) => i.label === 'Shop')).toMatchObject({
+      username: 'me@example.com',
+      url: 'https://shop.example',
+      value: 'pw',
+    })
+
+    // Search finds it by username and by website.
+    fireEvent.change(screen.getByPlaceholderText(/Search/), { target: { value: 'me@exa' } })
+    await screen.findByRole('list', { name: 'Matches in Alpha' })
+    expect(screen.getByText('Shop')).toBeTruthy()
+    fireEvent.change(screen.getByPlaceholderText(/Search/), { target: { value: 'shop.example' } })
+    await waitFor(() => expect(screen.getAllByText('Shop').length).toBeGreaterThan(0))
+    fireEvent.change(screen.getByPlaceholderText(/Search/), { target: { value: 'nothing-like-it' } })
+    await waitFor(() => expect(screen.queryByText('Shop')).toBeNull())
+  })
+
+  it('asks for a username and website only for passwords', async () => {
+    seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    await unlock()
+    await openLens('Alpha')
+    openAddSecret()
+    await screen.findByLabelText('Username')
+    expect(screen.getByLabelText('Website')).toBeTruthy()
+    for (const type of ['API key', 'Note']) {
+      fireEvent.click(screen.getByRole('radio', { name: type }))
+      expect(screen.queryByLabelText('Username')).toBeNull()
+      expect(screen.queryByLabelText('Website')).toBeNull()
+    }
+  })
+
+  it('keeps the username and website when editing other things, and removes them when cleared', async () => {
+    const vault = seedVault({
+      lenses: [fakeLens('l1', 'Alpha', { items: [{ id: 's1', label: 'Shop', type: 'password', value: 'pw', username: 'me', url: 'https://a' }] })],
+    })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Shop' }))
+    expect(((await screen.findByLabelText('Username')) as HTMLInputElement).value).toBe('me')
+    expect((screen.getByLabelText('Website') as HTMLInputElement).value).toBe('https://a')
+    fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'Shop 2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByText('Shop 2')
+    expect(lens(vault, 'Alpha').items[0]).toMatchObject({ label: 'Shop 2', username: 'me', url: 'https://a', value: 'pw' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Shop 2' }))
+    fireEvent.change(await screen.findByLabelText('Website'), { target: { value: '  ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(lens(vault, 'Alpha').items[0].url).toBeUndefined())
+    expect(lens(vault, 'Alpha').items[0].username).toBe('me')
+  })
+
+  it('copies a username or website from the row\'s menu, through Rust', async () => {
+    const vault = seedVault({
+      lenses: [
+        fakeLens('l1', 'Alpha', {
+          items: [
+            { id: 's1', label: 'Shop', type: 'password', value: 'pw', username: 'me', url: 'https://a' },
+            { id: 's2', label: 'Plain', type: 'password', value: 'pw2' },
+          ],
+        }),
+      ],
+    })
+    await unlock()
+    await openLens('Alpha')
+    // A secret with neither has no menu.
+    expect(screen.queryByRole('button', { name: 'More for Plain' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'More for Shop' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy username' }))
+    await screen.findByText('Username copied')
+    fireEvent.click(screen.getByRole('button', { name: 'More for Shop' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy website' }))
+    await screen.findByText('Website copied')
+    expect(vault.clipboard).toEqual(['me', 'https://a'])
+  })
+
+  it('refuses a username that is too long before saving', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    await unlock()
+    await openLens('Alpha')
+    openAddSecret()
+    fireEvent.change(await screen.findByPlaceholderText('What is this for?'), { target: { value: 'Long' } })
+    fireEvent.change(screen.getByPlaceholderText('Paste or type the secret here…'), { target: { value: 'pw' } })
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'x'.repeat(257) } })
+    await screen.findByText('A username can be up to 256 characters.')
+    expect((screen.getByRole('button', { name: 'Add secret' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'x'.repeat(256) } })
+    expect((screen.getByRole('button', { name: 'Add secret' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(vault.calls).not.toContain('addItem')
   })
 
   it('renames a Lens from its menu', async () => {
