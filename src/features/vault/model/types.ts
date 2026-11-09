@@ -87,3 +87,21 @@ export type UnlockResult =
   | { ok: true; state: VaultState; notice?: 'upgraded' | 'upgrade-failed'; kept?: string }
   /** canRestore: with unreadable-data, a kept copy can be put back (startup_restore_v1). */
   | { ok: false; reason: 'wrong-password' | 'unreadable-data' | 'failed' | 'no-vault' | 'file-replaced'; canRestore?: boolean }
+
+/** What the password generator makes (Rust's password_generate). */
+export interface GeneratorOptions {
+  /** 8 to 64. */
+  length: number
+  lower: boolean
+  upper: boolean
+  digits: boolean
+  symbols: boolean
+  /** Leave out 0 O o 1 l I |, easy to misread when typed by hand. */
+  avoidLookAlikes: boolean
+}
+
+export interface GeneratedPassword {
+  value: string
+  /** Its randomness in bits, from the options. */
+  bits: number
+}

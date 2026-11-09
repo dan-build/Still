@@ -6,7 +6,16 @@
 // fixtures/vault-behaviour-v1.
 
 import { VaultApiError, type VaultApi } from '@/platform/tauri/vaultApi'
-import { RECYCLE_DAYS, type BackupSummary, type ItemType, type KeptCopy, type LensView, type VaultState, type VaultStatus } from '@/features/vault/model/types'
+import {
+  RECYCLE_DAYS,
+  type BackupSummary,
+  type GeneratorOptions,
+  type ItemType,
+  type KeptCopy,
+  type LensView,
+  type VaultState,
+  type VaultStatus,
+} from '@/features/vault/model/types'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -81,6 +90,8 @@ export class FakeVault implements VaultApi {
   clipboard: string[] = []
   /** The prefixes set-aside used. */
   setAsides: string[] = []
+  /** The options of every password generated, in order. */
+  generated: GeneratorOptions[] = []
   private ids = 0
 
   constructor(seed: { password?: string; lenses?: FakeLens[]; bin?: FakeLens[] } = {}) {
@@ -361,5 +372,15 @@ export class FakeVault implements VaultApi {
     this.calls.push('copyItem')
     if (!this.unlocked) throw new VaultApiError('locked')
     this.clipboard.push(this.item(lensId, itemId).value)
+  }
+
+  /** Not random: `generated-<n>`, padded with x to the length; 6 bits a character. */
+  async generatePassword(options: GeneratorOptions) {
+    this.calls.push('generatePassword')
+    if (!this.unlocked) throw new VaultApiError('locked')
+    if (options.length < 8 || options.length > 64) throw new VaultApiError('bad-length')
+    if (!options.lower && !options.upper && !options.digits && !options.symbols) throw new VaultApiError('no-characters')
+    this.generated.push(options)
+    return { value: `generated-${this.generated.length}`.padEnd(options.length, 'x'), bits: options.length * 6 }
   }
 }

@@ -39,6 +39,8 @@ describe('the vault commands', () => {
     await api.restoreItem('a', 'i')
     await api.revealItem('a', 'i')
     await api.copyItem('a', 'i')
+    const options = { length: 20, lower: true, upper: true, digits: true, symbols: false, avoidLookAlikes: true }
+    await api.generatePassword(options)
     expect(invoke.mock.calls).toEqual([
       ['vault_state', undefined],
       ['vault_create', { password: 'pw' }],
@@ -64,6 +66,8 @@ describe('the vault commands', () => {
       ['item_restore', { lensId: 'a', itemId: 'i' }],
       ['item_reveal', { lensId: 'a', itemId: 'i' }],
       ['item_copy', { lensId: 'a', itemId: 'i' }],
+      // One argument, read by Rust's GenerateOptions (camelCase, unknown fields refused).
+      ['password_generate', { options }],
     ])
   })
 

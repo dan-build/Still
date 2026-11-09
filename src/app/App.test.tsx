@@ -497,6 +497,104 @@ describe('secrets', () => {
     expect(lens(vault, 'Alpha').items.map((i) => i.id)).toEqual(['l1-item'])
   })
 
+  it('generates a password into the value field, masked, and adds it', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    await unlock()
+    await openLens('Alpha')
+    openAddSecret()
+    fireEvent.change(await screen.findByPlaceholderText('What is this for?'), { target: { value: 'Shop' } })
+    const value = screen.getByPlaceholderText('Paste or type the secret here…') as HTMLTextAreaElement
+    expect(screen.queryByRole('slider', { name: 'Length' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Generate a password' }))
+    await waitFor(() => expect(value.value).toBe('generated-1'.padEnd(20, 'x')))
+    expect(value.className).toContain('[-webkit-text-security:disc]')
+    expect(vault.generated).toEqual([
+      { length: 20, lower: true, upper: true, digits: true, symbols: true, avoidLookAlikes: true },
+    ])
+    expect((screen.getByRole('slider', { name: 'Length' }) as HTMLInputElement).value).toBe('20')
+    screen.getByText('About 120 bits: strong')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add secret' }))
+    await waitFor(() => expect(lens(vault, 'Alpha').items.find((i) => i.label === 'Shop')?.value).toBe('generated-1'.padEnd(20, 'x')))
+  })
+
+  it('makes a new password when an option changes, and keeps the options until Still quits', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    await unlock()
+    await openLens('Alpha')
+    openAddSecret()
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate a password' }))
+    const length = (await screen.findByRole('slider', { name: 'Length' })) as HTMLInputElement
+    fireEvent.change(length, { target: { value: '8' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Symbols' }))
+    fireEvent.click(screen.getByRole('button', { name: 'No look-alikes' }))
+    await screen.findByText('About 48 bits: weak')
+    expect(vault.generated.at(-1)).toEqual({ length: 8, lower: true, upper: true, digits: true, symbols: false, avoidLookAlikes: false })
+    expect(screen.getByRole('button', { name: 'Symbols' }).getAttribute('aria-pressed')).toBe('false')
+
+    // The next dialog starts from the same options.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    openAddSecret()
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate a password' }))
+    await waitFor(() => expect(vault.generated).toHaveLength(5))
+    expect(vault.generated.at(-1)).toMatchObject({ length: 8, symbols: false, avoidLookAlikes: false })
+  })
+
+  it('keeps at least one kind of character chosen', async () => {
+    seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    await unlock()
+    await openLens('Alpha')
+    openAddSecret()
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate a password' }))
+    await screen.findByRole('slider', { name: 'Length' })
+    for (const kind of ['Lowercase letters', 'Uppercase letters', 'Digits']) {
+      fireEvent.click(screen.getByRole('button', { name: kind }))
+    }
+    const symbols = screen.getByRole('button', { name: 'Symbols' }) as HTMLButtonElement
+    await waitFor(() => expect(symbols.disabled).toBe(true))
+    expect(symbols.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('offers the generator for passwords only, and drops the strength once the value is typed over', async () => {
+    seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    await unlock()
+    await openLens('Alpha')
+    openAddSecret()
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate a password' }))
+    await screen.findByText('About 120 bits: strong')
+    fireEvent.change(screen.getByPlaceholderText('Paste or type the secret here…'), { target: { value: 'typed' } })
+    expect(screen.queryByText(/bits:/)).toBeNull()
+    expect(screen.queryByRole('slider', { name: 'Length' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'API key' }))
+    expect(screen.queryByRole('button', { name: 'Generate a password' })).toBeNull()
+    fireEvent.click(screen.getByRole('radio', { name: 'Note' }))
+    expect(screen.queryByRole('button', { name: 'Generate a password' })).toBeNull()
+  })
+
+  it('generates a new value when editing a password', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    await unlock()
+    await openLens('Alpha')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Alpha secret' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate a password' }))
+    await waitFor(() => expect((screen.getByLabelText('New value') as HTMLTextAreaElement).value).toBe('generated-1'.padEnd(20, 'x')))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(lens(vault, 'Alpha').items[0].value).toBe('generated-1'.padEnd(20, 'x')))
+  })
+
+  it('says so when a password could not be made', async () => {
+    const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
+    vi.spyOn(vault, 'generatePassword').mockRejectedValue(new Error('failed'))
+    await unlock()
+    await openLens('Alpha')
+    openAddSecret()
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate a password' }))
+    await screen.findByText("Couldn't make a password. Try again.")
+    expect((screen.getByPlaceholderText('Paste or type the secret here…') as HTMLTextAreaElement).value).toBe('')
+  })
+
   it('renames a Lens from its menu', async () => {
     const vault = seedVault({ lenses: [fakeLens('l1', 'Alpha')] })
     await unlock()

@@ -5,7 +5,16 @@
 // the user reveals it. This is the only code that calls the vault commands.
 
 import { invoke } from '@tauri-apps/api/core'
-import type { BackupSummary, ItemEdit, KeptCopy, NewItem, UnlockResult, VaultState } from '@/features/vault/model/types'
+import type {
+  BackupSummary,
+  GeneratedPassword,
+  GeneratorOptions,
+  ItemEdit,
+  KeptCopy,
+  NewItem,
+  UnlockResult,
+  VaultState,
+} from '@/features/vault/model/types'
 
 /**
  * A refused command, by code: locked, vault-exists, password-too-short,
@@ -61,6 +70,8 @@ export interface VaultApi {
   revealItem(lensId: string, itemId: string): Promise<string>
   /** Puts the value on the clipboard without returning it; Rust clears it after 30 seconds. */
   copyItem(lensId: string, itemId: string): Promise<void>
+  /** A new random password from Rust (libsodium), only while unlocked. */
+  generatePassword(options: GeneratorOptions): Promise<GeneratedPassword>
 }
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -98,5 +109,6 @@ export function createTauriVaultApi(): VaultApi {
     restoreItem: (lensId, itemId) => call('item_restore', { lensId, itemId }),
     revealItem: (lensId, itemId) => call('item_reveal', { lensId, itemId }),
     copyItem: (lensId, itemId) => call('item_copy', { lensId, itemId }),
+    generatePassword: (options) => call('password_generate', { options }),
   }
 }
