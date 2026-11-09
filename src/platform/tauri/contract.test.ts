@@ -5,6 +5,7 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const invoke = vi.fn()
@@ -15,7 +16,8 @@ import { openOldFormat, openReplaced, openVault, restoreKeptCopy, restoreOldCopy
 import { reportActivity } from './session'
 import { fakeWebStorage } from '@/test/fakeWebStorage'
 
-const root = new URL('../../../', import.meta.url).pathname
+// fileURLToPath, not .pathname: on Windows that would be /D:/... .
+const root = fileURLToPath(new URL('../../../', import.meta.url))
 const read = (path: string) => readFileSync(join(root, path), 'utf8')
 
 /** Every .rs file under these folders, as one text. */
