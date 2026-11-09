@@ -33,6 +33,7 @@
     "allow-kept-list",
     "allow-kept-trash",
     "allow-item-reveal",
+    "allow-password-generate",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "core:window:allow-start-dragging",

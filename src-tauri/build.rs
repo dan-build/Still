@@ -31,6 +31,7 @@ const COMMANDS: &[&str] = &[
     "kept_list",
     "kept_trash",
     "item_reveal",
+    "password_generate",
 ];
 
 fn main() {
