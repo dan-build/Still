@@ -11,7 +11,14 @@ export interface ItemView {
   id: string
   label: string
   type: ItemType
+  /** A password's username and website, when it has them (v0.11.0). */
+  username?: string
+  url?: string
 }
+
+/** The longest username and website Rust keeps, in UTF-16 code units (as `.length` counts). */
+export const USERNAME_MAX = 256
+export const URL_MAX = 2048
 
 export interface LensView {
   id: string
@@ -46,17 +53,29 @@ export interface VaultState {
   view: VaultView
 }
 
+/**
+ * A new secret. username and url apply to passwords only; blank or missing
+ * means none.
+ */
 export interface NewItem {
   label: string
   type: ItemType
   value: string
+  username?: string
+  url?: string
 }
 
-/** An edit to a secret. Without a value, the stored one is kept as it is. */
+/**
+ * An edit to a secret. Without a value, the stored one is kept as it is. The
+ * username and website are set as given: missing or blank removes them, so
+ * an edit always sends the ones to keep.
+ */
 export interface ItemEdit {
   label: string
   type: ItemType
   value?: string
+  username?: string
+  url?: string
 }
 
 /**

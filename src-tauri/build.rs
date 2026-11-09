@@ -7,6 +7,7 @@ const COMMANDS: &[&str] = &[
     "vault_lock",
     "vault_touch",
     "item_copy",
+    "item_copy_field",
     "startup_open",
     "startup_use_old_copy",
     "startup_open_old_format",

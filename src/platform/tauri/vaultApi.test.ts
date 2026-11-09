@@ -33,12 +33,14 @@ describe('the vault commands', () => {
     await api.restoreLens('a')
     await api.deleteLensForever('a')
     await api.addItem('a', { label: 'L', type: 'note', value: '  v\n' })
+    await api.addItem('a', { label: 'L', type: 'password', value: 'v', username: ' me ', url: 'https://x' })
     await api.updateItem('a', 'i', { label: 'L', type: 'key' })
-    await api.updateItem('a', 'i', { label: 'L', type: 'key', value: 'w' })
+    await api.updateItem('a', 'i', { label: 'L', type: 'password', value: 'w', username: 'me' })
     await api.deleteItem('a', 'i')
     await api.restoreItem('a', 'i')
     await api.revealItem('a', 'i')
     await api.copyItem('a', 'i')
+    await api.copyItemField('a', 'i', 'url')
     const options = { length: 20, lower: true, upper: true, digits: true, symbols: false, avoidLookAlikes: true }
     await api.generatePassword(options)
     expect(invoke.mock.calls).toEqual([
@@ -59,13 +61,16 @@ describe('the vault commands', () => {
       ['lens_forget', { lensId: 'a' }],
       ['lens_restore', { lensId: 'a' }],
       ['lens_delete', { lensId: 'a' }],
-      ['item_add', { lensId: 'a', label: 'L', itemType: 'note', value: '  v\n' }],
-      ['item_update', { lensId: 'a', itemId: 'i', label: 'L', itemType: 'key', value: null }],
-      ['item_update', { lensId: 'a', itemId: 'i', label: 'L', itemType: 'key', value: 'w' }],
+      // details always goes with an add or an edit: Rust sets the fields as sent.
+      ['item_add', { lensId: 'a', label: 'L', itemType: 'note', value: '  v\n', details: { username: null, url: null } }],
+      ['item_add', { lensId: 'a', label: 'L', itemType: 'password', value: 'v', details: { username: ' me ', url: 'https://x' } }],
+      ['item_update', { lensId: 'a', itemId: 'i', label: 'L', itemType: 'key', value: null, details: { username: null, url: null } }],
+      ['item_update', { lensId: 'a', itemId: 'i', label: 'L', itemType: 'password', value: 'w', details: { username: 'me', url: null } }],
       ['item_delete', { lensId: 'a', itemId: 'i' }],
       ['item_restore', { lensId: 'a', itemId: 'i' }],
       ['item_reveal', { lensId: 'a', itemId: 'i' }],
       ['item_copy', { lensId: 'a', itemId: 'i' }],
+      ['item_copy_field', { lensId: 'a', itemId: 'i', field: 'url' }],
       // One argument, read by Rust's GenerateOptions (camelCase, unknown fields refused).
       ['password_generate', { options }],
     ])

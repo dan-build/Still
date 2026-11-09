@@ -53,11 +53,14 @@ function params(list: string): string[] {
   return out.map((p) => p.trim()).filter(Boolean)
 }
 
-/** Each #[tauri::command] in commands.rs: its name and the arguments the page must send. */
+/**
+ * Each #[tauri::command] in commands.rs (comments and other attributes may sit
+ * between it and the fn): its name and the arguments the page must send.
+ */
 function rustCommands(): Map<string, string[]> {
   const source = read('src-tauri/src/commands.rs')
   const commands = new Map<string, string[]>()
-  for (const [, name, list] of source.matchAll(/#\[tauri::command\]\s*pub (?:async )?fn (\w+)(?:<[^>]*>)?\(([^)]*)\)/g)) {
+  for (const [, name, list] of source.matchAll(/#\[tauri::command\](?:\s*(?:\/\/[^\n]*|#\[[^\]]*\]))*\s*pub (?:async )?fn (\w+)(?:<[^>]*>)?\(([^)]*)\)/g)) {
     const args = params(list)
       .map((p) => {
         const [arg, type] = p.split(/:\s*/, 2)
@@ -110,6 +113,7 @@ describe('the contract between the page and the Rust commands', () => {
     await api.restoreItem('l', 'i')
     await api.revealItem('l', 'i')
     await api.copyItem('l', 'i')
+    await api.copyItemField('l', 'i', 'username')
     await api.generatePassword({ length: 20, lower: true, upper: true, digits: true, symbols: true, avoidLookAlikes: true })
     await openVault(legacy)
     await restoreOldCopy(legacy)

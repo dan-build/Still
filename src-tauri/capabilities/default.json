@@ -9,6 +9,7 @@
     "allow-vault-lock",
     "allow-vault-touch",
     "allow-item-copy",
+    "allow-item-copy-field",
     "allow-startup-open",
     "allow-startup-use-old-copy",
     "allow-startup-open-old-format",

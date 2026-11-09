@@ -70,6 +70,8 @@ export interface VaultApi {
   revealItem(lensId: string, itemId: string): Promise<string>
   /** Puts the value on the clipboard without returning it; Rust clears it after 30 seconds. */
   copyItem(lensId: string, itemId: string): Promise<void>
+  /** Puts a password's username or website on the clipboard; cleared after 30 seconds too. */
+  copyItemField(lensId: string, itemId: string, field: 'username' | 'url'): Promise<void>
   /** A new random password from Rust (libsodium), only while unlocked. */
   generatePassword(options: GeneratorOptions): Promise<GeneratedPassword>
 }
@@ -102,13 +104,22 @@ export function createTauriVaultApi(): VaultApi {
     forgetLens: (lensId) => call('lens_forget', { lensId }),
     restoreLens: (lensId) => call('lens_restore', { lensId }),
     deleteLensForever: (lensId) => call('lens_delete', { lensId }),
-    addItem: (lensId, { label, type, value }) => call('item_add', { lensId, label, itemType: type, value }),
-    updateItem: (lensId, itemId, { label, type, value }) =>
-      call('item_update', { lensId, itemId, label, itemType: type, value: value ?? null }),
+    addItem: (lensId, { label, type, value, username, url }) =>
+      call('item_add', { lensId, label, itemType: type, value, details: { username: username ?? null, url: url ?? null } }),
+    updateItem: (lensId, itemId, { label, type, value, username, url }) =>
+      call('item_update', {
+        lensId,
+        itemId,
+        label,
+        itemType: type,
+        value: value ?? null,
+        details: { username: username ?? null, url: url ?? null },
+      }),
     deleteItem: (lensId, itemId) => call('item_delete', { lensId, itemId }),
     restoreItem: (lensId, itemId) => call('item_restore', { lensId, itemId }),
     revealItem: (lensId, itemId) => call('item_reveal', { lensId, itemId }),
     copyItem: (lensId, itemId) => call('item_copy', { lensId, itemId }),
+    copyItemField: (lensId, itemId, field) => call('item_copy_field', { lensId, itemId, field }),
     generatePassword: (options) => call('password_generate', { options }),
   }
 }

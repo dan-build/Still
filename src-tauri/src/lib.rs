@@ -40,6 +40,7 @@ pub fn run() {
             commands::vault_lock,
             commands::vault_touch,
             commands::item_copy,
+            commands::item_copy_field,
             commands::startup_open,
             commands::startup_use_old_copy,
             commands::startup_open_old_format,

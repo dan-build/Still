@@ -10,7 +10,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use still_core::generate::{self, Options};
 use still_core::session::{SecretText, Unlocked};
-use still_core::vault::backend::{Notice, Status, Strength, UnlockFailure};
+use still_core::vault::backend::{Details, Notice, Status, Strength, UnlockFailure};
 use still_core::vault::backup;
 use tauri::{AppHandle, Manager, State};
 
@@ -22,12 +22,13 @@ use crate::vault::{self, state, ChosenBackup, CommandError, PendingRestore, Reve
 
 /// Every command, as named in build.rs and the capability.
 #[cfg(test)]
-pub const ALL: [&str; 30] = [
+pub const ALL: [&str; 31] = [
     "vault_create",
     "vault_unlock",
     "vault_lock",
     "vault_touch",
     "item_copy",
+    "item_copy_field",
     "startup_open",
     "startup_use_old_copy",
     "startup_open_old_format",
@@ -194,6 +195,24 @@ pub fn item_copy(
     let value = vault.backend().reveal_item(&lens_id, &item_id)?;
     clipboard
         .copy(&value, Instant::now())
+        .map_err(|_| CommandError("failed"))
+}
+
+/// Puts a password's username or website (`field`: "username" or "url")
+/// on the clipboard, cleared after 30 seconds like a copied value.
+#[tauri::command]
+pub fn item_copy_field(
+    vault: State<'_, Vault>,
+    clipboard: State<'_, ClipboardGuard>,
+    autolock: State<'_, AutoLock>,
+    lens_id: String,
+    item_id: String,
+    field: String,
+) -> Result<(), CommandError> {
+    autolock.touch(Instant::now());
+    let text = vault.backend().item_field(&lens_id, &item_id, &field)?;
+    clipboard
+        .copy(&text, Instant::now())
         .map_err(|_| CommandError("failed"))
 }
 
@@ -386,17 +405,40 @@ pub fn item_add(
     label: String,
     item_type: String,
     value: String,
+    details: ItemDetails,
 ) -> Result<Value, CommandError> {
     let value = SecretText::from(value);
     check_name(&label, "empty-label")?;
     check_type(&item_type)?;
+    let details = details.into();
     change(&vault, &autolock, |b| {
-        b.add_item(&lens_id, &label, &item_type, &value)
+        b.add_item_with(&lens_id, &label, &item_type, &value, &details)
     })
 }
 
-/// Without a value, the stored one is kept as it is.
+/// A password's username and website as the page sends them, with every
+/// add and edit. Blank (or on a secret that isn't a password) means none.
+#[derive(serde::Deserialize, Debug, Clone, Default)]
+#[serde(deny_unknown_fields)]
+pub struct ItemDetails {
+    username: Option<String>,
+    url: Option<String>,
+}
+
+impl From<ItemDetails> for Details {
+    fn from(details: ItemDetails) -> Self {
+        Self {
+            username: details.username,
+            url: details.url,
+        }
+    }
+}
+
+/// Without a value, the stored one is kept as it is. The username and
+/// website are set as sent.
 #[tauri::command]
+// Two of the eight are Tauri's State, filled in by Tauri; the page sends six.
+#[allow(clippy::too_many_arguments)]
 pub fn item_update(
     vault: State<'_, Vault>,
     autolock: State<'_, AutoLock>,
@@ -405,11 +447,20 @@ pub fn item_update(
     label: String,
     item_type: String,
     value: Option<String>,
+    details: ItemDetails,
 ) -> Result<Value, CommandError> {
     let value = value.map(SecretText::from);
     check_type(&item_type)?;
+    let details = details.into();
     change(&vault, &autolock, |b| {
-        b.update_item(&lens_id, &item_id, &label, &item_type, value.as_ref())
+        b.update_item_with(
+            &lens_id,
+            &item_id,
+            &label,
+            &item_type,
+            value.as_ref(),
+            Some(&details),
+        )
     })
 }
 
