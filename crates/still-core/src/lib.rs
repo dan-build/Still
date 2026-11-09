@@ -10,6 +10,7 @@
 pub mod crypto;
 pub mod error;
 pub mod format;
+pub mod generate;
 pub mod session;
 pub mod sodium;
 pub mod v2;
