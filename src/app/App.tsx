@@ -114,6 +114,7 @@ export default function StillHome({ notice, onDamaged, onReplaced }: StillHomePr
   const ops: SecretOps = {
     reveal: (lensId, itemId) => api().revealItem(lensId, itemId),
     copy: (lensId, itemId) => api().copyItem(lensId, itemId),
+    copyField: (lensId, itemId, field) => api().copyItemField(lensId, itemId, field),
     update: async (lensId, itemId, edit) => show(await api().updateItem(lensId, itemId, edit)),
     remove: async (lensId, itemId) => show(await api().deleteItem(lensId, itemId)),
     restore: async (lensId, itemId) => show(await api().restoreItem(lensId, itemId)),

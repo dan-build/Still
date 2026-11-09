@@ -72,8 +72,8 @@ export default function LensView({ lens, onAddItem, ops, onToast, onForget, onRe
       <SecretDialog
         open={adding}
         onClose={() => setAdding(false)}
-        onSave={async ({ label, type, value }) => {
-          await onAddItem({ label, type, value: value ?? '' })
+        onSave={async ({ label, type, value, username, url }) => {
+          await onAddItem({ label, type, value: value ?? '', username, url })
           onToast({ message: 'Secret added' })
         }}
         onFailed={() => onToast({ message: "Couldn't save the secret. Nothing was changed.", tone: 'error' })}

@@ -1,5 +1,5 @@
 import { useContext, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import type { GeneratorOptions, NewItem } from '@/features/vault/model/types'
+import { URL_MAX, USERNAME_MAX, type GeneratorOptions, type NewItem } from '@/features/vault/model/types'
 import { GeneratorContext, MAX_LENGTH, MIN_LENGTH, strengthWord } from '@/features/lenses/model/generator'
 import { Button, IconButton } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Dialog'
@@ -24,9 +24,12 @@ interface SecretDialogProps {
    * so the current secret is never decrypted into the page to edit a label.
    * The caller keys the dialog by the secret, so its fields start fresh.
    */
-  editing?: { label: string; type: ItemType }
-  /** Saves the secret; throws if it couldn't be saved. */
-  onSave: (secret: { label: string; type: ItemType; value?: string }) => Promise<void>
+  editing?: { label: string; type: ItemType; username?: string; url?: string }
+  /**
+   * Saves the secret; throws if it couldn't be saved. A password's username
+   * and website are always sent (blank for none, and for other types).
+   */
+  onSave: (secret: { label: string; type: ItemType; value?: string; username: string; url: string }) => Promise<void>
   /** Reports a save that failed. */
   onFailed: () => void
 }
@@ -36,6 +39,8 @@ export default function SecretDialog({ open, onClose, editing, onSave, onFailed 
   const [type, setType] = useState<ItemType>(editing?.type ?? 'password')
   const [label, setLabel] = useState(editing?.label ?? '')
   const [value, setValue] = useState('')
+  const [username, setUsername] = useState(editing?.username ?? '')
+  const [url, setUrl] = useState(editing?.url ?? '')
   const [saving, setSaving] = useState(false)
   const labelField = useRef<HTMLInputElement>(null)
   // The generator (Rust's, through App) for passwords; null when not offered.
@@ -47,13 +52,20 @@ export default function SecretDialog({ open, onClose, editing, onSave, onFailed 
 
   const onlyBlank = value !== '' && value.trim() === ''
   const edgeSpace = value.trim() !== '' && value !== value.trim()
+  // Counted as Rust counts them (UTF-16, as .length does), after trimming.
+  const isPassword = type === 'password'
+  const usernameTooLong = isPassword && username.trim().length > USERNAME_MAX
+  const urlTooLong = isPassword && url.trim().length > URL_MAX
   // Adding needs a value; editing may keep the current one.
-  const ready = label.trim() !== '' && (editing ? !onlyBlank : value.trim() !== '') && !saving
+  const ready =
+    label.trim() !== '' && (editing ? !onlyBlank : value.trim() !== '') && !usernameTooLong && !urlTooLong && !saving
   const formId = editing ? 'edit-secret' : 'add-secret'
 
   const reset = () => {
     setLabel(editing?.label ?? '')
     setValue('')
+    setUsername(editing?.username ?? '')
+    setUrl(editing?.url ?? '')
     setType(editing?.type ?? 'password')
     setGeneratedBits(null)
     setGenerateFailed(false)
@@ -92,7 +104,14 @@ export default function SecretDialog({ open, onClose, editing, onSave, onFailed 
     try {
       // The value is stored exactly as typed; only the label is trimmed.
       // An empty value while editing keeps the current one.
-      await onSave({ label: label.trim(), type, value: editing && value === '' ? undefined : value })
+      await onSave({
+        label: label.trim(),
+        type,
+        value: editing && value === '' ? undefined : value,
+        // Only passwords have them; Rust trims them and drops blank ones.
+        username: isPassword ? username : '',
+        url: isPassword ? url : '',
+      })
     } catch {
       setSaving(false)
       onFailed()
@@ -145,6 +164,20 @@ export default function SecretDialog({ open, onClose, editing, onSave, onFailed 
           value={label}
           onChange={(e) => setLabel(e.target.value)}
         />
+        {isPassword && (
+          <TextField
+            label="Username"
+            placeholder="Optional"
+            spellCheck={false}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            onKeyDown={onKeyDown}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            error={usernameTooLong ? `A username can be up to ${USERNAME_MAX} characters.` : undefined}
+          />
+        )}
         <TextField
           label={editing ? 'New value' : 'Value'}
           multiline
@@ -204,6 +237,21 @@ export default function SecretDialog({ open, onClose, editing, onSave, onFailed 
         />
         {canGenerate && generatedBits !== null && (
           <GeneratorOptionsRow options={generator.options} bits={generatedBits} onChange={changeOptions} />
+        )}
+        {isPassword && (
+          <TextField
+            label="Website"
+            placeholder="Optional, such as https://example.com"
+            type="url"
+            spellCheck={false}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            onKeyDown={onKeyDown}
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            error={urlTooLong ? `A website can be up to ${URL_MAX} characters.` : undefined}
+          />
         )}
       </form>
     </Dialog>
