@@ -4,6 +4,7 @@ import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Dialog'
 import { SegmentedControl } from '@/shared/ui/SegmentedControl'
 import { TextField } from '@/shared/ui/TextField'
+import NewPasswordFields, { type PasswordHelp } from './NewPasswordFields'
 
 const MIN_LENGTH = 8
 
@@ -16,6 +17,8 @@ interface ChangePasswordDialogProps {
   onChange: (current: string, next: string, stronger: boolean) => Promise<string[]>
   /** The password was changed and nothing is left to say. */
   onChanged: () => void
+  /** A passphrase to suggest, and a rating of a typed password (Rust). */
+  help?: PasswordHelp
 }
 
 const STRENGTH_HINTS: Record<Strength, string> = {
@@ -43,7 +46,7 @@ function failure(error: unknown): { current?: string; form?: string } {
  * hard it should be to guess. The secrets stay as they are; only the
  * password that unlocks them changes.
  */
-export default function ChangePasswordDialog({ open, onClose, onChange, onChanged }: ChangePasswordDialogProps) {
+export default function ChangePasswordDialog({ open, onClose, onChange, onChanged, help }: ChangePasswordDialogProps) {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -165,27 +168,18 @@ export default function ChangePasswordDialog({ open, onClose, onChange, onChange
           disabled={saving}
           onChange={(e) => setCurrent(e.target.value)}
         />
-        <TextField
+        <NewPasswordFields
           label="New password"
-          revealable
-          autoComplete="new-password"
-          spellCheck={false}
-          hint="At least 8 characters. A few unrelated words work well."
-          error={onlySpaces ? "A password can't be only spaces." : undefined}
-          value={next}
+          confirmLabel="Confirm new password"
+          password={next}
+          confirm={confirm}
+          onPassword={setNext}
+          onConfirm={setConfirm}
+          onConfirmLeft={() => setConfirmLeft(true)}
+          passwordError={onlySpaces ? "A password can't be only spaces." : undefined}
+          confirmError={mismatch ? "The passwords don't match." : undefined}
           disabled={saving}
-          onChange={(e) => setNext(e.target.value)}
-        />
-        <TextField
-          label="Confirm new password"
-          type="password"
-          autoComplete="new-password"
-          spellCheck={false}
-          error={mismatch ? "The passwords don't match." : undefined}
-          value={confirm}
-          disabled={saving}
-          onChange={(e) => setConfirm(e.target.value)}
-          onBlur={() => setConfirmLeft(true)}
+          help={help}
         />
         <div className="flex flex-col gap-2">
           <SegmentedControl

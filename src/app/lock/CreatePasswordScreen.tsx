@@ -1,15 +1,17 @@
 import { useState, type FormEvent } from 'react'
+import NewPasswordFields, { type PasswordHelp } from '@/features/vault/ui/NewPasswordFields'
 import { Button } from '@/shared/ui/Button'
-import { TextField } from '@/shared/ui/TextField'
 import LockLayout from './LockLayout'
 
 interface CreatePasswordScreenProps {
   onCreate: (password: string) => Promise<void>
+  /** A passphrase to suggest, and a rating of a typed password (Rust). */
+  help?: PasswordHelp
 }
 
 const MIN_LENGTH = 8
 
-export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenProps) {
+export default function CreatePasswordScreen({ onCreate, help }: CreatePasswordScreenProps) {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [confirmLeft, setConfirmLeft] = useState(false)
@@ -54,30 +56,20 @@ export default function CreatePasswordScreen({ onCreate }: CreatePasswordScreenP
       }
       actions={
         <form onSubmit={handleCreate} className="flex flex-col gap-4">
-          <TextField
+          <NewPasswordFields
             label="Master password"
-            revealable
-            autoComplete="new-password"
-            spellCheck={false}
+            confirmLabel="Confirm password"
+            password={password}
+            confirm={confirmPassword}
+            onPassword={setPassword}
+            onConfirm={setConfirmPassword}
+            onConfirmLeft={() => setConfirmLeft(true)}
+            passwordError={onlySpaces ? "A password can't be only spaces." : undefined}
+            confirmError={mismatch ? "The passwords don't match." : undefined}
+            disabled={isLoading}
+            help={help}
             // The screen's only task is this field, as in any app's first run.
-            // eslint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus
-            value={password}
-            disabled={isLoading}
-            onChange={(e) => setPassword(e.target.value)}
-            hint="At least 8 characters. A few unrelated words work well."
-            error={onlySpaces ? "A password can't be only spaces." : undefined}
-          />
-          <TextField
-            label="Confirm password"
-            revealable
-            autoComplete="new-password"
-            spellCheck={false}
-            value={confirmPassword}
-            disabled={isLoading}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            onBlur={() => setConfirmLeft(true)}
-            error={mismatch ? "The passwords don't match." : undefined}
+            focusFirst
           />
           <Button type="submit" variant="primary" size="md" block disabled={!valid || isLoading} className="mt-1">
             Create vault

@@ -102,6 +102,12 @@ export default function StillHome({ notice, onDamaged, onReplaced }: StillHomePr
   const showArchive = !searching && selection?.kind === 'archive'
   const sidebarSelection: Selection | null = searching ? null : currentLens ? { kind: 'lens', id: currentLens.id } : selection
 
+  // Rust's help with a new master password (a passphrase, a rating).
+  const passwordHelp = {
+    suggest: (words: number) => api().suggestPassphrase(words),
+    rate: (password: string) => api().ratePassword(password),
+  }
+
   // The password generator's options last until Still quits; nothing is stored.
   const [generatorOptions, setGeneratorOptions] = useState<GeneratorOptions>(GENERATOR_DEFAULTS)
   const generator = {
@@ -336,7 +342,7 @@ export default function StillHome({ notice, onDamaged, onReplaced }: StillHomePr
       </LockLayout>
     ),
     orphaned: <RecoveryScreen onSetAside={handleSetAside} />,
-    create: <CreatePasswordScreen onCreate={handleCreatePassword} />,
+    create: <CreatePasswordScreen onCreate={handleCreatePassword} help={passwordHelp} />,
     unlock: <UnlockScreen onUnlock={handleUnlock} lockedBecause={lockedBecause} />,
   }
 
@@ -443,6 +449,7 @@ export default function StillHome({ notice, onDamaged, onReplaced }: StillHomePr
                 setIsPasswordOpen(false)
                 showToast({ message: 'Master password changed' })
               }}
+              help={passwordHelp}
             />
           </div>
         </GeneratorContext.Provider>

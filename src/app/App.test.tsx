@@ -959,6 +959,49 @@ describe('creating a vault (B4)', () => {
     expect(lensNames(vault.lenses)).toEqual(['Fresh'])
   })
 
+  it('suggests a passphrase for a new vault, shown in full, and creates the vault with it', async () => {
+    const vault = freshInstall()
+    render(createElement(StillHome))
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggest a passphrase' }))
+    const phrase = await screen.findByTestId('suggested-passphrase')
+    expect(phrase.textContent).toBe('word10-word11-word12-word13-word14')
+    // Both fields hold it, masked; the box shows it to write down.
+    expect((screen.getByLabelText('Master password') as HTMLInputElement).value).toBe(phrase.textContent)
+    expect((screen.getByLabelText('Confirm password') as HTMLInputElement).value).toBe(phrase.textContent)
+
+    // Another word count, and another phrase.
+    fireEvent.click(screen.getByRole('radio', { name: '7' }))
+    await waitFor(() => expect(screen.getByTestId('suggested-passphrase').textContent?.split('-')).toHaveLength(7))
+    fireEvent.click(screen.getByRole('button', { name: 'Another' }))
+    await waitFor(() => expect(screen.getByTestId('suggested-passphrase').textContent).toMatch(/^word3/))
+    const chosen = screen.getByTestId('suggested-passphrase').textContent
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create vault' }))
+    await waitFor(() => expect(vault.password).toBe(chosen))
+  })
+
+  it('stops showing the passphrase once the password is changed by hand', async () => {
+    freshInstall()
+    render(createElement(StillHome))
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggest a passphrase' }))
+    await screen.findByTestId('suggested-passphrase')
+    fireEvent.change(screen.getByLabelText('Master password'), { target: { value: 'my-own-choice' } })
+    expect(screen.queryByTestId('suggested-passphrase')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Suggest a passphrase' })).toBeTruthy()
+  })
+
+  it('rates a typed master password once typing pauses, with advice', async () => {
+    const vault = freshInstall()
+    render(createElement(StillHome))
+    fireEvent.change(await screen.findByLabelText('Master password'), { target: { value: 'password' } })
+    await screen.findByText('Weak')
+    screen.getByText('This is a commonly used password.')
+    fireEvent.change(screen.getByLabelText('Master password'), { target: { value: 'a much longer passphrase here' } })
+    await screen.findByText('Strong')
+    // Only the last text was rated after the pause, not every keystroke.
+    expect(vault.calls.filter((c) => c === 'ratePassword')).toHaveLength(2)
+  })
+
   it('stays locked when a Lock lands while the vault is being created', async () => {
     const vault = freshInstall()
     vault.lockDuringCreate = true
@@ -1086,6 +1129,20 @@ describe('changing the master password', () => {
     await screen.findByText('Incorrect password. Try again.')
     await enterPassword(NEW_PASSWORD)
     await screen.findByRole('button', { name: /^Archive/ })
+  })
+
+  it('suggests a passphrase for the new password too', async () => {
+    const vault = seedVault()
+    await unlock()
+    await openChangePassword()
+    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: PASSWORD } })
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest a passphrase' }))
+    const phrase = (await screen.findByTestId('suggested-passphrase')).textContent
+    expect((screen.getByLabelText('New password') as HTMLInputElement).value).toBe(phrase)
+    expect((screen.getByLabelText('Confirm new password') as HTMLInputElement).value).toBe(phrase)
+    fireEvent.click(submit())
+    await screen.findByText('Master password changed')
+    expect(vault.password).toBe(phrase)
   })
 
   it('allows the change only once the new password follows the rules and is confirmed', async () => {
