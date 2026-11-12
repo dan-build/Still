@@ -43,6 +43,8 @@ describe('the vault commands', () => {
     await api.copyItemField('a', 'i', 'url')
     const options = { length: 20, lower: true, upper: true, digits: true, symbols: false, avoidLookAlikes: true }
     await api.generatePassword(options)
+    await api.suggestPassphrase(6)
+    await api.ratePassword(' typed pw ')
     expect(invoke.mock.calls).toEqual([
       ['vault_state', undefined],
       ['vault_create', { password: 'pw' }],
@@ -73,6 +75,8 @@ describe('the vault commands', () => {
       ['item_copy_field', { lensId: 'a', itemId: 'i', field: 'url' }],
       // One argument, read by Rust's GenerateOptions (camelCase, unknown fields refused).
       ['password_generate', { options }],
+      ['passphrase_generate', { words: 6 }],
+      ['password_strength', { password: ' typed pw ' }],
     ])
   })
 

@@ -115,6 +115,8 @@ describe('the contract between the page and the Rust commands', () => {
     await api.copyItem('l', 'i')
     await api.copyItemField('l', 'i', 'username')
     await api.generatePassword({ length: 20, lower: true, upper: true, digits: true, symbols: true, avoidLookAlikes: true })
+    await api.suggestPassphrase(5)
+    await api.ratePassword('pw')
     await openVault(legacy)
     await restoreOldCopy(legacy)
     await openOldFormat(false)

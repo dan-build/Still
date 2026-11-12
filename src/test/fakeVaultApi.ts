@@ -415,6 +415,24 @@ export class FakeVault implements VaultApi {
     this.clipboard.push(text)
   }
 
+  /** Not random: `word-word-…` with a count; 12 bits a word. */
+  async suggestPassphrase(words: number) {
+    this.calls.push('suggestPassphrase')
+    if (words < 4 || words > 8) throw new VaultApiError('bad-word-count')
+    this.suggested += 1
+    return { value: Array.from({ length: words }, (_, i) => `word${this.suggested}${i}`).join('-'), bits: words * 12 }
+  }
+  suggested = 0
+
+  /** Not zxcvbn: by length alone, with a warning for "password". */
+  async ratePassword(password: string) {
+    this.calls.push('ratePassword')
+    const score = Math.min(4, Math.floor(password.length / 6))
+    return password === 'password'
+      ? { score: 0, warning: 'This is a commonly used password.', suggestions: ['Add another word or two.'] }
+      : { score, warning: null, suggestions: score < 3 ? ['Add another word or two.'] : [] }
+  }
+
   /** Not random: `generated-<n>`, padded with x to the length; 6 bits a character. */
   async generatePassword(options: GeneratorOptions) {
     this.calls.push('generatePassword')
