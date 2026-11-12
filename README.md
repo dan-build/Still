@@ -4,7 +4,7 @@
 
 No account, no sync, no telemetry. Still never connects to the internet.
 
-> **Early pre-release (v0.11.0).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
+> **Early pre-release (v0.12.0).** Still is young. Don't make it the only place you keep anything you can't afford to lose, and read [Known issues](#known-issues).
 
 ![Still in dark mode: the sidebar lists the Lenses, and the selected Lens shows its secrets, one revealed](docs/screenshot.png)
 
@@ -12,7 +12,7 @@ No account, no sync, no telemetry. Still never connects to the internet.
 
 - **One master password** unlocks everything. It goes through Argon2id at libsodium's highest-cost ("sensitive") setting, which makes guessing it slow and expensive.
 - **Backups you control:** save an encrypted backup anywhere you choose, and restore one after checking its password.
-- **Change your master password** at any time, and choose stronger settings that make it even slower to guess.
+- **Change your master password** at any time, and choose stronger settings that make it even slower to guess. Still can suggest a passphrase of random words, and rates a password you type yourself.
 - **Lenses:** separate collections for different parts of your life, such as work, personal or banking. Each Lens has its own encryption key.
 - **Three kinds of secret:** passwords (with an optional username and website), API keys or tokens, and multi-line notes. Reveal, copy, edit or delete a secret (with Undo), and rename a Lens.
 - **Generate strong passwords** of the length and characters you choose, made from the same random source as Still's encryption keys.
@@ -115,3 +115,5 @@ Every release keeps existing vaults working: tests open real vaults made by earl
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
+
+Passphrases use the [EFF's long word list](https://www.eff.org/dice) by the Electronic Frontier Foundation, under [CC BY 3.0 US](https://creativecommons.org/licenses/by/3.0/us/) (see [crates/still-core/data](crates/still-core/data/README.md)). Password strength comes from [zxcvbn](https://github.com/shssoichiro/zxcvbn-rs) (MIT), after Dropbox's original.
