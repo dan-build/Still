@@ -13,6 +13,7 @@ pub mod format;
 pub mod generate;
 pub mod session;
 pub mod sodium;
+pub mod strength;
 pub mod v2;
 pub mod vault;
 
