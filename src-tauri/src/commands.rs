@@ -22,7 +22,7 @@ use crate::vault::{self, state, ChosenBackup, CommandError, PendingRestore, Reve
 
 /// Every command, as named in build.rs and the capability.
 #[cfg(test)]
-pub const ALL: [&str; 31] = [
+pub const ALL: [&str; 33] = [
     "vault_create",
     "vault_unlock",
     "vault_lock",
@@ -54,6 +54,8 @@ pub const ALL: [&str; 31] = [
     "kept_trash",
     "item_reveal",
     "password_generate",
+    "passphrase_generate",
+    "password_strength",
 ];
 
 /// Creates a vault and unlocks it. Argon2id runs twice (the new key is
@@ -548,6 +550,32 @@ fn generate_password(options: GenerateOptions) -> Result<GeneratedPassword, Comm
     })
 }
 
+/// A passphrase for the master password: `words` words (4 to 8) from the
+/// EFF's long list, joined with hyphens, and its strength in bits. Offered
+/// on the create-password screen too, before any vault exists, so it needs
+/// no unlocked vault. Code: bad-word-count.
+#[tauri::command]
+pub fn passphrase_generate(words: usize) -> Result<GeneratedPassword, CommandError> {
+    let generated = generate::generate_passphrase(words).map_err(|e| CommandError(e.code()))?;
+    Ok(GeneratedPassword {
+        value: Revealed(generated.value),
+        bits: generated.bits,
+    })
+}
+
+/// How strong a master password typed by hand is (zxcvbn): {score 0 to 4,
+/// warning, suggestions}. Advice for the create- and change-password
+/// screens; it never decides what's accepted.
+#[tauri::command]
+pub fn password_strength(password: String) -> Value {
+    let strength = still_core::strength::estimate(&SecretText::from(password));
+    json!({
+        "score": strength.score,
+        "warning": strength.warning,
+        "suggestions": strength.suggestions,
+    })
+}
+
 // ---- backups ------------------------------------------------------------------
 
 /// The largest file Still reads as a backup (a vault is a few KiB per Lens).
@@ -816,6 +844,25 @@ mod tests {
             "symbols": false, "avoidLookAlikes": true, "extra": 1
         }))
         .is_err());
+    }
+
+    #[test]
+    fn sends_a_passphrase_and_a_strength_as_the_page_reads_them() {
+        let sent = serde_json::to_value(passphrase_generate(5).unwrap()).unwrap();
+        assert_eq!(sent["value"].as_str().unwrap().split('-').count(), 5);
+        assert_eq!(sent["bits"], 64);
+        assert_eq!(
+            passphrase_generate(3).err(),
+            Some(CommandError("bad-word-count"))
+        );
+
+        let weak = password_strength("password".into());
+        assert_eq!(weak["score"], 0);
+        assert!(weak["warning"].is_string());
+        assert!(weak["suggestions"].is_array());
+        let strong = password_strength("velvet-orbit-candle-harbor-mosaic".into());
+        assert_eq!(strong["score"], 4);
+        assert_eq!(strong["warning"], Value::Null);
     }
 
     // The UI never sends these; a page that does gets a code, not a change.

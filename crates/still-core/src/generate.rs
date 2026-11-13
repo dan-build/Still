@@ -1,4 +1,5 @@
-//! Random passwords for new secrets, from libsodium's random generator.
+//! Random passwords for new secrets, and passphrases for the master
+//! password, from libsodium's random generator.
 //!
 //! Every character is drawn uniformly (`randombytes_uniform`, no modulo
 //! bias) from the chosen kinds together. A password missing a chosen kind
@@ -8,6 +9,13 @@
 
 use crate::session::SecretText;
 use crate::sodium;
+
+/// The EFF's long word list for passphrases (CC BY 3.0 US), exactly as
+/// published: `<dice>\t<word>` lines, 7,776 words. Its SHA-256 is pinned
+/// by a test below; see data/README.md.
+const WORD_LIST: &str = include_str!("../data/eff_large_wordlist.txt");
+pub const MIN_WORDS: usize = 4;
+pub const MAX_WORDS: usize = 8;
 
 pub const MIN_LENGTH: usize = 8;
 pub const MAX_LENGTH: usize = 64;
@@ -49,6 +57,8 @@ pub enum GenerateError {
     Length,
     /// No kind of character was chosen.
     NoCharacters,
+    /// A passphrase's word count is outside MIN_WORDS..=MAX_WORDS.
+    WordCount,
 }
 
 impl GenerateError {
@@ -56,6 +66,7 @@ impl GenerateError {
         match self {
             Self::Length => "bad-length",
             Self::NoCharacters => "no-characters",
+            Self::WordCount => "bad-word-count",
         }
     }
 }
@@ -144,6 +155,48 @@ pub fn generate(options: &Options) -> Result<Generated, GenerateError> {
             });
         }
     }
+}
+
+/// The passphrase words: the list's words, less the four with a hyphen in
+/// them (drop-down, felt-tip, t-shirt, yo-yo), so a phrase joined with
+/// hyphens splits back into exactly its words. 7,772 words.
+pub fn words() -> &'static [&'static str] {
+    static WORDS: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    WORDS.get_or_init(|| {
+        WORD_LIST
+            .lines()
+            .filter_map(|line| line.split_once('\t').map(|(_, word)| word))
+            .filter(|word| !word.contains('-'))
+            .collect()
+    })
+}
+
+/// A passphrase of `count` words, each drawn uniformly from `words()`,
+/// joined with hyphens, and its strength in bits (count × log2 of the list's
+/// size, rounded down).
+pub fn generate_passphrase(count: usize) -> Result<Generated, GenerateError> {
+    if !(MIN_WORDS..=MAX_WORDS).contains(&count) {
+        return Err(GenerateError::WordCount);
+    }
+    let words = words();
+    let picked: Vec<&str> = (0..count)
+        .map(|_| words[sodium::random_uniform(words.len() as u32) as usize])
+        .collect();
+    // The capacity set up front: the text is never reallocated, so no copy
+    // of it is left behind unzeroed.
+    let length = picked.iter().map(|w| w.len()).sum::<usize>() + count - 1;
+    let mut text = String::with_capacity(length);
+    for (i, word) in picked.iter().enumerate() {
+        if i > 0 {
+            text.push('-');
+        }
+        text.push_str(word);
+    }
+    let bits = (count as f64 * (words.len() as f64).log2()).floor() as u32;
+    Ok(Generated {
+        value: SecretText::from(text),
+        bits,
+    })
 }
 
 #[cfg(test)]
@@ -279,5 +332,55 @@ mod tests {
                 b as char
             );
         }
+    }
+
+    // The list exactly as the EFF published it (pinned by its SHA-256),
+    // less its four hyphenated words.
+    #[test]
+    fn reads_the_eff_long_word_list() {
+        let digest: String = sodium::sha256(WORD_LIST.as_bytes())
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(
+            digest,
+            "addd35536511597a02fa0a9ff1e5284677b8883b83e986e43f15a3db996b903e"
+        );
+        assert_eq!(WORD_LIST.lines().count(), 7776);
+        let words = words();
+        assert_eq!(words.len(), 7772);
+        assert_eq!((words[0], words[words.len() - 1]), ("abacus", "zoom"));
+        let unique: std::collections::HashSet<_> = words.iter().collect();
+        assert_eq!(unique.len(), words.len());
+        assert!(words
+            .iter()
+            .all(|w| !w.is_empty() && w.bytes().all(|b| b.is_ascii_lowercase())));
+    }
+
+    #[test]
+    fn makes_passphrases_of_known_words() {
+        let known: std::collections::HashSet<_> = words().iter().copied().collect();
+        for count in MIN_WORDS..=MAX_WORDS {
+            for _ in 0..20 {
+                let phrase = generate_passphrase(count).unwrap();
+                let parts: Vec<&str> = phrase.value.expose().split('-').collect();
+                assert_eq!(parts.len(), count);
+                assert!(parts.iter().all(|w| known.contains(w)));
+                // 12.92 bits a word.
+                assert_eq!(phrase.bits, (count as f64 * 7772f64.log2()).floor() as u32);
+            }
+        }
+        assert_eq!(generate_passphrase(5).unwrap().bits, 64);
+        assert_ne!(
+            generate_passphrase(5).unwrap().value.expose(),
+            generate_passphrase(5).unwrap().value.expose()
+        );
+        for count in [0, 3, 9] {
+            assert_eq!(
+                generate_passphrase(count).unwrap_err(),
+                GenerateError::WordCount
+            );
+        }
+        assert_eq!(GenerateError::WordCount.code(), "bad-word-count");
     }
 }

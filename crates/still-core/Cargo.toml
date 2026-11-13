@@ -15,4 +15,5 @@ libsodium-sys-stable = "=1.24.0"
 # arbitrary_precision: it would keep a number's text (1.50) where JavaScript
 # would rewrite it (1.5).
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+zxcvbn = { version = "=3.1.1", default-features = false }
 

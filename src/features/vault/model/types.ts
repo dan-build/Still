@@ -124,3 +124,11 @@ export interface GeneratedPassword {
   /** Its randomness in bits, from the options. */
   bits: number
 }
+
+/** How strong a typed master password is (zxcvbn, in Rust): advice only. */
+export interface PasswordStrength {
+  /** 0 (guessed in a thousand tries) to 4 (over ten billion). */
+  score: number
+  warning: string | null
+  suggestions: string[]
+}

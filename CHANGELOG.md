@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-12
+
+### Added
+
+- **Suggest a passphrase** when you create your vault or change your master password: random words such as `velvet-orbit-candle-harbor-mosaic`, shown in full so you can write them down. Choose 4 to 8 words (5 by default, about 64 bits) or ask for another. The words come from the EFF's long word list, built into the app, and are picked with the same random source as Still's encryption keys.
+- **A strength meter** for a master password you type yourself, from Weak to Strong, with a hint such as "This is a commonly used password". It uses zxcvbn, which spots common passwords, names, dates and keyboard patterns. It's advice only: the rules for what's accepted are unchanged.
+
 ## [0.11.0] - 2026-11-09
 
 ### Added

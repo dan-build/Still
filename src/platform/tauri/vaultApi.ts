@@ -12,6 +12,7 @@ import type {
   ItemEdit,
   KeptCopy,
   NewItem,
+  PasswordStrength,
   UnlockResult,
   VaultState,
 } from '@/features/vault/model/types'
@@ -74,6 +75,10 @@ export interface VaultApi {
   copyItemField(lensId: string, itemId: string, field: 'username' | 'url'): Promise<void>
   /** A new random password from Rust (libsodium), only while unlocked. */
   generatePassword(options: GeneratorOptions): Promise<GeneratedPassword>
+  /** A passphrase for the master password: 4 to 8 words from the EFF's long list, joined with hyphens. */
+  suggestPassphrase(words: number): Promise<GeneratedPassword>
+  /** How strong a typed master password is (advice only). */
+  ratePassword(password: string): Promise<PasswordStrength>
 }
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -121,5 +126,7 @@ export function createTauriVaultApi(): VaultApi {
     copyItem: (lensId, itemId) => call('item_copy', { lensId, itemId }),
     copyItemField: (lensId, itemId, field) => call('item_copy_field', { lensId, itemId, field }),
     generatePassword: (options) => call('password_generate', { options }),
+    suggestPassphrase: (words) => call('passphrase_generate', { words }),
+    ratePassword: (password) => call('password_strength', { password }),
   }
 }
