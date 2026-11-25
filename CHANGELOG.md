@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-11-25
+
+### Security
+
+- **Dependency updates for new advisories.** `cookie` 0.18.3 and `url` 2.5.9, inside Tauri: neither issue was reachable in Still, which uses no cookies and never parses outside URLs. The libsodium build wrapper moves to 1.24.6, whose build script unpacks the signed Windows libsodium archive with zip 9, fixing eight zip advisories; zip never ran inside the app. Still compiles exactly the same libsodium source as before, so encryption and vaults are unchanged.
+
 ## [0.12.0] - 2026-11-12
 
 ### Added
@@ -224,7 +230,12 @@ First public pre-release, for macOS.
 - An Archive (recycle bin) that keeps forgotten Lenses for 7 days.
 - Offline by design: no accounts, servers or telemetry.
 
-[Unreleased]: https://github.com/dan-build/Still/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/dan-build/Still/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/dan-build/Still/compare/v0.12.0...v0.12.1
+[0.12.0]: https://github.com/dan-build/Still/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/dan-build/Still/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/dan-build/Still/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/dan-build/Still/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/dan-build/Still/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/dan-build/Still/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/dan-build/Still/compare/v0.6.3...v0.7.0
