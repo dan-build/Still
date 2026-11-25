@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 # Pinned exactly: see vendor/libsodium/README.md before changing it.
-libsodium-sys-stable = "=1.24.0"
+libsodium-sys-stable = "=1.24.6"
 # Both features are load-bearing (see src/vault/json.rs): preserve_order keeps
 # stored Lenses' fields in order, and float_roundtrip reads every number
 # exactly, so it is written back as JavaScript wrote it. Never enable

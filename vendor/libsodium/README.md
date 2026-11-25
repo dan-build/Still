@@ -9,7 +9,7 @@ The `libsodium-sys-stable` crate builds libsodium from these files instead of do
 | `libsodium-1.0.22-stable-msvc.zip` | Windows (MSVC, prebuilt) | `4b310d0602b6217d68b3000df19af595841ba101910af8d335096f9c45c9f36a` |
 | `libsodium-1.0.22-stable-msvc.zip.minisig` | | `5a4bf29a7e0f5ba01cb7c74424afee72187f4970369c13c319fbf703dfe18a83` |
 
-- **`LATEST.tar.gz` and its signature** are the exact files shipped inside `libsodium-sys-stable` 1.24.0, which `Cargo.lock` pins by checksum.
+- **`LATEST.tar.gz` and its signature** are the exact files shipped inside `libsodium-sys-stable` 1.24.0: libsodium 1.0.22-stable as of April 2026. The crate is now 1.24.6 (for its build script's newer zip), which ships a later 1.0.22-stable snapshot; that copy is never used, because the build reads only this folder. Moving to it is a separate, deliberate update.
 - **The MSVC zip and its signature** were downloaded from `download.libsodium.org` on 2026-09-30, signed 2026-09-28. That file is replaced in place upstream, which is why it's committed here rather than downloaded during the build.
 
 To update libsodium, bump `libsodium-sys-stable` deliberately, then replace these files and their checksums here in the same commit. The golden-vault and test-vector tests must still pass on every OS.
